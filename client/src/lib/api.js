@@ -183,6 +183,8 @@ export const documentsAPI = {
         if (data.category) formData.append('category', data.category);
         if (data.isPublic) formData.append('isPublic', data.isPublic);
         if (data.folderId) formData.append('folderId', data.folderId);
+        if (data.overwrite) formData.append('overwrite', data.overwrite);
+        if (data.existingDocumentId) formData.append('existingDocumentId', data.existingDocumentId);
         return api.post('/documents', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
             onUploadProgress: onProgress ? (progressEvent) => {

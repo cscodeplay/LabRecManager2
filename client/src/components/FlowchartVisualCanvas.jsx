@@ -20,7 +20,9 @@ import {
     Info,
     Copy,
     Scissors,
-    Clipboard
+    Clipboard,
+    Sun,
+    Moon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -70,8 +72,8 @@ const DEFAULT_INITIAL_NODES = [
         y: 370,
         width: 170,
         height: 54,
-        color: '#f8fafc',
-        borderColor: '#475569',
+        color: '#ffffff',
+        borderColor: '#64748b',
         textColor: '#0f172a'
     },
     {
@@ -100,7 +102,8 @@ const PORTS = ['top', 'right', 'bottom', 'left'];
 export default function FlowchartVisualCanvas({
     initialData,
     onChange,
-    readOnly = false
+    readOnly = false,
+    theme = 'light' // 'light' (default) | 'dark'
 }) {
     // Canvas nodes and connectors
     const [nodes, setNodes] = useState(() => initialData?.nodes || DEFAULT_INITIAL_NODES);
@@ -113,6 +116,7 @@ export default function FlowchartVisualCanvas({
     const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [selectedConnectorId, setSelectedConnectorId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
+    const [hoveredPortInfo, setHoveredPortInfo] = useState(null); // { nodeId, port }
 
     // Connecting from a port: { nodeId, port }
     const [connectingSource, setConnectingSource] = useState(null);
@@ -139,8 +143,9 @@ export default function FlowchartVisualCanvas({
 
     const svgRef = useRef(null);
     const containerRef = useRef(null);
-    const lastSyncStateRef = useRef({ nodes: null, connectors: null });
     const isLocalUpdateRef = useRef(false);
+
+    const isLight = theme === 'light';
 
     // Emit changes to parent safely (without bouncing back into initialData)
     const notifyChange = useCallback((newNodes, newConnectors) => {
@@ -182,6 +187,10 @@ export default function FlowchartVisualCanvas({
 
     // Calculate best automatic port between two nodes if not explicitly specified
     const getBestPorts = (fromNode, toNode) => {
+        if (fromNode.id === toNode.id) {
+            return { fromPort: 'right', toPort: 'top' };
+        }
+
         const fCenterX = fromNode.x + fromNode.width / 2;
         const fCenterY = fromNode.y + fromNode.height / 2;
         const tCenterX = toNode.x + toNode.width / 2;
@@ -219,6 +228,19 @@ export default function FlowchartVisualCanvas({
 
         const start = getPortCoordinates(fromNode, fromPort);
         const end = getPortCoordinates(toNode, toPort);
+
+        // Self-loop (connector connected to the same shape)
+        if (fromNode.id === toNode.id) {
+            const loopOffset = 65;
+            const cp1 = { x: start.x + (fromPort === 'right' ? loopOffset : 0), y: start.y + (fromPort === 'bottom' ? loopOffset : -loopOffset * 0.5) };
+            const cp2 = { x: end.x + (toPort === 'left' ? -loopOffset : 0), y: end.y + (toPort === 'top' ? -loopOffset : loopOffset * 0.5) };
+            const pathD = `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${end.x} ${end.y}`;
+
+            const midX = 0.125 * start.x + 0.375 * cp1.x + 0.375 * cp2.x + 0.125 * end.x;
+            const midY = 0.125 * start.y + 0.375 * cp1.y + 0.375 * cp2.y + 0.125 * end.y;
+
+            return { start, end, cp1, cp2, pathD, midX, midY, fromPort, toPort };
+        }
 
         // Compute control points extending along the port normal
         const normalOffsets = {
@@ -275,14 +297,13 @@ export default function FlowchartVisualCanvas({
     // Keyboard Shortcuts: Cut, Copy, Paste, Delete / Backspace
     useEffect(() => {
         const handleKeyDown = (e) => {
-            // Ignore if active element is a text input, textarea, or currently editing text
             const activeElem = document.activeElement;
             const isTyping = activeElem && (activeElem.tagName === 'INPUT' || activeElem.tagName === 'TEXTAREA');
             if (isTyping || editingNodeId || editingConnectorId) {
                 return;
             }
 
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
             const isCtrl = isMac ? e.metaKey : e.ctrlKey;
 
             // Delete / Backspace
@@ -335,7 +356,7 @@ export default function FlowchartVisualCanvas({
                         return next;
                     });
                     setSelectedNodeId(randId);
-                    clipboardRef.current = pastedNode; // Offset consecutive pastes
+                    clipboardRef.current = pastedNode;
                     toast.success('Pasted shape', { icon: '📄' });
                 }
             }
@@ -369,15 +390,14 @@ export default function FlowchartVisualCanvas({
         if (readOnly) return;
         const randId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-        // Center on current pan
         const centerX = Math.max(50, Math.round((-pan.x + 220) / zoom));
         const centerY = Math.max(50, Math.round((-pan.y + 160) / zoom));
 
         let width = 160;
         let height = 54;
         let text = 'Process';
-        let color = '#f8fafc';
-        let borderColor = '#475569';
+        let color = '#ffffff';
+        let borderColor = '#64748b';
         let textColor = '#0f172a';
 
         if (type === 'terminator') {
@@ -445,7 +465,9 @@ export default function FlowchartVisualCanvas({
         if (activeTool === 'connector') {
             if (!connectingSource) {
                 setConnectingSource({ nodeId: node.id, port: 'bottom' });
-            } else if (connectingSource.nodeId !== node.id) {
+                const pt = getPortCoordinates(node, 'bottom');
+                setConnectingMousePos(pt);
+            } else {
                 completeConnection(node.id, 'top');
             }
             return;
@@ -474,7 +496,10 @@ export default function FlowchartVisualCanvas({
 
     // Complete connection to a target node & port
     const completeConnection = (targetNodeId, targetPort = 'top') => {
-        if (!connectingSource || connectingSource.nodeId === targetNodeId) {
+        if (!connectingSource) return;
+
+        // Disallow connecting exact same hook to itself
+        if (connectingSource.nodeId === targetNodeId && connectingSource.port === targetPort) {
             setConnectingSource(null);
             setConnectingMousePos(null);
             return;
@@ -500,13 +525,18 @@ export default function FlowchartVisualCanvas({
         setConnectingMousePos(null);
         if (activeTool === 'connector') setActiveTool('select');
         notifyChange(nodes, nextConns);
-        toast.success('Connected shapes with directed arrow!', { icon: '🔗' });
+        toast.success(
+            connectingSource.nodeId === targetNodeId
+                ? 'Loopback connector created!'
+                : 'Connected shapes with directed arrow!',
+            { icon: '🔗' }
+        );
     };
 
-    // Canvas pointer move (Dragging node, panning, or drawing connector preview)
+    // Canvas pointer move (Dragging node, panning, or drawing connector preview following mouse)
     const handleCanvasPointerMove = (e) => {
         if (connectingSource) {
-            // Update live cursor coordinates in canvas space
+            // Live connector follows mouse in canvas coordinate space
             const mouseCanvasX = (e.clientX - pan.x) / zoom;
             const mouseCanvasY = (e.clientY - pan.y) / zoom;
             setConnectingMousePos({ x: mouseCanvasX, y: mouseCanvasY });
@@ -535,15 +565,14 @@ export default function FlowchartVisualCanvas({
         if (isPanning) {
             setIsPanning(false);
         }
+        // If connecting was started via drag and released on empty canvas (not on a hook)
         if (connectingSource && activeTool !== 'connector') {
-            // Cancel unfinished drag-connection if dropped on empty canvas
             setConnectingSource(null);
             setConnectingMousePos(null);
         }
     };
 
     const handleCanvasPointerDown = (e) => {
-        // Only trigger canvas click / pan if clicking directly on background
         const target = e.target;
         if (target.tagName === 'svg' || target.id === 'canvas-bg' || target.id === 'flowchart-svg-canvas') {
             setSelectedNodeId(null);
@@ -631,7 +660,7 @@ export default function FlowchartVisualCanvas({
                 canvas.width = 1200;
                 canvas.height = 900;
                 const ctx = canvas.getContext('2d');
-                ctx.fillStyle = '#020617';
+                ctx.fillStyle = isLight ? '#ffffff' : '#020617';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                 const pngUrl = canvas.toDataURL('image/png');
@@ -650,9 +679,9 @@ export default function FlowchartVisualCanvas({
         const strokeColor = isConnectingSource
             ? '#38bdf8'
             : isSelected
-            ? '#a855f7'
+            ? '#8b5cf6'
             : borderColor;
-        const strokeWidth = isSelected || isConnectingSource ? 3 : 2;
+        const strokeWidth = isSelected || isConnectingSource ? 2.5 : 2;
 
         if (type === 'terminator') {
             return (
@@ -666,7 +695,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         } else if (type === 'io') {
@@ -678,7 +707,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         } else if (type === 'decision') {
@@ -689,7 +718,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         } else if (type === 'loop') {
@@ -701,7 +730,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         } else if (type === 'connector') {
@@ -713,7 +742,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         } else {
@@ -728,7 +757,7 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-sm transition-all"
+                    className="cursor-move filter drop-shadow-xs transition-all"
                 />
             );
         }
@@ -737,24 +766,36 @@ export default function FlowchartVisualCanvas({
     return (
         <div
             ref={containerRef}
-            className="flex flex-col h-full w-full bg-slate-950 text-slate-100 select-none overflow-hidden relative"
+            className={`flex flex-col h-full w-full select-none overflow-hidden relative ${
+                isLight ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'
+            }`}
             onPointerMove={handleCanvasPointerMove}
             onPointerUp={handleCanvasPointerUp}
         >
             {/* Top Canvas Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 flex-shrink-0 z-20">
+            <div
+                className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-b flex-shrink-0 z-20 ${
+                    isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
+                }`}
+            >
                 {/* Left: Pointer vs Connector Tool and Shapes */}
                 <div className="flex items-center gap-1.5 overflow-x-auto">
-                    <div className="flex items-center bg-slate-800 p-0.5 rounded-lg border border-slate-700">
+                    <div
+                        className={`flex items-center p-0.5 rounded-lg border ${
+                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
+                        }`}
+                    >
                         <button
                             onClick={() => {
                                 setActiveTool('select');
                                 setConnectingSource(null);
                                 setConnectingMousePos(null);
                             }}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition cursor-pointer ${
                                 activeTool === 'select'
                                     ? 'bg-primary-600 text-white shadow-xs'
+                                    : isLight
+                                    ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
                             title="Pointer / Select Tool (V)"
@@ -769,9 +810,11 @@ export default function FlowchartVisualCanvas({
                                 setSelectedNodeId(null);
                                 setSelectedConnectorId(null);
                             }}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition ${
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold transition cursor-pointer ${
                                 activeTool === 'connector'
                                     ? 'bg-purple-600 text-white shadow-xs'
+                                    : isLight
+                                    ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
                             title="Connector Tool: Click shape hooks to link with directed arrows"
@@ -781,49 +824,49 @@ export default function FlowchartVisualCanvas({
                         </button>
                     </div>
 
-                    <div className="h-4 w-px bg-slate-700 mx-1 hidden sm:block" />
+                    <div className={`h-4 w-px mx-1 hidden sm:block ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
                     {/* Shape Tool Buttons */}
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => handleAddShape('terminator')}
-                            className="px-2 py-1 rounded bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 hover:bg-emerald-900 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                            className="px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
                             title="Add Start/End Oval Terminator"
                         >
-                            <span className="w-2.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                            <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                             <span>Oval</span>
                         </button>
 
                         <button
                             onClick={() => handleAddShape('io')}
-                            className="px-2 py-1 rounded bg-blue-950/80 border border-blue-500/50 text-blue-300 hover:bg-blue-900 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                            className="px-2 py-1 rounded bg-sky-50 border border-sky-300 text-sky-800 hover:bg-sky-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
                             title="Add Input/Output Parallelogram"
                         >
-                            <span className="w-2.5 h-2 bg-blue-400 skew-x-12 inline-block" />
+                            <span className="w-2.5 h-2 bg-sky-500 skew-x-12 inline-block" />
                             <span>Parallelogram</span>
                         </button>
 
                         <button
                             onClick={() => handleAddShape('process')}
-                            className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-slate-200 hover:bg-slate-700 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                            className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
                             title="Add Calculation/Assignment Rectangle"
                         >
-                            <span className="w-2.5 h-2 bg-slate-300 rounded-2xs inline-block" />
+                            <span className="w-2.5 h-2 bg-slate-400 rounded-2xs inline-block" />
                             <span>Rectangle</span>
                         </button>
 
                         <button
                             onClick={() => handleAddShape('decision')}
-                            className="px-2 py-1 rounded bg-amber-950/80 border border-amber-500/50 text-amber-300 hover:bg-amber-900 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                            className="px-2 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
                             title="Add Decision Diamond"
                         >
-                            <span className="w-2 h-2 bg-amber-400 rotate-45 inline-block" />
+                            <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />
                             <span>Diamond</span>
                         </button>
 
                         <button
                             onClick={() => handleAddShape('loop')}
-                            className="px-2 py-1 rounded bg-purple-950/80 border border-purple-500/50 text-purple-300 hover:bg-purple-900 text-xs font-medium transition cursor-pointer flex items-center gap-1"
+                            className="px-2 py-1 rounded bg-purple-50 border border-purple-300 text-purple-800 hover:bg-purple-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
                             title="Add Loop Iteration Hexagon"
                         >
                             <span>Hexagon</span>
@@ -840,7 +883,7 @@ export default function FlowchartVisualCanvas({
                                 if (selectedNodeId) deleteNode(selectedNodeId);
                                 else if (selectedConnectorId) deleteConnector(selectedConnectorId);
                             }}
-                            className="px-2 py-1 bg-rose-950/80 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded font-medium flex items-center gap-1 transition"
+                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 rounded font-medium flex items-center gap-1 transition cursor-pointer shadow-xs"
                             title="Delete Selected (Del / Backspace)"
                         >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -849,20 +892,24 @@ export default function FlowchartVisualCanvas({
                     )}
 
                     {/* Zoom controls */}
-                    <div className="flex items-center bg-slate-800 rounded border border-slate-700">
+                    <div
+                        className={`flex items-center rounded border ${
+                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
+                        }`}
+                    >
                         <button
                             onClick={() => setZoom(Math.max(0.4, zoom - 0.15))}
-                            className="p-1 hover:text-white text-slate-400"
+                            className={`p-1 ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
                             title="Zoom Out"
                         >
                             <ZoomOut className="w-3.5 h-3.5" />
                         </button>
-                        <span className="px-1.5 text-[11px] font-mono text-slate-300">
+                        <span className={`px-1.5 text-[11px] font-mono ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                             {Math.round(zoom * 100)}%
                         </span>
                         <button
                             onClick={() => setZoom(Math.min(2.5, zoom + 0.15))}
-                            className="p-1 hover:text-white text-slate-400"
+                            className={`p-1 ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
                             title="Zoom In"
                         >
                             <ZoomIn className="w-3.5 h-3.5" />
@@ -874,7 +921,11 @@ export default function FlowchartVisualCanvas({
                             setZoom(1);
                             setPan({ x: 0, y: 0 });
                         }}
-                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition"
+                        className={`p-1 rounded border transition cursor-pointer ${
+                            isLight
+                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white'
+                        }`}
                         title="Reset Canvas View"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -892,7 +943,9 @@ export default function FlowchartVisualCanvas({
 
                     <button
                         onClick={handleClearCanvas}
-                        className="p-1 text-slate-500 hover:text-rose-400 transition"
+                        className={`p-1 transition cursor-pointer ${
+                            isLight ? 'text-slate-400 hover:text-rose-600' : 'text-slate-500 hover:text-rose-400'
+                        }`}
                         title="Clear Canvas"
                     >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -900,15 +953,21 @@ export default function FlowchartVisualCanvas({
                 </div>
             </div>
 
-            {/* Instruction Banner when Connector Mode is Active */}
-            {activeTool === 'connector' && (
-                <div className="bg-purple-950/80 border-b border-purple-800 px-3 py-1 text-xs text-purple-200 flex items-center justify-between z-10">
+            {/* Instruction Banner when Connector Mode or Dragging Hook is Active */}
+            {(activeTool === 'connector' || Boolean(connectingSource)) && (
+                <div
+                    className={`border-b px-3 py-1 text-xs flex items-center justify-between z-10 ${
+                        isLight
+                            ? 'bg-purple-50 border-purple-200 text-purple-900'
+                            : 'bg-purple-950/80 border-purple-800 text-purple-200'
+                    }`}
+                >
                     <div className="flex items-center gap-2">
-                        <ArrowRight className="w-3.5 h-3.5 text-purple-400 animate-pulse" />
+                        <ArrowRight className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
                         <span>
                             {connectingSource
-                                ? 'Hook selected! Click any hook dot on another shape to connect.'
-                                : 'Whiteboard Connector Mode: Hover over shapes and click any hook dot (top, right, bottom, left) to connect.'}
+                                ? 'Connection started! Drag or click onto any hook (on same or different shape) to connect.'
+                                : 'Connector Mode: Click any hook dot on a shape to start directed connection.'}
                         </span>
                     </div>
                     <button
@@ -917,7 +976,9 @@ export default function FlowchartVisualCanvas({
                             setConnectingSource(null);
                             setConnectingMousePos(null);
                         }}
-                        className="text-[11px] underline text-purple-300 hover:text-white"
+                        className={`text-[11px] underline cursor-pointer ${
+                            isLight ? 'text-purple-700 hover:text-purple-950' : 'text-purple-300 hover:text-white'
+                        }`}
                     >
                         Cancel
                     </button>
@@ -934,7 +995,9 @@ export default function FlowchartVisualCanvas({
                     id="flowchart-svg-canvas"
                     className="w-full h-full absolute inset-0"
                     style={{
-                        backgroundImage: `radial-gradient(#334155 1px, transparent 1px)`,
+                        backgroundImage: isLight
+                            ? `radial-gradient(#cbd5e1 1.2px, transparent 1.2px)`
+                            : `radial-gradient(#334155 1.2px, transparent 1.2px)`,
                         backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
                         backgroundPosition: `${pan.x}px ${pan.y}px`
                     }}
@@ -950,7 +1013,7 @@ export default function FlowchartVisualCanvas({
                             markerHeight="6"
                             orient="auto-start-reverse"
                         >
-                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#6366f1" />
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill={isLight ? '#4f46e5' : '#6366f1'} />
                         </marker>
                         <marker
                             id="flowchart-arrowhead-selected"
@@ -961,7 +1024,7 @@ export default function FlowchartVisualCanvas({
                             markerHeight="6"
                             orient="auto-start-reverse"
                         >
-                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#a855f7" />
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#8b5cf6" />
                         </marker>
                     </defs>
 
@@ -988,14 +1051,14 @@ export default function FlowchartVisualCanvas({
                                         d={data.pathD}
                                         fill="none"
                                         stroke="transparent"
-                                        strokeWidth={16}
+                                        strokeWidth={18}
                                     />
 
                                     {/* Directed Arrow Path */}
                                     <path
                                         d={data.pathD}
                                         fill="none"
-                                        stroke={isSelected ? '#a855f7' : '#6366f1'}
+                                        stroke={isSelected ? '#8b5cf6' : isLight ? '#4f46e5' : '#6366f1'}
                                         strokeWidth={isSelected ? 3 : 2}
                                         strokeDasharray={isSelected ? '6,3' : 'none'}
                                         markerEnd={
@@ -1003,7 +1066,7 @@ export default function FlowchartVisualCanvas({
                                                 ? 'url(#flowchart-arrowhead-selected)'
                                                 : 'url(#flowchart-arrowhead)'
                                         }
-                                        className="transition-colors group-hover:stroke-purple-400"
+                                        className="transition-colors group-hover:stroke-purple-500"
                                     />
 
                                     {/* Midpoint Pill-Shaped Label */}
@@ -1019,16 +1082,16 @@ export default function FlowchartVisualCanvas({
                                             height={24}
                                             rx={12}
                                             ry={12}
-                                            fill="#0f172a"
-                                            stroke={isSelected ? '#a855f7' : '#475569'}
+                                            fill={isLight ? '#ffffff' : '#0f172a'}
+                                            stroke={isSelected ? '#8b5cf6' : isLight ? '#cbd5e1' : '#475569'}
                                             strokeWidth={1.5}
-                                            className="transition-all hover:stroke-purple-400 hover:fill-slate-900 drop-shadow-md"
+                                            className="transition-all hover:stroke-purple-500 drop-shadow-xs"
                                         />
                                         <text
                                             x={0}
                                             y={4}
                                             textAnchor="middle"
-                                            fill="#e2e8f0"
+                                            fill={isLight ? '#0f172a' : '#e2e8f0'}
                                             fontSize={11}
                                             fontWeight="bold"
                                             fontFamily="system-ui, sans-serif"
@@ -1041,47 +1104,66 @@ export default function FlowchartVisualCanvas({
                             );
                         })}
 
-                        {/* Live Elastic Connector Line when user is dragging from a port */}
+                        {/* Live Elastic Connector Line following mouse cursor */}
                         {connectingSource && connectingMousePos && (() => {
                             const fromNode = nodes.find((n) => n.id === connectingSource.nodeId);
                             if (!fromNode) return null;
                             const start = getPortCoordinates(fromNode, connectingSource.port);
                             const end = connectingMousePos;
-                            const pathD = `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
+
+                            // Smooth curve from source hook to mouse
+                            const dx = end.x - start.x;
+                            const dy = end.y - start.y;
+                            const normalOffsets = {
+                                top: { x: 0, y: -1 },
+                                bottom: { x: 0, y: 1 },
+                                left: { x: -1, y: 0 },
+                                right: { x: 1, y: 0 }
+                            };
+                            const n = normalOffsets[connectingSource.port] || { x: 0, y: 1 };
+                            const dist = Math.max(30, Math.hypot(dx, dy) * 0.35);
+                            const cp = { x: start.x + n.x * dist, y: start.y + n.y * dist };
+                            const pathD = `M ${start.x} ${start.y} Q ${cp.x} ${cp.y}, ${end.x} ${end.y}`;
 
                             return (
                                 <g className="pointer-events-none">
                                     <path
                                         d={pathD}
                                         fill="none"
-                                        stroke="#38bdf8"
-                                        strokeWidth={2}
-                                        strokeDasharray="5,5"
+                                        stroke="#0284c7"
+                                        strokeWidth={2.5}
+                                        strokeDasharray="5,4"
                                         markerEnd="url(#flowchart-arrowhead)"
                                     />
-                                    <circle cx={end.x} cy={end.y} r={4} fill="#38bdf8" />
+                                    <circle cx={end.x} cy={end.y} r={5} fill="#0284c7" />
                                 </g>
                             );
                         })()}
 
-                        {/* 2. SHAPES LAYER (Nodes + Cardinal Hooks) */}
+                        {/* 2. SHAPES LAYER (Nodes + Always-Available Stable Hooks) */}
                         {nodes.map((node) => {
                             const isSelected = selectedNodeId === node.id;
-                            const isConnectingSource = connectingSource?.nodeId === node.id;
+                            const isConnectingSourceNode = connectingSource?.nodeId === node.id;
                             const isHovered = hoveredNodeId === node.id;
-                            const showHooks = !readOnly && (isHovered || isSelected || activeTool === 'connector' || Boolean(connectingSource));
 
                             return (
                                 <g
                                     key={node.id}
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        if (connectingSource && connectingSource.nodeId !== node.id) {
+                                        if (connectingSource) {
                                             completeConnection(node.id, 'top');
                                             return;
                                         }
                                         setSelectedNodeId(node.id);
                                         setSelectedConnectorId(null);
+                                    }}
+                                    onPointerUp={(e) => {
+                                        // Allow dropping onto shape body to complete connection
+                                        if (connectingSource) {
+                                            e.stopPropagation();
+                                            completeConnection(node.id, 'top');
+                                        }
                                     }}
                                     onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                                     onPointerDown={(e) => handleNodePointerDown(e, node)}
@@ -1090,7 +1172,7 @@ export default function FlowchartVisualCanvas({
                                     className="cursor-move group"
                                 >
                                     {/* SVG Geometry */}
-                                    {renderShapeGeometry(node, isSelected, isConnectingSource)}
+                                    {renderShapeGeometry(node, isSelected, isConnectingSourceNode)}
 
                                     {/* In-Shape Text Rendering */}
                                     {editingNodeId !== node.id && (
@@ -1108,40 +1190,68 @@ export default function FlowchartVisualCanvas({
                                         </text>
                                     )}
 
-                                    {/* 4 CARDINAL HOOK PORTS (Whiteboard Style Anchor Points) */}
-                                    {showHooks &&
+                                    {/* 4 CARDINAL HOOK PORTS: Permanently Mounted so they NEVER run away! */}
+                                    {!readOnly &&
                                         PORTS.map((port) => {
                                             const { x: px, y: py } = getPortCoordinates(node, port);
                                             const isThisHookActive = connectingSource?.nodeId === node.id && connectingSource?.port === port;
+                                            const isThisHookHovered = hoveredPortInfo?.nodeId === node.id && hoveredPortInfo?.port === port;
+                                            const isNodeHighlighted = isHovered || isSelected || activeTool === 'connector' || Boolean(connectingSource);
 
                                             return (
                                                 <g
                                                     key={port}
                                                     onPointerDown={(e) => handlePortPointerDown(e, node.id, port)}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (connectingSource && connectingSource.nodeId !== node.id) {
+                                                    onPointerUp={(e) => {
+                                                        if (connectingSource) {
+                                                            e.stopPropagation();
                                                             completeConnection(node.id, port);
                                                         }
                                                     }}
-                                                    className="cursor-crosshair group/port"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (connectingSource) {
+                                                            completeConnection(node.id, port);
+                                                        } else {
+                                                            handlePortPointerDown(e, node.id, port);
+                                                        }
+                                                    }}
+                                                    onMouseEnter={() => setHoveredPortInfo({ nodeId: node.id, port })}
+                                                    onMouseLeave={() => setHoveredPortInfo(null)}
+                                                    className="cursor-crosshair"
+                                                    style={{ pointerEvents: 'all' }}
                                                 >
-                                                    {/* Invisible large hit area */}
+                                                    {/* Invisible large hit target circle (r=14) */}
                                                     <circle
                                                         cx={px}
                                                         cy={py}
-                                                        r={12}
+                                                        r={14}
                                                         fill="transparent"
+                                                        stroke="none"
                                                     />
-                                                    {/* Visible hook circle */}
+                                                    {/* Visible hook circle: subtle when idle, vibrant when highlighted */}
                                                     <circle
                                                         cx={px}
                                                         cy={py}
-                                                        r={isThisHookActive ? 6 : 4.5}
-                                                        fill={isThisHookActive ? '#38bdf8' : '#ffffff'}
-                                                        stroke={isThisHookActive ? '#0284c7' : '#6366f1'}
-                                                        strokeWidth={2}
-                                                        className="transition-transform group-hover/port:scale-125 filter drop-shadow-sm"
+                                                        r={isThisHookActive || isThisHookHovered ? 6.5 : isNodeHighlighted ? 5 : 3.5}
+                                                        fill={
+                                                            isThisHookActive || isThisHookHovered
+                                                                ? '#38bdf8'
+                                                                : isLight
+                                                                ? '#ffffff'
+                                                                : '#1e293b'
+                                                        }
+                                                        stroke={
+                                                            isThisHookActive || isThisHookHovered
+                                                                ? '#0284c7'
+                                                                : isNodeHighlighted
+                                                                ? '#6366f1'
+                                                                : isLight
+                                                                ? '#94a3b8'
+                                                                : '#64748b'
+                                                        }
+                                                        strokeWidth={isThisHookActive || isThisHookHovered ? 2.5 : 1.5}
+                                                        className="transition-all filter drop-shadow-xs"
                                                     />
                                                 </g>
                                             );
@@ -1189,7 +1299,9 @@ export default function FlowchartVisualCanvas({
                                     if (e.key === 'Escape') setEditingNodeId(null);
                                 }}
                                 onBlur={handleSaveNodeText}
-                                className="w-full text-center px-1 py-1 bg-slate-900 border-2 border-purple-500 rounded text-xs font-bold text-white focus:outline-none shadow-2xl ring-2 ring-purple-500/30"
+                                className={`w-full text-center px-1 py-1 rounded text-xs font-bold focus:outline-none shadow-2xl ring-2 ring-purple-500/40 border-2 border-purple-500 ${
+                                    isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
+                                }`}
                             />
                         </div>
                     );
@@ -1232,7 +1344,9 @@ export default function FlowchartVisualCanvas({
                                 }}
                                 onBlur={handleSaveConnectorLabel}
                                 placeholder="Yes / No"
-                                className="w-full text-center px-1 py-0.5 bg-slate-900 border-2 border-purple-500 rounded-full text-xs font-bold text-white focus:outline-none shadow-2xl ring-2 ring-purple-500/30"
+                                className={`w-full text-center px-1 py-0.5 rounded-full text-xs font-bold focus:outline-none shadow-2xl ring-2 ring-purple-500/40 border-2 border-purple-500 ${
+                                    isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
+                                }`}
                             />
                         </div>
                     );
@@ -1240,14 +1354,18 @@ export default function FlowchartVisualCanvas({
             </div>
 
             {/* Bottom Status / Keyboard Shortcuts Tip Bar */}
-            <div className="px-3 py-1.5 bg-slate-900 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between z-10 flex-shrink-0">
+            <div
+                className={`px-3 py-1.5 border-t text-[11px] flex items-center justify-between z-10 flex-shrink-0 ${
+                    isLight ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
+                }`}
+            >
                 <span className="flex items-center gap-2">
-                    <Info className="w-3.5 h-3.5 text-primary-400 flex-shrink-0" />
+                    <Info className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />
                     <span>
-                        <strong className="text-slate-300">Whiteboard hooks:</strong> Click hook dots to connect • <strong className="text-slate-300">Shortcuts:</strong> Ctrl+C copy, Ctrl+X cut, Ctrl+V paste, Del delete (cascades to connectors) • Double-click to edit text
+                        <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Hooks:</strong> Click any hook dot to link (works on same or different shape) • <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Shortcuts:</strong> Ctrl+C copy, Ctrl+X cut, Ctrl+V paste, Del delete • Double-click to edit text
                     </span>
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">
+                <span className={`text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
                     {nodes.length} shapes • {connectors.length} connectors
                 </span>
             </div>

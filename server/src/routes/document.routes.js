@@ -271,6 +271,61 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 
     const resolvedName = name || req.file.originalname.replace(/\.[^.]+$/, '');
     const resolvedFileName = req.file.originalname;
+    const isOverwrite = req.body.overwrite === 'true' || req.body.overwrite === true;
+    const existingDocumentId = req.body.existingDocumentId;
+
+    // If an existingDocumentId was provided for an in-place update/rename:
+    if (existingDocumentId) {
+        const targetDoc = await prisma.document.findFirst({
+            where: { id: existingDocumentId, schoolId: req.user.schoolId, deletedAt: null }
+        });
+
+        if (targetDoc && (['admin', 'principal'].includes(req.user.role) || targetDoc.uploadedById === req.user.id)) {
+            const uploadDir = path.join(__dirname, '../../uploads');
+            if (!fs.existsSync(uploadDir)) {
+                fs.mkdirSync(uploadDir, { recursive: true });
+            }
+            const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+            const diskPath = path.join(uploadDir, diskFileName);
+            fs.writeFileSync(diskPath, req.file.buffer);
+
+            let finalPublicId = `local_${diskFileName}`;
+            let finalUrl = `/uploads/${diskFileName}`;
+
+            const updated = await prisma.document.update({
+                where: { id: targetDoc.id },
+                data: {
+                    name: resolvedName,
+                    fileName: resolvedFileName,
+                    folderId: targetFolderId !== undefined ? targetFolderId : targetDoc.folderId,
+                    description: description !== undefined ? description : targetDoc.description,
+                    category: category || targetDoc.category,
+                    fileType: getFileType(req.file.mimetype),
+                    mimeType: req.file.mimetype,
+                    fileSize: req.file.size,
+                    cloudinaryId: finalPublicId,
+                    url: finalUrl,
+                    updatedAt: new Date()
+                },
+                include: {
+                    uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                    folder: { select: { id: true, name: true } }
+                }
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document updated successfully',
+                data: {
+                    document: {
+                        ...updated,
+                        fileSizeFormatted: formatSize(updated.fileSize)
+                    }
+                }
+            });
+        }
+    }
 
     // Enforce uniqueness: Do not allow same file name in the same folder
     const existingDoc = await prisma.document.findFirst({
@@ -286,6 +341,52 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     });
 
     if (existingDoc) {
+        // If overwrite is explicitly allowed and user owns the existing file
+        if (isOverwrite && (['admin', 'principal'].includes(req.user.role) || existingDoc.uploadedById === req.user.id)) {
+            const uploadDir = path.join(__dirname, '../../uploads');
+            if (!fs.existsSync(uploadDir)) {
+                fs.mkdirSync(uploadDir, { recursive: true });
+            }
+            const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+            const diskPath = path.join(uploadDir, diskFileName);
+            fs.writeFileSync(diskPath, req.file.buffer);
+
+            let finalPublicId = `local_${diskFileName}`;
+            let finalUrl = `/uploads/${diskFileName}`;
+
+            const overwritten = await prisma.document.update({
+                where: { id: existingDoc.id },
+                data: {
+                    name: resolvedName,
+                    fileName: resolvedFileName,
+                    description: description !== undefined ? description : existingDoc.description,
+                    category: category || existingDoc.category,
+                    fileType: getFileType(req.file.mimetype),
+                    mimeType: req.file.mimetype,
+                    fileSize: req.file.size,
+                    cloudinaryId: finalPublicId,
+                    url: finalUrl,
+                    updatedAt: new Date()
+                },
+                include: {
+                    uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                    folder: { select: { id: true, name: true } }
+                }
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: 'Document overwritten successfully',
+                data: {
+                    document: {
+                        ...overwritten,
+                        fileSizeFormatted: formatSize(overwritten.fileSize)
+                    }
+                }
+            });
+        }
+
         return res.status(409).json({
             success: false,
             message: `A file named "${resolvedFileName}" already exists in this folder. Please choose a unique name.`,
@@ -371,7 +472,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
  * @access  Private (Admin/Principal)
  */
 router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor', 'student'), upload.single('file'), asyncHandler(async (req, res) => {
-    const { name, description, category, isPublic } = req.body;
+    const { name, fileName, description, category, isPublic, content } = req.body;
 
     const doc = await prisma.document.findFirst({
         where: { id: req.params.id, schoolId: req.user.schoolId, deletedAt: null }
@@ -387,6 +488,7 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
 
     let updateData = {
         name: name !== undefined ? name : doc.name,
+        fileName: fileName !== undefined ? fileName : (req.file ? req.file.originalname : doc.fileName),
         description: description !== undefined ? description : doc.description,
         category: category !== undefined ? category : doc.category,
         isPublic: isPublic !== undefined ? (isPublic === 'true' || isPublic === true) : doc.isPublic
@@ -424,12 +526,28 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
             }
         }
 
-        updateData.fileName = req.file.originalname;
+        updateData.fileName = fileName || req.file.originalname;
         updateData.fileType = getFileType(req.file.mimetype);
         updateData.mimeType = req.file.mimetype;
         updateData.fileSize = req.file.size;
         updateData.cloudinaryId = finalPublicId;
         updateData.url = finalUrl;
+    } else if (content !== undefined) {
+        const uploadDir = path.join(__dirname, '../../uploads');
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const effectiveFileName = fileName || doc.fileName || 'file.txt';
+        const safeBaseName = effectiveFileName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+        const diskPath = path.join(uploadDir, diskFileName);
+        const buf = Buffer.from(content, 'utf8');
+        fs.writeFileSync(diskPath, buf);
+
+        updateData.fileName = effectiveFileName;
+        updateData.fileSize = buf.length;
+        updateData.cloudinaryId = `local_${diskFileName}`;
+        updateData.url = `/uploads/${diskFileName}`;
     }
 
     const updated = await prisma.document.update({

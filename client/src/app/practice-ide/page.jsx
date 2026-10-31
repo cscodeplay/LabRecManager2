@@ -164,6 +164,7 @@ SELECT * FROM students;
             studentName,
             date: dateStr
         },
+        documentId: null,
         output: null,
         flowchartData: null,
         isDirty: false
@@ -221,11 +222,12 @@ export default function PracticeIDEPage() {
     const [isExecuting, setIsExecuting] = useState(false);
     const [rightPanelMode, setRightPanelMode] = useState('output'); // 'output' | 'table' | 'diagram'
 
-    // Themes
-    const [editorTheme, setEditorTheme] = useState('vs-dark');
-    const [outputThemeId, setOutputThemeId] = useState('classic');
-    const currentOutputTheme = OUTPUT_THEMES.find((t) => t.id === outputThemeId) || OUTPUT_THEMES[0];
+    // Themes - Light theme by default for both input and output/flowchart
+    const [editorTheme, setEditorTheme] = useState('vs');
+    const [outputThemeId, setOutputThemeId] = useState('light');
+    const currentOutputTheme = OUTPUT_THEMES.find((t) => t.id === outputThemeId) || OUTPUT_THEMES.find((t) => t.id === 'light') || OUTPUT_THEMES[0];
     const [fontSize, setFontSize] = useState(14);
+    const isLightMode = outputThemeId === 'light' || editorTheme === 'vs' || editorTheme === 'light';
 
     // Persistent student SQLite DB info
     const [existingTables, setExistingTables] = useState([]);
@@ -476,35 +478,103 @@ Date:          ${dateStr}
         toast.success(`Switched active tab to ${newLang.toUpperCase()}`);
     };
 
-    // Inline Tab Rename: updates title, synchronized filename, and saves
-    const handleCommitTabRename = (tabId) => {
+    // Inline Tab Rename: updates title, synchronized filename, auto-creates or overwrites in Documents
+    const handleCommitTabRename = async (tabId) => {
         const trimmed = (editingTabTitle || '').trim();
         if (!trimmed) {
             setEditingTabId(null);
             return;
         }
 
-        setTabs((prevTabs) => {
-            const nextTabs = prevTabs.map((t) => {
-                if (t.id !== tabId) return t;
-                const ext = t.language === 'sql' ? '.sql' : '.py';
-                let newFilename = trimmed;
-                if (!newFilename.toLowerCase().endsWith(ext)) {
-                    newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
-                }
-                return {
-                    ...t,
-                    title: trimmed,
-                    filename: newFilename,
-                    isDirty: true
-                };
-            });
-            triggerSaveWorkspace(nextTabs);
-            return nextTabs;
-        });
+        const currentTab = tabs.find((t) => t.id === tabId);
+        if (!currentTab) {
+            setEditingTabId(null);
+            return;
+        }
+
+        const ext = currentTab.language === 'sql' ? '.sql' : '.py';
+        let newFilename = trimmed;
+        if (!newFilename.toLowerCase().endsWith(ext)) {
+            newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
+        }
 
         setEditingTabId(null);
-        toast.success(`Renamed tab to "${trimmed}"`);
+
+        const targetFolderName = currentTab.language === 'sql' ? 'SQL Practice' : 'Python Practice';
+
+        try {
+            // 1. Resolve or Create Target Folder
+            const foldersRes = await foldersAPI.getAll();
+            const rawFolders = foldersRes.data?.data;
+            const foldersList = Array.isArray(rawFolders)
+                ? rawFolders
+                : Array.isArray(rawFolders?.folders)
+                ? rawFolders.folders
+                : [];
+            let targetFolder = foldersList.find(
+                (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
+            );
+
+            if (!targetFolder) {
+                const createFolderRes = await foldersAPI.create({
+                    name: targetFolderName,
+                    color: currentTab.language === 'sql' ? '#0284c7' : '#f59e0b'
+                });
+                targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+            }
+
+            // 2. Upload file with overwrite and existingDocumentId
+            const fileBlob = new Blob([currentTab.code], { type: 'text/plain;charset=utf-8' });
+            const fileObj = new File([fileBlob], newFilename, { type: 'text/plain' });
+
+            const uploadRes = await documentsAPI.upload(fileObj, {
+                name: newFilename,
+                description: `${trimmed} - Practice Code Document`,
+                category: 'code',
+                folderId: targetFolder?.id,
+                overwrite: true,
+                existingDocumentId: currentTab.documentId || undefined
+            });
+
+            const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
+            const newDocId = savedDoc?.id || currentTab.documentId;
+
+            // 3. Update tabs state with new documentId and reset isDirty
+            setTabs((prevTabs) => {
+                const nextTabs = prevTabs.map((t) => {
+                    if (t.id !== tabId) return t;
+                    return {
+                        ...t,
+                        title: trimmed,
+                        filename: newFilename,
+                        documentId: newDocId,
+                        isDirty: false
+                    };
+                });
+                triggerSaveWorkspace(nextTabs);
+                return nextTabs;
+            });
+
+            loadExistingDocs();
+            toast.success(`Saved to Documents / ${targetFolderName} / ${newFilename}`, { icon: '📁' });
+        } catch (err) {
+            console.error('Document auto-create on rename error:', err);
+            // Fallback: update tab title and filename locally
+            setTabs((prevTabs) => {
+                const nextTabs = prevTabs.map((t) => {
+                    if (t.id !== tabId) return t;
+                    return {
+                        ...t,
+                        title: trimmed,
+                        filename: newFilename,
+                        isDirty: true
+                    };
+                });
+                triggerSaveWorkspace(nextTabs);
+                return nextTabs;
+            });
+            toast.error('Could not auto-save to Documents: ' + (err.response?.data?.message || err.message));
+        }
     };
 
     // 5. Execute Code (Coordinated with Active Tab Output)
@@ -590,12 +660,17 @@ Date:          ${dateStr}
             const fileBlob = new Blob([activeTab.code], { type: 'text/plain;charset=utf-8' });
             const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
 
-            await documentsAPI.upload(fileObj, {
+            const uploadRes = await documentsAPI.upload(fileObj, {
                 name: fileName,
                 description: `${problemTitle || ''} - ${problemDescription || ''}`.trim(),
                 category: 'code',
-                folderId: targetFolder?.id
+                folderId: targetFolder?.id,
+                overwrite: true,
+                existingDocumentId: activeTab.documentId || undefined
             });
+
+            const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
+            const newDocId = savedDoc?.id || activeTab.documentId;
 
             // 3. Mark active tab clean and update metadata
             setTabs((prevTabs) =>
@@ -606,6 +681,7 @@ Date:          ${dateStr}
                               filename: fileName,
                               language: language || t.language,
                               title: problemTitle || t.title,
+                              documentId: newDocId,
                               metadata: {
                                   ...t.metadata,
                                   title: problemTitle || t.metadata?.title || '',
@@ -649,7 +725,8 @@ Date:          ${dateStr}
     };
 
     // 7. Open Document from Browser into Tab
-    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab }) => {
+    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId }) => {
+        const resolvedDocId = docId || documentId || null;
         if (asNewTab) {
             if (tabs.length >= 5) {
                 toast.error('Cannot open as new tab: Maximum 5 tabs reached.');
@@ -660,6 +737,7 @@ Date:          ${dateStr}
             newTab.title = name.replace(/\.(py|sql)$/i, '');
             newTab.filename = name;
             newTab.code = code;
+            newTab.documentId = resolvedDocId;
             newTab.metadata.title = newTab.title;
 
             const updatedTabs = [...tabs, newTab];
@@ -677,6 +755,7 @@ Date:          ${dateStr}
                               filename: name,
                               language: docLang,
                               code: code,
+                              documentId: resolvedDocId || t.documentId,
                               isDirty: false,
                               metadata: {
                                   ...t.metadata,
@@ -749,7 +828,7 @@ Date:          ${dateStr}
     };
 
     return (
-        <div className="flex flex-col h-[calc(100vh-4rem)] max-w-[100vw] overflow-hidden bg-slate-950 text-slate-100 font-sans">
+        <div className={`flex flex-col h-[calc(100vh-4rem)] max-w-[100vw] overflow-hidden font-sans ${isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
             {/* 1. TOP DESKTOP-GRADE IDE MENU BAR */}
             <IDEMenuBar
                 activeTab={activeTab}
@@ -819,7 +898,7 @@ Date:          ${dateStr}
             )}
 
             {/* 2. DYNAMIC MULTI-TAB STRIP (MAX 5 TABS) */}
-            <div className="flex items-center justify-between bg-slate-900/90 border-b border-slate-800 px-2 overflow-x-auto select-none flex-shrink-0">
+            <div className={`flex items-center justify-between border-b px-2 overflow-x-auto select-none flex-shrink-0 ${isLightMode ? 'bg-slate-200 border-slate-300' : 'bg-slate-900/90 border-slate-800'}`}>
                 {/* Tabs List */}
                 <div className="flex items-center gap-1 py-1">
                     {tabs.map((tab, idx) => {
@@ -838,7 +917,11 @@ Date:          ${dateStr}
                                 }}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[200px] group ${
                                     isActive
-                                        ? 'bg-slate-950 border-primary-500 text-white shadow-xs'
+                                        ? isLightMode
+                                            ? 'bg-white border-primary-600 text-slate-900 shadow-xs'
+                                            : 'bg-slate-950 border-primary-500 text-white shadow-xs'
+                                        : isLightMode
+                                        ? 'bg-slate-100 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                                         : 'bg-slate-900 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                 }`}
                                 title={`${tab.title} (${tab.filename}) - Double click to rename tab`}
@@ -846,8 +929,8 @@ Date:          ${dateStr}
                                 <span
                                     className={`text-[9px] font-bold px-1 py-0.2 rounded font-mono ${
                                         isSql
-                                            ? 'bg-sky-500/20 text-sky-400'
-                                            : 'bg-amber-500/20 text-amber-400'
+                                            ? 'bg-sky-500/20 text-sky-500 dark:text-sky-400'
+                                            : 'bg-amber-500/20 text-amber-500 dark:text-amber-400'
                                     }`}
                                 >
                                     {isSql ? 'SQL' : 'PY'}
@@ -866,7 +949,11 @@ Date:          ${dateStr}
                                             if (e.key === 'Escape') setEditingTabId(null);
                                         }}
                                         onBlur={() => handleCommitTabRename(tab.id)}
-                                        className="w-24 px-1 py-0.2 bg-slate-900 border border-primary-500 rounded text-[11px] font-mono text-white focus:outline-none"
+                                        className={`w-24 px-1 py-0.2 border rounded text-[11px] font-mono focus:outline-none ${
+                                            isLightMode
+                                                ? 'bg-white border-primary-600 text-slate-900'
+                                                : 'bg-slate-900 border-primary-500 text-white'
+                                        }`}
                                     />
                                 ) : (
                                     <span className="truncate flex-1 font-mono text-[11px] cursor-text" title="Double click to rename">
@@ -881,7 +968,11 @@ Date:          ${dateStr}
                                 {tabs.length > 1 && (
                                     <button
                                         onClick={(e) => handleCloseTab(tab.id, e)}
-                                        className="opacity-0 group-hover:opacity-100 hover:bg-slate-800 p-0.5 rounded text-slate-400 hover:text-white transition"
+                                        className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition ${
+                                            isLightMode
+                                                ? 'hover:bg-slate-200 text-slate-400 hover:text-slate-700'
+                                                : 'hover:bg-slate-800 text-slate-400 hover:text-white'
+                                        }`}
                                         title="Close Tab"
                                     >
                                         <X className="w-3 h-3" />
@@ -895,25 +986,31 @@ Date:          ${dateStr}
                     {tabs.length < 5 ? (
                         <button
                             onClick={() => handleAddTab()}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition ml-1"
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition ml-1 cursor-pointer ${
+                                isLightMode
+                                    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-300/60'
+                                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                            }`}
                             title="Open New Tab (Max 5)"
                         >
                             <Plus className="w-3.5 h-3.5" />
                             <span className="hidden sm:inline">Tab</span>
                         </button>
                     ) : (
-                        <span className="text-[10px] text-slate-500 ml-2 italic">Max 5 Tabs Open</span>
+                        <span className="text-[10px] text-slate-400 ml-2 italic">Max 5 Tabs Open</span>
                     )}
                 </div>
 
                 {/* Right controls: Language toggle for active tab */}
                 <div className="flex items-center gap-1 text-xs">
-                    <div className="flex items-center bg-slate-800 p-0.5 rounded border border-slate-700">
+                    <div className={`flex items-center p-0.5 rounded border ${isLightMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
                         <button
                             onClick={() => handleSwitchLanguage('python')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                                 activeTab.language === 'python'
-                                    ? 'bg-amber-500 text-slate-950'
+                                    ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                    : isLightMode
+                                    ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
                         >
@@ -921,9 +1018,11 @@ Date:          ${dateStr}
                         </button>
                         <button
                             onClick={() => handleSwitchLanguage('sql')}
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition ${
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
                                 activeTab.language === 'sql'
-                                    ? 'bg-sky-500 text-slate-950'
+                                    ? 'bg-sky-500 text-slate-950 shadow-xs'
+                                    : isLightMode
+                                    ? 'text-slate-600 hover:text-slate-900'
                                     : 'text-slate-400 hover:text-white'
                             }`}
                         >
@@ -933,9 +1032,13 @@ Date:          ${dateStr}
 
                     <button
                         onClick={() => setShowMetadataDrawer(!showMetadataDrawer)}
-                        className={`p-1 rounded border text-xs transition ${
+                        className={`p-1 rounded border text-xs transition cursor-pointer ${
                             showMetadataDrawer
-                                ? 'bg-primary-600/30 border-primary-500 text-primary-300'
+                                ? isLightMode
+                                    ? 'bg-primary-50 border-primary-300 text-primary-700'
+                                    : 'bg-primary-600/30 border-primary-500 text-primary-300'
+                                : isLightMode
+                                ? 'bg-slate-100 border-slate-300 text-slate-600 hover:text-slate-900'
                                 : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
                         }`}
                         title="Toggle Problem Details & Mandatory Fields Drawer"
@@ -947,26 +1050,26 @@ Date:          ${dateStr}
 
             {/* 3. PROBLEM DETAILS & MANDATORY FIELDS DRAWER */}
             {showMetadataDrawer && (
-                <div className="bg-slate-900 border-b border-slate-800 px-4 py-2.5 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs animate-in slide-in-from-top-1">
+                <div className={`border-b px-4 py-2.5 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs animate-in slide-in-from-top-1 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                     {/* Title (Mandatory) */}
                     <div className="md:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-300 flex items-center gap-1 mb-1">
+                        <label className={`text-[11px] font-bold flex items-center gap-1 mb-1 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
                             <span>Problem Title</span>
-                            <span className="text-rose-400 font-bold">*</span>
-                            <span className="text-[10px] text-slate-500 font-normal">(Mandatory for saving)</span>
+                            <span className="text-rose-500 font-bold">*</span>
+                            <span className="text-[10px] text-slate-400 font-normal">(Mandatory for saving)</span>
                         </label>
                         <input
                             type="text"
                             value={activeTab.metadata?.title || ''}
                             onChange={(e) => handleUpdateMetadata('title', e.target.value)}
                             placeholder="e.g. Factorial & Sum Calculation..."
-                            className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-white focus:outline-none focus:border-primary-500"
+                            className={`w-full px-2.5 py-1 border rounded text-xs focus:outline-none focus:border-primary-500 ${isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'}`}
                         />
                     </div>
 
                     {/* Subject / Course */}
                     <div>
-                        <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                        <label className={`text-[11px] font-bold block mb-1 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
                             Subject / Lab Course
                         </label>
                         <input
@@ -974,7 +1077,7 @@ Date:          ${dateStr}
                             value={activeTab.metadata?.subject || ''}
                             onChange={(e) => handleUpdateMetadata('subject', e.target.value)}
                             placeholder="e.g. Python Programming Lab"
-                            className="w-full px-2.5 py-1 bg-slate-950 border border-slate-700 rounded text-xs text-white focus:outline-none focus:border-primary-500"
+                            className={`w-full px-2.5 py-1 border rounded text-xs focus:outline-none focus:border-primary-500 ${isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'}`}
                         />
                     </div>
 
@@ -982,14 +1085,14 @@ Date:          ${dateStr}
                     <div className="flex items-end justify-between gap-2">
                         <div className="truncate">
                             <span className="text-[10px] text-slate-400 block">Student ID / Date</span>
-                            <span className="font-mono text-emerald-400 font-semibold text-xs">
+                            <span className={`font-mono font-semibold text-xs ${isLightMode ? 'text-emerald-700' : 'text-emerald-400'}`}>
                                 {activeTab.metadata?.studentId} • {activeTab.metadata?.date}
                             </span>
                         </div>
 
                         <button
                             onClick={handleInsertDocstringHeader}
-                            className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-primary-300 rounded text-[11px] font-semibold transition cursor-pointer flex-shrink-0"
+                            className={`px-2.5 py-1 border rounded text-[11px] font-semibold transition cursor-pointer flex-shrink-0 ${isLightMode ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-primary-300'}`}
                             title="Generate formatted comment/docstring block at the top of code"
                         >
                             Insert Header
@@ -1001,21 +1104,21 @@ Date:          ${dateStr}
             {/* 4. MAIN SPLIT SCREEN: LEFT EDITOR PANE, RIGHT OUTPUT & CANVAS */}
             <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 overflow-hidden">
                 {/* LEFT PANEL: Monaco Code Editor with Ergonomic RUN CODE Button Above */}
-                <section className="flex flex-col h-full border-r border-slate-800 overflow-hidden bg-slate-950">
+                <section className={`flex flex-col h-full border-r overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 flex-shrink-0">
+                    <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         {/* Left: Active filename & Runtime info */}
                         <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold text-emerald-400">
+                            <span className={`font-mono text-xs font-bold ${isLightMode ? 'text-primary-700' : 'text-emerald-400'}`}>
                                 {activeTab.filename}
                             </span>
-                            <span className="text-slate-600">•</span>
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-slate-400">•</span>
+                            <span className={`text-[11px] ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : 'Persistent SQLite Engine'}
                             </span>
                         </div>
 
-                        {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR */}
+                        {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR + AUTOSAVE/SAVE CONTROL */}
                         <div className="flex items-center gap-2.5">
                             <button
                                 onClick={handleExecuteCode}
@@ -1030,13 +1133,33 @@ Date:          ${dateStr}
                                 </kbd>
                             </button>
 
-                            <button
-                                onClick={() => handleSaveToDocuments(false)}
-                                className="p-1.5 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition"
-                                title="Save to Documents (Ctrl+S)"
-                            >
-                                <Save className="w-3.5 h-3.5 text-emerald-400" />
-                            </button>
+                            {/* Hide Save button and show Autosave badge when autosave is ON */}
+                            {isAutosaveEnabled ? (
+                                <div
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold select-none border ${
+                                        isLightMode
+                                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                                    }`}
+                                    title="Autosave is ON - your code is saved automatically"
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                    <span>Autosave ON</span>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => handleSaveToDocuments(false)}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer border ${
+                                        isLightMode
+                                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600 shadow-xs'
+                                            : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                                    }`}
+                                    title="Save to Documents (Ctrl+S)"
+                                >
+                                    <Save className="w-3.5 h-3.5" />
+                                    <span>Save</span>
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -1070,9 +1193,9 @@ Date:          ${dateStr}
 
                     {/* Collapsible Stdin Input (Python only) */}
                     {activeTab.language === 'python' && (
-                        <div className="p-2.5 bg-slate-900 border-t border-slate-800">
+                        <div className={`p-2.5 border-t ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                             <div className="flex items-center justify-between mb-1">
-                                <label className="text-[11px] font-semibold text-indigo-300 flex items-center gap-1">
+                                <label className={`text-[11px] font-semibold flex items-center gap-1 ${isLightMode ? 'text-indigo-700' : 'text-indigo-300'}`}>
                                     <Terminal className="w-3 h-3" />
                                     Standard Input (stdin for input() prompts)
                                 </label>
@@ -1082,29 +1205,40 @@ Date:          ${dateStr}
                                 onChange={(e) => handleStdinChange(e.target.value)}
                                 placeholder="Values entered here feed sequentially into input() calls..."
                                 rows={2}
-                                className="w-full p-2 bg-slate-950 border border-slate-700 rounded font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500 resize-none placeholder-slate-600"
+                                style={{ fontSize: `${fontSize}px` }}
+                                className={`w-full p-2 border rounded font-mono focus:outline-none focus:border-indigo-500 resize-none ${
+                                    isLightMode
+                                        ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                                        : 'bg-slate-950 border-slate-700 text-slate-200 placeholder-slate-600'
+                                }`}
                             />
                         </div>
                     )}
                 </section>
 
                 {/* RIGHT PANEL: COORDINATED OUTPUT & VISUAL FLOWCHART CANVAS */}
-                <section className="flex flex-col h-full overflow-hidden bg-slate-900/60">
+                <section className={`flex flex-col h-full overflow-hidden ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
                     {/* Tab Navigation Header */}
-                    <div className="flex items-center justify-between px-3 bg-slate-900 border-b border-slate-800 flex-shrink-0">
+                    <div className={`flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         <div className="flex items-center gap-1">
                             <button
                                 onClick={() => setRightPanelMode('output')}
-                                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition ${
+                                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
                                     rightPanelMode === 'output'
-                                        ? 'border-emerald-500 text-emerald-400'
+                                        ? isLightMode
+                                            ? 'border-emerald-600 text-emerald-700'
+                                            : 'border-emerald-500 text-emerald-400'
+                                        : isLightMode
+                                        ? 'border-transparent text-slate-500 hover:text-slate-800'
                                         : 'border-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                             >
                                 <Terminal className="w-3.5 h-3.5" />
                                 <span>Output Screen ({activeTab.title})</span>
                                 {activeTab.output?.durationMs !== undefined && (
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 font-mono">
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                                        isLightMode ? 'bg-slate-100 text-slate-600 border border-slate-200' : 'bg-slate-800 text-slate-300'
+                                    }`}>
                                         {activeTab.output.durationMs}ms
                                     </span>
                                 )}
@@ -1114,15 +1248,19 @@ Date:          ${dateStr}
                             {activeTab.language === 'sql' && activeTab.output?.tables && activeTab.output.tables.length > 0 && (
                                 <button
                                     onClick={() => setRightPanelMode('table')}
-                                    className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition ${
+                                    className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
                                         rightPanelMode === 'table'
-                                            ? 'border-sky-500 text-sky-400'
+                                            ? isLightMode
+                                                ? 'border-sky-600 text-sky-700'
+                                                : 'border-sky-500 text-sky-400'
+                                            : isLightMode
+                                            ? 'border-transparent text-slate-500 hover:text-slate-800'
                                             : 'border-transparent text-slate-400 hover:text-slate-200'
                                     }`}
                                 >
                                     <FileSpreadsheet className="w-3.5 h-3.5" />
                                     <span>Query Results</span>
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-300 font-mono">
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-300 font-mono">
                                         {activeTab.output.tables.length} rows
                                     </span>
                                 </button>
@@ -1131,9 +1269,13 @@ Date:          ${dateStr}
                             {/* Flowchart / Diagram Canvas Tab */}
                             <button
                                 onClick={() => setRightPanelMode('diagram')}
-                                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition ${
+                                className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
                                     rightPanelMode === 'diagram'
-                                        ? 'border-purple-500 text-purple-400'
+                                        ? isLightMode
+                                            ? 'border-purple-600 text-purple-700'
+                                            : 'border-purple-500 text-purple-400'
+                                        : isLightMode
+                                        ? 'border-transparent text-slate-500 hover:text-slate-800'
                                         : 'border-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                             >
@@ -1148,7 +1290,7 @@ Date:          ${dateStr}
 
                         {/* Persistent DB Tables list indicator (SQL mode) */}
                         {activeTab.language === 'sql' && existingTables.length > 0 && (
-                            <div className="flex items-center gap-1 text-[11px] text-sky-400">
+                            <div className="flex items-center gap-1 text-[11px] text-sky-500 font-medium">
                                 <Database className="w-3.5 h-3.5" />
                                 <span className="font-mono font-semibold">{existingTables.length} tables saved</span>
                             </div>
@@ -1171,7 +1313,7 @@ Date:          ${dateStr}
                                                 className={`inline-flex items-center gap-1 font-semibold ${
                                                     activeTab.output.exitCode === 0
                                                         ? currentOutputTheme.accentText
-                                                        : 'text-rose-400'
+                                                        : 'text-rose-500'
                                                 }`}
                                             >
                                                 {activeTab.output.exitCode === 0 ? (
@@ -1194,7 +1336,8 @@ Date:          ${dateStr}
                                     {/* Standard Output (stdout) */}
                                     {activeTab.output.stdout ? (
                                         <div
-                                            className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono text-xs ${currentOutputTheme.stdoutClass}`}
+                                            style={{ fontSize: `${fontSize}px` }}
+                                            className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono ${currentOutputTheme.stdoutClass}`}
                                         >
                                             {activeTab.output.stdout}
                                         </div>
@@ -1206,8 +1349,11 @@ Date:          ${dateStr}
 
                                     {/* Standard Error (stderr) */}
                                     {activeTab.output.stderr && (
-                                        <div className="bg-rose-950/40 p-3 rounded-lg border border-rose-800/60 text-rose-300 whitespace-pre-wrap leading-relaxed select-text font-mono text-xs">
-                                            <div className="flex items-center gap-1.5 font-bold text-rose-400 mb-1">
+                                        <div
+                                            style={{ fontSize: `${fontSize}px` }}
+                                            className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300 p-3 rounded-lg whitespace-pre-wrap leading-relaxed select-text font-mono"
+                                        >
+                                            <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 mb-1 text-xs">
                                                 <AlertCircle className="w-4 h-4" />
                                                 <span>Runtime / Syntax Error:</span>
                                             </div>
@@ -1221,7 +1367,7 @@ Date:          ${dateStr}
                                     <p className="text-sm font-semibold">No execution output for {activeTab.title}</p>
                                     <p className="text-xs mt-1 max-w-sm">
                                         Click <span className="font-semibold underline">Run Code</span> above the editor or press{' '}
-                                        <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-[10px]">
+                                        <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px]">
                                             Ctrl+Enter
                                         </kbd>{' '}
                                         to execute this tab.
@@ -1235,39 +1381,39 @@ Date:          ${dateStr}
                     {rightPanelMode === 'table' && activeTab.output?.tables && (
                         <div className="flex-1 flex flex-col p-4 overflow-auto">
                             <div className="flex items-center justify-between mb-3">
-                                <h3 className="text-xs font-bold text-slate-200 flex items-center gap-2">
-                                    <FileSpreadsheet className="w-4 h-4 text-sky-400" />
+                                <h3 className={`text-xs font-bold flex items-center gap-2 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
+                                    <FileSpreadsheet className="w-4 h-4 text-sky-500" />
                                     <span>Query Result Set ({activeTab.output.tables.length} rows)</span>
                                 </h3>
                             </div>
 
-                            <div className="flex-1 overflow-auto rounded-lg border border-slate-800 bg-slate-950 shadow-inner">
+                            <div className={`flex-1 overflow-auto rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
                                 <table className="w-full text-left text-xs border-collapse">
                                     <thead>
-                                        <tr className="bg-slate-900 border-b border-slate-800">
-                                            <th className="p-2.5 text-[11px] font-bold text-slate-400 uppercase tracking-wider w-10 text-center">
+                                        <tr className={`border-b ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                                            <th className="p-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider w-10 text-center">
                                                 #
                                             </th>
                                             {Object.keys(activeTab.output.tables[0] || {}).map((col) => (
                                                 <th
                                                     key={col}
-                                                    className="p-2.5 text-[11px] font-bold text-sky-400 font-mono tracking-wider border-l border-slate-800"
+                                                    className={`p-2.5 text-[11px] font-bold font-mono tracking-wider border-l ${isLightMode ? 'border-slate-200 text-sky-700' : 'border-slate-800 text-sky-400'}`}
                                                 >
                                                     {col}
                                                 </th>
                                             ))}
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-800 font-mono">
+                                    <tbody className={`divide-y font-mono ${isLightMode ? 'divide-slate-200 text-slate-800' : 'divide-slate-800 text-slate-200'}`}>
                                         {activeTab.output.tables.map((row, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-900/60 transition">
+                                            <tr key={idx} className={`transition ${isLightMode ? 'hover:bg-slate-50' : 'hover:bg-slate-900/60'}`}>
                                                 <td className="p-2.5 text-[10px] text-slate-400 text-center select-none">
                                                     {idx + 1}
                                                 </td>
                                                 {Object.keys(row).map((col) => (
                                                     <td
                                                         key={col}
-                                                        className="p-2.5 text-slate-200 border-l border-slate-800 whitespace-nowrap"
+                                                        className={`p-2.5 border-l whitespace-nowrap ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}
                                                     >
                                                         {row[col] !== null && row[col] !== undefined ? (
                                                             String(row[col])
@@ -1299,6 +1445,7 @@ Date:          ${dateStr}
                                     );
                                 }}
                                 readOnly={Boolean(inspectingStudentId)}
+                                theme={isLightMode ? 'light' : 'dark'}
                             />
                         </div>
                     )}
