@@ -40,12 +40,17 @@ export default function DocumentCodeBrowserModal({
             try {
                 // 1. Fetch folders
                 const foldersRes = await foldersAPI.getAll();
-                const fetchedFolders = foldersRes.data?.data || [];
+                const rawFolders = foldersRes.data?.data;
+                const fetchedFolders = Array.isArray(rawFolders)
+                    ? rawFolders
+                    : Array.isArray(rawFolders?.folders)
+                    ? rawFolders.folders
+                    : [];
                 setFolders(fetchedFolders);
 
                 // Find Python or SQL folder as default
                 const targetFolder = fetchedFolders.find((f) =>
-                    f.name.toLowerCase() === defaultLanguage.toLowerCase()
+                    f.name?.toLowerCase() === defaultLanguage.toLowerCase()
                 );
                 if (targetFolder) {
                     setSelectedFolderId(targetFolder.id);
@@ -57,7 +62,12 @@ export default function DocumentCodeBrowserModal({
                 const docsRes = await documentsAPI.getAll({
                     category: 'code'
                 });
-                const fetchedDocs = docsRes.data?.data || [];
+                const rawDocs = docsRes.data?.data;
+                const fetchedDocs = Array.isArray(rawDocs)
+                    ? rawDocs
+                    : Array.isArray(rawDocs?.documents)
+                    ? rawDocs.documents
+                    : [];
                 setDocuments(fetchedDocs);
             } catch (err) {
                 console.error('Failed to load documents:', err);
@@ -72,8 +82,12 @@ export default function DocumentCodeBrowserModal({
 
     if (!isOpen) return null;
 
+    // Safe arrays
+    const safeDocuments = Array.isArray(documents) ? documents : [];
+    const safeFolders = Array.isArray(folders) ? folders : [];
+
     // Filter documents
-    const filteredDocs = documents.filter((doc) => {
+    const filteredDocs = safeDocuments.filter((doc) => {
         const matchesFolder =
             selectedFolderId === 'all' || doc.folderId === selectedFolderId;
         const matchesSearch =
@@ -153,9 +167,9 @@ export default function DocumentCodeBrowserModal({
                                     : 'bg-slate-800 text-slate-400 hover:text-white'
                             }`}
                         >
-                            All Files ({documents.length})
+                            All Files ({safeDocuments.length})
                         </button>
-                        {folders.map((f) => (
+                        {safeFolders.map((f) => (
                             <button
                                 key={f.id}
                                 onClick={() => setSelectedFolderId(f.id)}

@@ -537,7 +537,12 @@ Date:          ${dateStr}
             // 1. Resolve or Create Folder
             const targetFolderName = activeTab.language === 'sql' ? 'SQL' : 'Python';
             const foldersRes = await foldersAPI.getAll();
-            const foldersList = foldersRes.data?.data || [];
+            const rawFolders = foldersRes.data?.data;
+            const foldersList = Array.isArray(rawFolders)
+                ? rawFolders
+                : Array.isArray(rawFolders?.folders)
+                ? rawFolders.folders
+                : [];
             let targetFolder = foldersList.find(
                 (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
             );
@@ -547,7 +552,7 @@ Date:          ${dateStr}
                     name: targetFolderName,
                     color: activeTab.language === 'sql' ? '#0284c7' : '#f59e0b'
                 });
-                targetFolder = createFolderRes.data?.data;
+                targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
             }
 
             // 2. Upload file
