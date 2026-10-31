@@ -30,6 +30,7 @@ api.interceptors.request.use((config) => {
     // Do not attach stale Authorization headers to public/auth endpoints
     const isPublicAuthEndpoint =
         url.includes('/auth/login') ||
+        url.includes('/auth/admin-login') ||
         url.includes('/auth/register') ||
         url.includes('/auth/login-with-pin') ||
         url.includes('/auth/reset-admin-password') ||
@@ -142,6 +143,7 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
     login: (email, password) => api.post('/auth/login', { email, password }),
+    adminLogin: (email, password) => api.post('/auth/admin-login', { email, password }),
     register: (data) => api.post('/auth/register', data),
     logout: () => api.post('/auth/logout'),
     getMe: () => api.get('/auth/me'),

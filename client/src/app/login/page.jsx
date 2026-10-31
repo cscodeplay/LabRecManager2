@@ -7,7 +7,7 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { Eye, EyeOff, GraduationCap, LogIn, Calendar, KeyRound, Lock, Globe, ChevronDown, Check, Search } from 'lucide-react';
+import { Eye, EyeOff, GraduationCap, LogIn, Calendar, KeyRound, Lock, Globe, ChevronDown, Check, Search, Shield } from 'lucide-react';
 import { authAPI } from '@/lib/api';
 import { useAuthStore, useLanguageStore } from '@/lib/store';
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n';
@@ -665,16 +665,16 @@ export default function LoginPage() {
                             </div>
                         )}
 
-                        {/* Demo Credentials */}
-                        {loginMode === 'password' && (
-                            <div className="mt-6 p-4 bg-slate-50 rounded-xl">
-                                <p className="text-sm font-medium text-slate-700 mb-2">{t('auth.demoCredentials')}:</p>
-                                <div className="space-y-1 text-sm text-slate-600">
-                                    <p><span className="font-medium">Admin:</span> admin@dps.edu / admin123</p>
-                                    <p><span className="font-medium">Instructor:</span> instructor@dps.edu / instructor123</p>
-                                </div>
-                            </div>
-                        )}
+                        {/* Administrator Login Link */}
+                        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+                            <Link
+                                href="/adminmoslogin"
+                                className="text-xs text-slate-400 hover:text-slate-600 font-medium inline-flex items-center gap-1.5 transition"
+                            >
+                                <Shield className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Administrator Portal Login</span>
+                            </Link>
+                        </div>
                     </div>
                 </div>
             </div>

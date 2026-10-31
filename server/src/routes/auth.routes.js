@@ -94,7 +94,9 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
     }
 
     // Check if user must set a new password before accessing the application
-    if (user.mustChangePassword) {
+    // Admins and Principals are strictly exempt from mandatory first-time password setup locks
+    const isExemptFromPasswordSetup = ['admin', 'principal'].includes(user.role);
+    if (user.mustChangePassword && !isExemptFromPasswordSetup) {
         return res.status(403).json({
             success: false,
             requiresPasswordSetup: true,
@@ -105,6 +107,14 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
                 firstName: user.firstName
             }
         });
+    }
+
+    // Auto-clear mustChangePassword if set on an administrative account
+    if (isExemptFromPasswordSetup && user.mustChangePassword) {
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { mustChangePassword: false }
+        }).catch(err => console.warn('Could not auto-clear admin mustChangePassword:', err.message));
     }
 
     // Generate tokens
@@ -161,6 +171,143 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
                 preferredLanguage: user.preferredLanguage,
                 profileImageUrl: user.profileImageUrl,
                 school: user.school
+            },
+            accessToken,
+            refreshToken
+        }
+    });
+}));
+
+/**
+ * @route   POST /api/auth/admin-login
+ * @desc    Dedicated secure login endpoint for administrators and principals (/adminmoslogin)
+ * @access  Public
+ */
+router.post('/admin-login', [
+    body('email').isEmail().normalizeEmail(),
+    body('password').notEmpty()
+], asyncHandler(async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            success: false,
+            message: 'Validation failed',
+            errors: errors.array()
+        });
+    }
+
+    const { email, password } = req.body;
+
+    const user = await prisma.user.findFirst({
+        where: { email },
+        include: {
+            school: {
+                select: {
+                    id: true,
+                    name: true,
+                    nameHindi: true,
+                    primaryLanguage: true,
+                    logoUrl: true
+                }
+            }
+        }
+    });
+
+    if (!user) {
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid administrative credentials',
+            messageHindi: 'अमान्य व्यवस्थापक क्रेडेंशियल'
+        });
+    }
+
+    // Role restriction: Only admin and principal may authenticate via this endpoint
+    if (!['admin', 'principal'].includes(user.role)) {
+        return res.status(403).json({
+            success: false,
+            message: 'Access restricted. This portal is strictly reserved for administrative personnel. Students and instructors must use the standard login portal.',
+            messageHindi: 'पहुँच प्रतिबंधित। यह पोर्टल केवल प्रशासनिक कर्मियों के लिए आरक्षित है।'
+        });
+    }
+
+    if (!user.isActive) {
+        return res.status(401).json({
+            success: false,
+            message: 'Administrator account is deactivated. Contact the system administrator.',
+            messageHindi: 'व्यवस्थापक खाता निष्क्रिय है।'
+        });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.passwordHash);
+    if (!isMatch) {
+        return res.status(401).json({
+            success: false,
+            message: 'Invalid administrative credentials',
+            messageHindi: 'अमान्य व्यवस्थापक क्रेडेंशियल'
+        });
+    }
+
+    // Automatically ensure mustChangePassword is false for admins
+    if (user.mustChangePassword) {
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { mustChangePassword: false }
+        }).catch(() => {});
+    }
+
+    // Generate tokens
+    const accessToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        jwtConfig.secret,
+        { expiresIn: jwtConfig.expiresIn }
+    );
+
+    const refreshToken = jwt.sign(
+        { userId: user.id, type: 'refresh' },
+        jwtConfig.secret,
+        { expiresIn: jwtConfig.refreshExpiresIn }
+    );
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: { lastLogin: new Date() }
+    });
+
+    try {
+        await prisma.activityLog.create({
+            data: {
+                userId: user.id,
+                schoolId: user.schoolId,
+                actionType: 'admin_login',
+                description: 'Administrator logged in via dedicated /adminmoslogin portal',
+                ipAddress: req.ip,
+                userAgent: req.get('User-Agent')
+            }
+        });
+    } catch (logError) {
+        console.warn('Failed to log admin login activity:', logError.message);
+    }
+
+    res.json({
+        success: true,
+        message: 'Administrator login successful',
+        messageHindi: 'व्यवस्थापक लॉगिन सफल',
+        data: {
+            user: {
+                id: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                firstNameHindi: user.firstNameHindi,
+                lastName: user.lastName,
+                lastNameHindi: user.lastNameHindi,
+                role: user.role,
+                studentId: user.studentId,
+                admissionNumber: user.admissionNumber,
+                employeeId: user.employeeId,
+                preferredLanguage: user.preferredLanguage,
+                profileImageUrl: user.profileImageUrl,
+                school: user.school,
+                mustChangePassword: false
             },
             accessToken,
             refreshToken
