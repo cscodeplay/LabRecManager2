@@ -126,6 +126,7 @@ export default function DocumentCodeBrowserModal({
                 code: codeText,
                 language: lang,
                 documentId: doc.id,
+                updatedAt: doc.updatedAt || doc.createdAt,
                 asNewTab
             });
 
@@ -238,13 +239,18 @@ export default function DocumentCodeBrowserModal({
                                             <p className="text-xs font-bold text-slate-200 truncate group-hover:text-primary-300">
                                                 {doc.name || doc.fileName}
                                             </p>
-                                            <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5 font-mono">
-                                                <span>{(doc.fileSize / 1024).toFixed(1)} KB</span>
-                                                <span>•</span>
-                                                <span>
-                                                    {doc.updatedAt
-                                                        ? new Date(doc.updatedAt).toLocaleDateString()
-                                                        : 'Saved'}
+                                            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                                <span className="font-mono text-slate-500">{(doc.fileSize / 1024).toFixed(1)} KB</span>
+                                                <span className="text-slate-600">•</span>
+                                                <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                                                    <Clock className="w-3 h-3 text-emerald-500" />
+                                                    {doc.updatedAt ? (
+                                                        <>
+                                                            <span>Last saved: {new Date(doc.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(doc.updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span>Saved</span>
+                                                    )}
                                                 </span>
                                             </div>
                                         </div>

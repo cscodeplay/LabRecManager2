@@ -13,7 +13,8 @@ import {
     FileSpreadsheet,
     Terminal,
     Database,
-    Tag
+    Tag,
+    Clock
 } from 'lucide-react';
 
 export default function SaveAsDialogModal({
@@ -26,7 +27,8 @@ export default function SaveAsDialogModal({
     currentDescription = '',
     studentIdentifier = 'student',
     availableFolders = [],
-    existingDocs = []
+    existingDocs = [],
+    lastAutosavedAt = null
 }) {
     const [fileNameWithoutExt, setFileNameWithoutExt] = useState('');
     const [fileType, setFileType] = useState(currentLanguage === 'sql' ? 'sql' : 'python');
@@ -175,6 +177,17 @@ export default function SaveAsDialogModal({
 
                 {/* Form Body */}
                 <form onSubmit={handleFormSubmit} className="p-5 space-y-4">
+                    {/* Last Autosaved Datetime Indicator */}
+                    {lastAutosavedAt && (
+                        <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400">Current code last autosaved:</span>
+                            <span className="text-emerald-400 font-medium flex items-center gap-1 font-mono">
+                                <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                                {new Date(lastAutosavedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} at {new Date(lastAutosavedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                        </div>
+                    )}
+
                     {/* Destination Folder Row */}
                     <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">

@@ -63,7 +63,9 @@ export default function IDEMenuBar({
     onOpenEngineModal,
     onOpenInspectorStudio,
     latestStudentReview,
-    onOpenFeedbackDrawer
+    onOpenFeedbackDrawer,
+    lastAutosavedAt = null,
+    autosaveStatus = 'saved'
 }) {
     const [openMenu, setOpenMenu] = useState(null); // 'file' | 'edit' | 'view' | 'run' | 'inspect' | null
     const menuRef = useRef(null);
@@ -409,18 +411,37 @@ export default function IDEMenuBar({
 
             {/* Right: Autosave Toggle & Instructor Inspection Selector */}
             <div className="flex items-center gap-2.5">
-                {/* Autosave Status Pill */}
+                {/* Autosave Status & Datetime Pill */}
                 <div
                     onClick={onToggleAutosave}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer transition ${
                         isLightMode ? 'hover:bg-slate-100' : 'hover:bg-slate-800'
                     }`}
-                    title={`Autosave is ${isAutosaveEnabled ? 'ENABLED' : 'DISABLED'}. Click to toggle.`}
+                    title={
+                        isAutosaveEnabled
+                            ? (lastAutosavedAt
+                                ? `Autosave is ON. Last autosaved at ${new Date(lastAutosavedAt).toLocaleTimeString()} on ${new Date(lastAutosavedAt).toLocaleDateString()}. Click to disable.`
+                                : 'Autosave is ON. Click to disable.')
+                            : 'Autosave is OFF. Click to enable.'
+                    }
                 >
                     {isAutosaveEnabled ? (
                         <>
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">Autosave: ON</span>
+                            {autosaveStatus === 'saving' ? (
+                                <>
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                                    <span className="text-[11px] text-emerald-500 font-bold">Autosaving...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                        {lastAutosavedAt
+                                            ? `Autosaved ${new Date(lastAutosavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                            : 'Autosave: ON'}
+                                    </span>
+                                </>
+                            )}
                         </>
                     ) : (
                         <>

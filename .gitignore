@@ -53,7 +53,7 @@ coverage/
 server/prisma/migrations/.DS_Store
 
 # Student workspaces & local databases
-server/storage/workspaces/students/*
+server/storage/
 *.sqlite
 *.sqlite-journal
 

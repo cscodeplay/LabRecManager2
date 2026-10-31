@@ -205,6 +205,7 @@ export function PracticeIDEPage() {
     // Autosave Toggle (ON / OFF)
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
     const [autosaveStatus, setAutosaveStatus] = useState('saved'); // 'saved' | 'saving'
+    const [lastAutosavedAt, setLastAutosavedAt] = useState(null);
     const autosaveTimerRef = useRef(null);
 
     // Problem Details / Metadata Drawer
@@ -298,6 +299,7 @@ export function PracticeIDEPage() {
                     if (ws.outputTheme) setOutputThemeId(ws.outputTheme);
                     if (ws.existingTables) setExistingTables(ws.existingTables);
                     if (ws.isAutosaveEnabled !== undefined) setIsAutosaveEnabled(ws.isAutosaveEnabled);
+                    if (ws.updatedAt) setLastAutosavedAt(ws.updatedAt);
                     if (ws.reviewData?.latestReview) setLatestStudentReview(ws.reviewData.latestReview);
 
                     if (ws.studentInfo) {
@@ -395,15 +397,18 @@ export function PracticeIDEPage() {
                 const isSql = fileName.endsWith('.sql') || docData?.category === 'sql';
                 const lang = isSql ? 'sql' : 'python';
 
+                const docUpdatedAt = docData?.updatedAt || docData?.createdAt;
+
                 if (isMounted && codeText) {
+                    if (docUpdatedAt) setLastAutosavedAt(docUpdatedAt);
                     handleOpenDocumentContent({
                         name: fileName,
                         code: codeText,
                         language: lang,
                         documentId: urlDocId,
+                        updatedAt: docUpdatedAt,
                         asNewTab: false
                     });
-                    toast.success(`Loaded saved code: ${fileName}`, { icon: '📄' });
                 }
             } catch (err) {
                 console.warn('URL doc load failed:', err.message);
@@ -421,12 +426,14 @@ export function PracticeIDEPage() {
             const tabsToSave = updatedTabs || tabsRef.current || tabs;
             const activeIdToSave = updatedActiveId || activeTabIdRef.current || activeTabId;
             const isAuto = autosaveState !== undefined ? autosaveState : isAutosaveEnabled;
+            const nowIso = new Date().toISOString();
 
             if (typeof window !== 'undefined') {
                 localStorage.setItem(`ulrms_ide_tabs_${user?.id || 'guest'}`, JSON.stringify(tabsToSave));
             }
 
             try {
+                // 1. Save workspace state to server
                 await compilerAPI.saveWorkspace({
                     tabs: tabsToSave,
                     activeTabId: activeIdToSave,
@@ -434,12 +441,33 @@ export function PracticeIDEPage() {
                     editorTheme,
                     outputTheme: outputThemeId
                 });
+
+                // 2. If the active tab has a linked document in Documents, auto-sync document file directly
+                const currentActiveTab = tabsToSave.find((t) => t.id === activeIdToSave);
+                if (currentActiveTab?.documentId && currentActiveTab?.code) {
+                    try {
+                        const fileBlob = new Blob([currentActiveTab.code], { type: 'text/plain;charset=utf-8' });
+                        const fileObj = new File([fileBlob], currentActiveTab.filename || 'script.txt', { type: 'text/plain' });
+                        await documentsAPI.upload(fileObj, {
+                            name: currentActiveTab.filename,
+                            description: `${currentActiveTab.metadata?.title || ''} - ${currentActiveTab.metadata?.description || ''}`.trim(),
+                            category: 'code',
+                            overwrite: true,
+                            existingDocumentId: currentActiveTab.documentId
+                        });
+                        loadExistingDocs();
+                    } catch (docSyncErr) {
+                        console.warn('[Autosave] Document sync notice:', docSyncErr.message);
+                    }
+                }
+
+                setLastAutosavedAt(nowIso);
                 setAutosaveStatus('saved');
             } catch (e) {
                 setAutosaveStatus('saved');
             }
         },
-        [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId]
+        [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs]
     );
 
     // Code change handler
@@ -866,9 +894,18 @@ Date:          ${dateStr}
     };
 
     // 7. Open Document from Browser into Tab
-    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId }) => {
+    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, updatedAt }) => {
         const resolvedDocId = docId || documentId || null;
         const currentTabs = tabsRef.current || tabs;
+
+        if (updatedAt) {
+            setLastAutosavedAt(updatedAt);
+        }
+
+        const savedTimeStr = updatedAt
+            ? `(Last saved: ${new Date(updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
+            : '';
+
         if (asNewTab) {
             if (currentTabs.length >= 5) {
                 toast.error('Cannot open as new tab: Maximum 5 tabs reached.');
@@ -881,11 +918,13 @@ Date:          ${dateStr}
             newTab.code = code;
             newTab.documentId = resolvedDocId;
             newTab.metadata.title = newTab.title;
+            newTab.lastSavedAt = updatedAt || new Date().toISOString();
 
             const updatedTabs = [...currentTabs, newTab];
             setTabs(updatedTabs);
             setActiveTabId(newId);
             triggerSaveWorkspace(updatedTabs, newId);
+            toast.success(`Opened "${name}" in new tab ${savedTimeStr}`, { icon: '📄' });
         } else {
             // Replace in active tab
             const updatedTabs = currentTabs.map((t) =>
@@ -897,6 +936,7 @@ Date:          ${dateStr}
                           language: docLang,
                           code: code,
                           documentId: resolvedDocId || t.documentId,
+                          lastSavedAt: updatedAt || new Date().toISOString(),
                           isDirty: false,
                           metadata: {
                               ...t.metadata,
@@ -907,6 +947,7 @@ Date:          ${dateStr}
             );
             setTabs(updatedTabs);
             triggerSaveWorkspace(updatedTabs, activeTabId);
+            toast.success(`Loaded "${name}" ${savedTimeStr}`, { icon: '📄' });
         }
     };
 
@@ -1020,6 +1061,8 @@ Date:          ${dateStr}
                 onOpenInspectorStudio={() => setShowInspectorModal(true)}
                 latestStudentReview={latestStudentReview}
                 onOpenFeedbackDrawer={() => setShowFeedbackDrawer(true)}
+                lastAutosavedAt={lastAutosavedAt}
+                autosaveStatus={autosaveStatus}
             />
 
             {/* Inspection Alert Banner (If Instructor reviewing a student) */}
@@ -1301,6 +1344,35 @@ Date:          ${dateStr}
                             <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
                                 {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')}
                             </span>
+                            {isAutosaveEnabled && (
+                                <>
+                                    <span className="text-slate-400 hidden sm:inline">•</span>
+                                    <span
+                                        className={`text-[11px] font-mono flex items-center gap-1.5 ${
+                                            autosaveStatus === 'saving'
+                                                ? 'text-amber-500'
+                                                : isLightMode
+                                                ? 'text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200'
+                                                : 'text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/60'
+                                        }`}
+                                        title={lastAutosavedAt ? `Last autosaved on ${new Date(lastAutosavedAt).toLocaleDateString()} at ${new Date(lastAutosavedAt).toLocaleTimeString()}` : 'Autosave active'}
+                                    >
+                                        {autosaveStatus === 'saving' ? (
+                                            <>
+                                                <RefreshCw className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+                                                <span>Autosaving...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                <span>
+                                                    Autosaved: {lastAutosavedAt ? new Date(lastAutosavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Saved'}
+                                                </span>
+                                            </>
+                                        )}
+                                    </span>
+                                </>
+                            )}
                         </div>
 
                         {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR + AUTOSAVE/SAVE CONTROL */}
@@ -1711,6 +1783,20 @@ Date:          ${dateStr}
                                 }}
                                 readOnly={Boolean(inspectingStudentId)}
                                 theme={isLightMode ? 'light' : 'dark'}
+                                language={activeTab.language}
+                                onInsertSqlDdl={(sqlCode) => {
+                                    if (activeTab.language === 'sql') {
+                                        const newCode = activeTab.code?.trim() ? `${activeTab.code.trim()}\n\n${sqlCode}` : sqlCode;
+                                        handleCodeChange(newCode);
+                                        toast.success('Inserted ER SQL DDL into active SQL editor tab!');
+                                    } else {
+                                        handleAddTab('sql');
+                                        setTimeout(() => {
+                                            handleCodeChange(sqlCode);
+                                            toast.success('Created new SQL tab with ER Schema DDL!');
+                                        }, 150);
+                                    }
+                                }}
                             />
                         </div>
                     )}
@@ -1736,6 +1822,7 @@ Date:          ${dateStr}
                 currentDescription={activeTab.metadata?.description || ''}
                 studentIdentifier={studentIdentifier}
                 existingDocs={existingDocs}
+                lastAutosavedAt={lastAutosavedAt}
             />
 
             {/* Practice SQL Database Engine Modal */}
