@@ -378,10 +378,11 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
 
             {/* Sidebar */}
             <aside
-                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 ${isMobile
-                    ? `w-72 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`
-                    : isCollapsed ? 'w-20' : 'w-64'
-                    }`}
+                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 w-72 lg:w-auto ${
+                    isCollapsed ? 'lg:w-20' : 'lg:w-64'
+                } ${
+                    isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+                }`}
             >
                 {sidebarContent}
             </aside>

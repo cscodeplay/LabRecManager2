@@ -116,7 +116,7 @@ export default function IDEMenuBar({
     return (
         <div
             ref={menuRef}
-            className={`flex flex-wrap items-center justify-between px-3 py-1 border-b text-xs select-none z-40 relative ${
+            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap overflow-x-auto no-scrollbar ${
                 isLightMode
                     ? 'bg-white border-slate-200 text-slate-700'
                     : 'bg-slate-900 border-slate-800 text-slate-300'
@@ -125,9 +125,9 @@ export default function IDEMenuBar({
             {/* Left Menus: File, Edit, View, Run */}
             <div className="flex items-center gap-1">
                 {/* Brand / Logo Icon */}
-                <div className={`flex items-center gap-1.5 pr-2 mr-1 border-r ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
+                <div className={`flex items-center gap-1.5 pr-1.5 sm:pr-2 mr-1 border-r ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
                     <span className="font-extrabold bg-gradient-to-r from-amber-500 to-sky-500 bg-clip-text text-transparent text-xs tracking-wider font-mono">
-                        PYTHON & SQL STUDIO
+                        <span className="hidden sm:inline">PYTHON & SQL </span>STUDIO
                     </span>
                 </div>
 
@@ -470,7 +470,7 @@ export default function IDEMenuBar({
                     </button>
                 ) : (
                     <div
-                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                        className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-semibold border shrink-0 ${
                             isLightMode
                                 ? 'bg-slate-100 border-slate-200 text-slate-600'
                                 : 'bg-slate-800/80 border-slate-700 text-slate-300'
@@ -478,7 +478,8 @@ export default function IDEMenuBar({
                         title="Active SQL engine preselected by school administrator"
                     >
                         <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                        <span>Engine: {activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
+                        <span className="hidden sm:inline">Engine: </span>
+                        <span>{activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
                     </div>
                 )}
 

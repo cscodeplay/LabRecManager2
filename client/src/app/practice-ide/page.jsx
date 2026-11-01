@@ -195,14 +195,24 @@ export function PracticeIDEPage() {
     const activeTabIdRef = useRef(activeTabId);
     activeTabIdRef.current = activeTabId;
 
-    // Autosave Toggle (ON / OFF)
+    // Autosave Toggle & Flashing Disappearing Indicator
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
     const [autosaveStatus, setAutosaveStatus] = useState('saved'); // 'saved' | 'saving'
     const [lastAutosavedAt, setLastAutosavedAt] = useState(null);
     const autosaveTimerRef = useRef(null);
+    const [autosaveFlash, setAutosaveFlash] = useState({ visible: false, status: 'saved', text: '' });
+    const autosaveFlashTimerRef = useRef(null);
 
-    // Problem Details / Metadata Drawer
-    const [showMetadataDrawer, setShowMetadataDrawer] = useState(true);
+    // Problem Details / Metadata Drawer (Collapsed by default on mobile < lg)
+    const [showMetadataDrawer, setShowMetadataDrawer] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return window.innerWidth >= 1024;
+        }
+        return false;
+    });
+
+    // Collapsible stdin input on mobile
+    const [isStdinOpen, setIsStdinOpen] = useState(false);
 
     // Document Browser & Save As Modals
     const [showDocBrowserModal, setShowDocBrowserModal] = useState(false);
@@ -474,8 +484,14 @@ export function PracticeIDEPage() {
 
                 setLastAutosavedAt(nowIso);
                 setAutosaveStatus('saved');
+                setAutosaveFlash({ visible: true, status: 'saved', text: 'Autosaved' });
+                if (autosaveFlashTimerRef.current) clearTimeout(autosaveFlashTimerRef.current);
+                autosaveFlashTimerRef.current = setTimeout(() => {
+                    setAutosaveFlash({ visible: false, status: 'saved', text: '' });
+                }, 2500);
             } catch (e) {
                 setAutosaveStatus('saved');
+                setAutosaveFlash({ visible: false, status: 'saved', text: '' });
             }
         },
         [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs]
@@ -490,6 +506,7 @@ export function PracticeIDEPage() {
             const nextTabs = prevTabs.map((t) => (t.id === activeTabId ? { ...t, code: val, isDirty: true } : t));
             if (isAutosaveEnabled) {
                 setAutosaveStatus('saving');
+                setAutosaveFlash({ visible: true, status: 'saving', text: 'Autosaving...' });
                 if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
                 autosaveTimerRef.current = setTimeout(() => {
                     triggerSaveWorkspace(nextTabs, activeTabId);
@@ -1441,7 +1458,7 @@ Date:          ${dateStr}
 
                             {/* Read-Only Preselected Language Badge */}
                             <div
-                                className={`px-2 py-0.5 rounded text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+                                className={`px-1.5 sm:px-2 py-0.5 rounded text-xs font-bold border flex items-center gap-1 shadow-2xs ${
                                     isDatabaseLanguage(activeTab.language)
                                         ? isLightMode
                                             ? 'bg-sky-50 border-sky-300 text-sky-800'
@@ -1450,10 +1467,11 @@ Date:          ${dateStr}
                                         ? 'bg-amber-50 border-amber-300 text-amber-800'
                                         : 'bg-amber-950/60 border-amber-800 text-amber-300'
                                 }`}
-                                title={`Language preselected: ${getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}. Code output and diagram (${isDatabaseLanguage(activeTab.language) ? 'ER Designer' : 'Flowchart Designer'}) are automatically configured.`}
+                                title={`Language preselected: ${getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}`}
                             >
                                 <span>{getLanguageMeta(activeTab.language)?.icon || (isDatabaseLanguage(activeTab.language) ? '🗄️' : '🐍')}</span>
-                                <span>{getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}</span>
+                                <span className="hidden sm:inline">{getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}</span>
+                                <span className="sm:hidden inline font-mono text-[10px]">{activeTab.language === 'sql' ? 'SQL' : 'PY'}</span>
                             </div>
 
                             <span className="text-slate-400 hidden sm:inline">•</span>
@@ -1462,43 +1480,37 @@ Date:          ${dateStr}
                                     ? (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')
                                     : (getLanguageMeta(activeTab.language)?.desc || 'Sandbox Compiler')}
                             </span>
-                            {isAutosaveEnabled && (
-                                <>
-                                    <span className="text-slate-400 hidden sm:inline">•</span>
-                                    <span
-                                        className={`text-[11px] font-mono flex items-center gap-1.5 ${
-                                            autosaveStatus === 'saving'
-                                                ? 'text-amber-500'
-                                                : isLightMode
-                                                ? 'text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200'
-                                                : 'text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/60'
-                                        }`}
-                                        title={lastAutosavedAt ? `Last autosaved on ${new Date(lastAutosavedAt).toLocaleDateString()} at ${new Date(lastAutosavedAt).toLocaleTimeString()}` : 'Autosave active'}
-                                    >
-                                        {autosaveStatus === 'saving' ? (
-                                            <>
-                                                <RefreshCw className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
-                                                <span>Autosaving...</span>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                <span>
-                                                    Autosaved: {lastAutosavedAt ? new Date(lastAutosavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Saved'}
-                                                </span>
-                                            </>
-                                        )}
-                                    </span>
-                                </>
-                            )}
+
+                            {/* Flashing Autosave Transient Notice (appears on autosave, disappears after 2.5s) */}
+                            <div
+                                className={`transition-all duration-500 ease-out flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                                    autosaveFlash.visible
+                                        ? 'opacity-100 scale-100 ' + (autosaveFlash.status === 'saving'
+                                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shadow-xs')
+                                        : 'opacity-0 scale-95 pointer-events-none w-0 px-0 overflow-hidden border-0'
+                                }`}
+                            >
+                                {autosaveFlash.status === 'saving' ? (
+                                    <>
+                                        <RefreshCw className="w-3 h-3 animate-spin text-amber-500 shrink-0" />
+                                        <span className="whitespace-nowrap">Saving...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
+                                        <span className="whitespace-nowrap">Autosaved</span>
+                                    </>
+                                )}
+                            </div>
                         </div>
 
-                        {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR + AUTOSAVE/SAVE CONTROL */}
-                        <div className="flex items-center gap-2.5">
+                        {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR + MANUAL SAVE (WHEN AUTOSAVE OFF) */}
+                        <div className="flex items-center gap-2">
                             <button
                                 onClick={handleExecuteCode}
                                 disabled={isExecuting}
-                                className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer active:scale-95 ${
+                                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer active:scale-95 ${
                                     activeTab.language === 'sql'
                                         ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-sky-500/25'
                                         : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
@@ -1506,12 +1518,15 @@ Date:          ${dateStr}
                                 title={activeTab.language === 'sql' ? 'Execute SQL queries against your SQLite database (Ctrl+Enter)' : 'Run active Python script (Ctrl+Enter)'}
                             >
                                 <Play className={`w-3.5 h-3.5 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                                <span>
+                                <span className="hidden sm:inline">
                                     {isExecuting
                                         ? 'Running...'
                                         : activeTab.language === 'sql'
                                         ? 'Run SQL Query'
                                         : 'Run Python Code'}
+                                </span>
+                                <span className="sm:hidden inline">
+                                    {isExecuting ? 'Running...' : 'Run'}
                                 </span>
                                 <kbd className={`text-[9px] px-1 py-0.2 rounded font-mono font-normal hidden sm:inline ${
                                     activeTab.language === 'sql' ? 'bg-sky-800/40 text-white' : 'bg-emerald-700/30 text-slate-950'
@@ -1520,20 +1535,8 @@ Date:          ${dateStr}
                                 </kbd>
                             </button>
 
-                            {/* Hide Save button and show Autosave badge when autosave is ON */}
-                            {isAutosaveEnabled ? (
-                                <div
-                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold select-none border ${
-                                        isLightMode
-                                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                                    }`}
-                                    title="Autosave is ON - your code is saved automatically"
-                                >
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                    <span>Autosave ON</span>
-                                </div>
-                            ) : (
+                            {/* Show manual Save button only when autosave is OFF */}
+                            {!isAutosaveEnabled && (
                                 <button
                                     onClick={() => handleSaveToDocuments(false)}
                                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer border ${
@@ -1580,25 +1583,41 @@ Date:          ${dateStr}
 
                     {/* Collapsible Stdin Input (For Algorithmic languages: Python, C, C++, Java) */}
                     {!isDatabaseLanguage(activeTab.language) && (
-                        <div className={`p-2.5 border-t ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                            <div className="flex items-center justify-between mb-1">
-                                <label className={`text-[11px] font-semibold flex items-center gap-1 ${isLightMode ? 'text-indigo-700' : 'text-indigo-300'}`}>
-                                    <Terminal className="w-3 h-3" />
-                                    Standard Input (stdin for interactive prompts)
-                                </label>
-                            </div>
-                            <textarea
-                                value={activeTab.stdin}
-                                onChange={(e) => handleStdinChange(e.target.value)}
-                                placeholder="Values entered here feed sequentially into input() calls..."
-                                rows={2}
-                                style={{ fontSize: `${fontSize}px` }}
-                                className={`w-full p-2 border rounded font-mono focus:outline-none focus:border-indigo-500 resize-none ${
-                                    isLightMode
-                                        ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
-                                        : 'bg-slate-950 border-slate-700 text-slate-200 placeholder-slate-600'
+                        <div className={`border-t ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                            <button
+                                type="button"
+                                onClick={() => setIsStdinOpen(!isStdinOpen)}
+                                className={`w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-semibold cursor-pointer ${
+                                    isLightMode ? 'text-indigo-700 hover:bg-slate-100' : 'text-indigo-300 hover:bg-slate-800/60'
                                 }`}
-                            />
+                            >
+                                <span className="flex items-center gap-1.5">
+                                    <Terminal className="w-3 h-3" />
+                                    <span>Standard Input (stdin)</span>
+                                    {activeTab.stdin?.trim() && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    )}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                    {isStdinOpen ? '▲ Collapse' : (activeTab.stdin?.trim() ? '▼ Edit Inputs' : '▼ Tap to Enter Inputs')}
+                                </span>
+                            </button>
+                            {(isStdinOpen || activeTab.stdin?.trim()) && (
+                                <div className="px-3 pb-2 pt-0.5">
+                                    <textarea
+                                        value={activeTab.stdin}
+                                        onChange={(e) => handleStdinChange(e.target.value)}
+                                        placeholder="Values entered here feed sequentially into input() calls..."
+                                        rows={2}
+                                        style={{ fontSize: `${fontSize}px` }}
+                                        className={`w-full p-2 border rounded font-mono focus:outline-none focus:border-indigo-500 resize-none ${
+                                            isLightMode
+                                                ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                                                : 'bg-slate-950 border-slate-700 text-slate-200 placeholder-slate-600'
+                                        }`}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </section>
@@ -1607,8 +1626,8 @@ Date:          ${dateStr}
                 <section className={`flex flex-col h-full overflow-hidden ${
                     mobileView === 'editor' ? 'hidden lg:flex' : 'flex'
                 } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
-                    {/* Tab Navigation Header */}
-                    <div className={`flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                    {/* Tab Navigation Header (Hidden on mobile < lg because top Mobile View Switcher controls views) */}
+                    <div className={`hidden lg:flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         <div className="flex items-center gap-1">
                             <button
                                 onClick={() => setRightPanelMode('output')}
@@ -1940,9 +1959,10 @@ Date:          ${dateStr}
                                 ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-sky-500/30'
                                 : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 border-emerald-400/40 shadow-emerald-500/30'
                         }`}
+                        title="Execute code (Ctrl+Enter)"
                     >
                         <Play className={`w-4 h-4 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                        <span>{isExecuting ? 'Running...' : activeTab.language === 'sql' ? 'Run SQL' : 'Run Code'}</span>
+                        <span>{isExecuting ? 'Running...' : 'Run'}</span>
                     </button>
                 </div>
             )}

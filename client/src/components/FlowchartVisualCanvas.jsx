@@ -1525,17 +1525,17 @@ export default function FlowchartVisualCanvas({
             onPointerMove={handleCanvasPointerMove}
             onPointerUp={handleCanvasPointerUp}
         >
-            {/* Top Interactive Toolbar */}
+            {/* Top Interactive Toolbar (Single-row scrollable on mobile) */}
             <div
-                className={`px-3 py-2 border-b flex flex-wrap items-center justify-between gap-2 z-10 flex-shrink-0 ${
+                className={`px-2 sm:px-3 py-1.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 z-10 flex-shrink-0 overflow-x-auto no-scrollbar whitespace-nowrap ${
                     isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
                 }`}
             >
                 {/* Left: Mode Title & Tools */}
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                     {/* Active Mode Indicator Badge */}
                     <div
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border mr-1 ${
+                        className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-xs font-bold border shrink-0 ${
                             isErMode
                                 ? isLight
                                     ? 'bg-sky-50 border-sky-300 text-sky-800'
@@ -1549,19 +1549,21 @@ export default function FlowchartVisualCanvas({
                         {isErMode ? (
                             <>
                                 <Database className="w-3.5 h-3.5 text-sky-500" />
-                                <span>ER Diagram (DBMS)</span>
+                                <span className="hidden sm:inline">ER Diagram (DBMS)</span>
+                                <span className="sm:hidden inline">ER</span>
                             </>
                         ) : (
                             <>
                                 <Shapes className="w-3.5 h-3.5 text-purple-500" />
-                                <span>Flowchart Designer</span>
+                                <span className="hidden sm:inline">Flowchart Designer</span>
+                                <span className="sm:hidden inline">Flowchart</span>
                             </>
                         )}
                     </div>
 
                     {/* Pointer / Connector Selectors */}
                     <div
-                        className={`flex items-center rounded-lg p-0.5 border ${
+                        className={`flex items-center rounded-lg p-0.5 border shrink-0 ${
                             isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
                         }`}
                     >
@@ -1592,7 +1594,7 @@ export default function FlowchartVisualCanvas({
                                 setSelectedNodeId(null);
                                 setSelectedConnectorId(null);
                             }}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                            className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                                 activeTool === 'connector'
                                     ? 'bg-indigo-600 text-white shadow-xs'
                                     : isLight
@@ -1602,7 +1604,8 @@ export default function FlowchartVisualCanvas({
                             title="Connector Tool: Click shape hooks to link with directed arrows"
                         >
                             <ArrowRight className="w-3.5 h-3.5" />
-                            <span>Connector</span>
+                            <span className="hidden sm:inline">Connector</span>
+                            <span className="sm:hidden inline">Link</span>
                         </button>
                     </div>
 
@@ -1674,42 +1677,45 @@ export default function FlowchartVisualCanvas({
                 </div>
 
                 {/* Right: Traditional Generator, DDL, Export & Clear */}
-                <div className="flex items-center gap-1.5 text-xs">
+                <div className="flex items-center gap-1 sm:gap-1.5 text-xs shrink-0">
                     {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) */}
                     <button
                         onClick={handleTraditionalGenerate}
-                        className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                        className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
                         title={`Generate ${isErMode ? 'ER Diagram' : 'Flowchart'} automatically from editor code using static parser (Traditional rule-based, 100% offline, 0 AI calls)`}
                     >
-                        <Cpu className="w-3.5 h-3.5 text-slate-950" />
-                        <span>Generate from Code (No AI)</span>
+                        <Cpu className="w-3.5 h-3.5 text-slate-950 shrink-0" />
+                        <span className="hidden sm:inline">Generate from Code (No AI)</span>
+                        <span className="sm:hidden inline">Generate</span>
                     </button>
 
                     {/* SQL DDL Generator (in ER mode) */}
                     {isErMode && (
                         <button
                             onClick={handleGenerateSqlDdl}
-                            className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-bold shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                            className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
                             title="Generate Executable SQL DDL CREATE TABLE Statements from Canvas"
                         >
-                            <Code className="w-3.5 h-3.5 text-yellow-300" />
+                            <Code className="w-3.5 h-3.5 text-yellow-300 shrink-0" />
                             <span className="hidden sm:inline">Export SQL DDL</span>
+                            <span className="sm:hidden inline">DDL</span>
                         </button>
                     )}
 
                     {/* Export Dropdown */}
                     <button
                         onClick={() => handleExportCanvas('png')}
-                        className="px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer"
+                        className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
                         title="Download as PNG Image"
                     >
-                        <Download className="w-3.5 h-3.5" />
+                        <Download className="w-3.5 h-3.5 shrink-0" />
                         <span className="hidden sm:inline">Export PNG</span>
+                        <span className="sm:hidden inline">PNG</span>
                     </button>
 
                     <button
                         onClick={handleResetToTemplate}
-                        className={`p-1.5 rounded transition cursor-pointer ${
+                        className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
                             isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-100' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
                         }`}
                         title="Load Starter Template Example"
@@ -1719,7 +1725,7 @@ export default function FlowchartVisualCanvas({
 
                     <button
                         onClick={handleClearCanvas}
-                        className={`p-1.5 rounded transition cursor-pointer ${
+                        className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
                             isLight ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-rose-400 hover:bg-rose-950/40'
                         }`}
                         title="Clear Canvas"
@@ -2376,9 +2382,9 @@ export default function FlowchartVisualCanvas({
                 })()}
             </div>
 
-            {/* Bottom Status / Keyboard Shortcuts Tip Bar */}
+            {/* Bottom Status / Keyboard Shortcuts Tip Bar (Hidden on mobile to maximize canvas viewport) */}
             <div
-                className={`px-3 py-1.5 border-t text-[11px] flex items-center justify-between z-10 flex-shrink-0 ${
+                className={`hidden lg:flex px-3 py-1.5 border-t text-[11px] items-center justify-between z-10 flex-shrink-0 ${
                     isLight ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
                 }`}
             >
