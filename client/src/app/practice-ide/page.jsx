@@ -114,55 +114,47 @@ const OUTPUT_THEMES = [
     }
 ];
 
+// Supported Programming and Database Languages
+const SUPPORTED_LANGUAGES = [
+    { id: 'python', label: 'Python 3', icon: '🐍', ext: '.py', category: 'algorithmic', monaco: 'python', desc: 'Python 3.13 Sandbox' },
+    { id: 'c', label: 'C', icon: '⚡', ext: '.c', category: 'algorithmic', monaco: 'c', desc: 'C (GCC 13.2)' },
+    { id: 'cpp', label: 'C++', icon: '🔷', ext: '.cpp', category: 'algorithmic', monaco: 'cpp', desc: 'C++ (G++ 13.2)' },
+    { id: 'java', label: 'Java', icon: '☕', ext: '.java', category: 'algorithmic', monaco: 'java', desc: 'Java 22 (OpenJDK)' },
+    { id: 'sql', label: 'SQL', icon: '🗄️', ext: '.sql', category: 'database', monaco: 'sql', desc: 'Relational SQL Engine' },
+    { id: 'plsql', label: 'PL/SQL', icon: '📜', ext: '.pls', category: 'database', monaco: 'sql', desc: 'Procedural SQL' }
+];
+
+const STARTER_CODES = {
+    python: `# Python Practice Script\n# Calculate Factorial & Sum of 1..N\n\nn = int(input("Enter positive number N: "))\ntotal_sum = 0\nfactorial = 1\ni = 1\n\nwhile i <= n:\n    total_sum = total_sum + i\n    factorial = factorial * i\n    i = i + 1\n\nprint("Sum of 1 to", n, "is:", total_sum)\nprint("Factorial of", n, "is:", factorial)\n`,
+    c: `// C Practice Program\n#include <stdio.h>\n\nint main() {\n    int n, i;\n    int total_sum = 0;\n    long long factorial = 1;\n\n    printf("Enter positive number N: ");\n    if (scanf("%d", &n) != 1) return 1;\n\n    for (i = 1; i <= n; i++) {\n        total_sum += i;\n        factorial *= i;\n    }\n\n    printf("Sum of 1 to %d is: %d\\n", n, total_sum);\n    printf("Factorial of %d is: %lld\\n", n, factorial);\n    return 0;\n}\n`,
+    cpp: `// C++ Practice Program\n#include <iostream>\nusing namespace std;\n\nint main() {\n    int n;\n    cout << "Enter positive number N: ";\n    if (!(cin >> n)) return 1;\n\n    int total_sum = 0;\n    long long factorial = 1;\n\n    for (int i = 1; i <= n; i++) {\n        total_sum += i;\n        factorial *= i;\n    }\n\n    cout << "Sum of 1 to " << n << " is: " << total_sum << endl;\n    cout << "Factorial of " << n << " is: " << factorial << endl;\n    return 0;\n}\n`,
+    java: `// Java Practice Program\nimport java.util.Scanner;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.print("Enter positive number N: ");\n        if (!sc.hasNextInt()) return;\n        int n = sc.nextInt();\n\n        int totalSum = 0;\n        long factorial = 1;\n\n        for (int i = 1; i <= n; i++) {\n            totalSum += i;\n            factorial *= i;\n        }\n\n        System.out.println("Sum of 1 to " + n + " is: " + totalSum);\n        System.out.println("Factorial of " + n + " is: " + factorial);\n    }\n}\n`,
+    sql: `-- SQL Practice Script\n-- Tables created here are stored permanently in your personal database!\n\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    department TEXT\n);\n\nINSERT OR IGNORE INTO students VALUES \n(101, 'Aarav Sharma', 'Computer Science'),\n(102, 'Priya Patel', 'Data Science');\n\nSELECT * FROM students;\n`,
+    plsql: `-- PL/SQL Procedural Script\n-- Declare, Begin, and Exception handling block\n\nDECLARE\n    v_student_count INTEGER;\nBEGIN\n    SELECT COUNT(*) INTO v_student_count FROM students;\n    DBMS_OUTPUT.PUT_LINE('Total enrolled students: ' || v_student_count);\nEND;\n/`
+};
+
+const isDatabaseLanguage = (lang) => lang === 'sql' || lang === 'plsql';
+const getLanguageMeta = (lang) => SUPPORTED_LANGUAGES.find((l) => l.id === lang) || SUPPORTED_LANGUAGES[0];
+const getMonacoLanguage = (lang) => getLanguageMeta(lang).monaco;
+
 // Default Initial Code Tab
 const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 'Student') => {
-    const isPy = lang === 'python';
+    const isDb = isDatabaseLanguage(lang);
     const dateStr = new Date().toISOString().split('T')[0];
-
-    const pyStarter = `# Python Practice Script
-# Calculate Factorial & Sum of 1..N
-
-n = int(input("Enter positive number N: "))
-total_sum = 0
-factorial = 1
-i = 1
-
-while i <= n:
-    total_sum = total_sum + i
-    factorial = factorial * i
-    i = i + 1
-
-print("Sum of 1 to", n, "is:", total_sum)
-print("Factorial of", n, "is:", factorial)
-`;
-
-    const sqlStarter = `-- SQL Practice Script
--- Tables created here are stored permanently in your personal database!
-
-CREATE TABLE IF NOT EXISTS students (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    department TEXT
-);
-
-INSERT OR IGNORE INTO students VALUES 
-(101, 'Aarav Sharma', 'Computer Science'),
-(102, 'Priya Patel', 'Data Science');
-
-SELECT * FROM students;
-`;
+    const meta = getLanguageMeta(lang);
+    const starter = STARTER_CODES[lang] || STARTER_CODES.python;
 
     return {
         id,
-        title: isPy ? 'Factorial & Sum' : 'Student Schema',
-        filename: `${studentId}_${dateStr}.${isPy ? 'py' : 'sql'}`,
+        title: isDb ? (lang === 'plsql' ? 'PL/SQL Block' : 'Student Schema') : `${meta.label} Program`,
+        filename: `${studentId}_${dateStr}${meta.ext}`,
         language: lang,
-        code: isPy ? pyStarter : sqlStarter,
+        code: starter,
         stdin: '5\n',
         metadata: {
-            title: isPy ? 'Factorial & Sum Calculation' : 'Student Database Schema',
-            description: isPy ? 'Calculate cumulative sum and factorial using while loop' : 'Create tables and query student records',
-            subject: isPy ? 'Python Programming' : 'Database Management',
+            title: isDb ? 'Database Schema & Query' : 'Calculation & Logic Practice',
+            description: isDb ? 'Create tables and query student records' : 'Calculate cumulative sum and factorial using iteration',
+            subject: isDb ? 'Database Management' : `${meta.label} Programming`,
             studentId,
             studentName,
             date: dateStr
@@ -602,27 +594,23 @@ Date:          ${dateStr}
     // Switch Language of Active Tab
     const handleSwitchLanguage = (newLang) => {
         if (activeTab.language === newLang) return;
+        const meta = getLanguageMeta(newLang);
         const dateStr = new Date().toISOString().split('T')[0];
-        const newExt = newLang === 'sql' ? '.sql' : '.py';
-        const defaultFilename = `${studentIdentifier}_${dateStr}${newExt}`;
         const updatedFilename = activeTab.filename
-            ? (activeTab.filename.includes('.') ? activeTab.filename.replace(/\.(py|sql)$/i, newExt) : `${activeTab.filename}${newExt}`)
-            : defaultFilename;
+            ? (activeTab.filename.includes('.') ? activeTab.filename.replace(/\.[a-zA-Z0-9]+$/i, meta.ext) : `${activeTab.filename}${meta.ext}`)
+            : `${studentIdentifier}_${dateStr}${meta.ext}`;
 
         // Check if code is default or empty
         const isDefaultCode = !activeTab.code || activeTab.code.trim().length === 0 ||
-            activeTab.code.includes('Python Practice Script') ||
-            activeTab.code.includes('SQL Practice Script') ||
+            activeTab.code.includes('Practice Script') ||
+            activeTab.code.includes('Practice Program') ||
             activeTab.code.includes('Calculate Factorial & Sum');
 
-        const pyStarter = `# Python Practice Script\n# Calculate Factorial & Sum of 1..N\n\nn = int(input("Enter positive number N: "))\ntotal_sum = 0\nfactorial = 1\ni = 1\n\nwhile i <= n:\n    total_sum = total_sum + i\n    factorial = factorial * i\n    i = i + 1\n\nprint("Sum of 1 to", n, "is:", total_sum)\nprint("Factorial of", n, "is:", factorial)\n`;
-
-        const sqlStarter = `-- SQL Practice Script\n-- Tables created here are stored permanently in your personal database!\n\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    department TEXT\n);\n\nINSERT OR IGNORE INTO students VALUES \n(101, 'Aarav Sharma', 'Computer Science'),\n(102, 'Priya Patel', 'Data Science');\n\nSELECT * FROM students;\n`;
-
         const newCode = isDefaultCode
-            ? (newLang === 'sql' ? sqlStarter : pyStarter)
+            ? (STARTER_CODES[newLang] || STARTER_CODES.python)
             : activeTab.code;
 
+        const isDb = isDatabaseLanguage(newLang);
         const currentTabs = tabsRef.current || tabs;
         const updatedTabs = currentTabs.map((t) =>
             t.id === activeTabId
@@ -630,20 +618,20 @@ Date:          ${dateStr}
                       ...t,
                       language: newLang,
                       filename: updatedFilename,
-                      title: isDefaultCode ? (newLang === 'sql' ? 'Student Schema' : 'Factorial & Sum') : t.title,
+                      title: isDefaultCode ? (isDb ? (newLang === 'plsql' ? 'PL/SQL Block' : 'Student Schema') : `${meta.label} Program`) : t.title,
                       code: newCode,
                       output: null,
                       metadata: {
                           ...t.metadata,
-                          title: isDefaultCode ? (newLang === 'sql' ? 'Student Database Schema' : 'Factorial & Sum Calculation') : t.metadata?.title,
-                          subject: newLang === 'sql' ? 'Database Management' : 'Python Programming'
+                          title: isDefaultCode ? (isDb ? 'Database Management Schema' : `${meta.label} Program`) : t.metadata?.title,
+                          subject: isDb ? 'Database Management' : `${meta.label} Programming`
                       }
                   }
                 : t
         );
         setTabs(updatedTabs);
         triggerSaveWorkspace(updatedTabs, activeTabId);
-        toast.success(`Switched active tab to ${newLang === 'sql' ? 'SQL Database' : 'Python 3'}`);
+        toast.success(`Switched active tab to ${meta.label} (${isDb ? 'ER Diagram Designer' : 'Flowchart Designer'})`);
     };
 
     // Inline Tab Rename: updates title, synchronized filename, auto-creates or overwrites in Documents
@@ -757,9 +745,9 @@ Date:          ${dateStr}
 
         try {
             const response = await compilerAPI.execute({
-                language: activeTab.language === 'sql' ? 'sql' : 'python3',
+                language: isDatabaseLanguage(activeTab.language) ? (activeTab.language === 'plsql' ? 'plsql' : 'sql') : (activeTab.language === 'python' ? 'python3' : activeTab.language),
                 code: activeTab.code,
-                stdin: activeTab.language === 'python' ? activeTab.stdin : ''
+                stdin: !isDatabaseLanguage(activeTab.language) ? (activeTab.stdin || '') : ''
             });
 
             if (response.data && response.data.success) {
@@ -1205,37 +1193,8 @@ Date:          ${dateStr}
                     )}
                 </div>
 
-                {/* Right controls: Language toggle for active tab */}
+                {/* Right controls: Metadata Drawer toggle */}
                 <div className="flex items-center gap-2 text-xs">
-                    <div className={`flex items-center p-0.5 rounded-lg border shadow-xs ${isLightMode ? 'bg-white border-slate-300' : 'bg-slate-800 border-slate-700'}`}>
-                        <button
-                            onClick={() => handleSwitchLanguage('python')}
-                            className={`flex items-center gap-1 px-2.5 py-0.8 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                                activeTab.language === 'python'
-                                    ? 'bg-amber-500 text-slate-950 shadow-xs'
-                                    : isLightMode
-                                    ? 'text-slate-600 hover:text-slate-900'
-                                    : 'text-slate-400 hover:text-white'
-                            }`}
-                            title="Switch active tab to Python 3"
-                        >
-                            <span>🐍 Python</span>
-                        </button>
-                        <button
-                            onClick={() => handleSwitchLanguage('sql')}
-                            className={`flex items-center gap-1 px-2.5 py-0.8 rounded-md text-[11px] font-bold transition cursor-pointer ${
-                                activeTab.language === 'sql'
-                                    ? 'bg-sky-500 text-slate-950 shadow-xs'
-                                    : isLightMode
-                                    ? 'text-slate-600 hover:text-slate-900'
-                                    : 'text-slate-400 hover:text-white'
-                            }`}
-                            title="Switch active tab to SQLite Database Query"
-                        >
-                            <span>🗄️ SQL</span>
-                        </button>
-                    </div>
-
                     <button
                         onClick={() => setShowMetadataDrawer(!showMetadataDrawer)}
                         className={`p-1.5 rounded-lg border text-xs transition cursor-pointer ${
@@ -1313,36 +1272,40 @@ Date:          ${dateStr}
                 <section className={`flex flex-col h-full border-r overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                        {/* Left: Active filename & Language switcher */}
+                        {/* Left: Active filename & SINGLE UNIFIED LANGUAGE SELECTOR */}
                         <div className="flex items-center gap-2">
                             <span className={`font-mono text-xs font-bold ${isLightMode ? 'text-primary-700' : 'text-emerald-400'}`}>
                                 {activeTab.filename}
                             </span>
-                            <div className="flex items-center p-0.5 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800">
-                                <button
-                                    onClick={() => handleSwitchLanguage('python')}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
-                                        activeTab.language === 'python'
-                                            ? 'bg-amber-500 text-slate-950 shadow-xs'
-                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                                    }`}
-                                >
-                                    🐍 Python
-                                </button>
-                                <button
-                                    onClick={() => handleSwitchLanguage('sql')}
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
-                                        activeTab.language === 'sql'
-                                            ? 'bg-sky-500 text-slate-950 shadow-xs'
-                                            : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                                    }`}
-                                >
-                                    🗄️ SQL
-                                </button>
-                            </div>
+
+                            {/* Single Unified Language Selector */}
+                            <select
+                                value={activeTab.language || 'python'}
+                                onChange={(e) => handleSwitchLanguage(e.target.value)}
+                                className={`px-2 py-0.5 rounded text-xs font-bold border transition cursor-pointer shadow-2xs focus:outline-none focus:ring-1 focus:ring-primary-500 ${
+                                    isLightMode
+                                        ? 'bg-white border-slate-300 text-slate-800 hover:border-slate-400'
+                                        : 'bg-slate-800 border-slate-700 text-slate-100 hover:border-slate-600'
+                                }`}
+                                title="Single Unified Language Selector: Switches Diagram Mode automatically"
+                            >
+                                <optgroup label="Algorithmic (Flowchart Designer)">
+                                    <option value="python">🐍 Python 3 (.py)</option>
+                                    <option value="c">⚡ C (.c)</option>
+                                    <option value="cpp">🔷 C++ (.cpp)</option>
+                                    <option value="java">☕ Java (.java)</option>
+                                </optgroup>
+                                <optgroup label="Database (ER Diagram Designer)">
+                                    <option value="sql">🗄️ SQL (.sql)</option>
+                                    <option value="plsql">📜 PL/SQL (.pls)</option>
+                                </optgroup>
+                            </select>
+
                             <span className="text-slate-400 hidden sm:inline">•</span>
                             <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {activeTab.language === 'python' ? 'Python 3.13 Sandbox' : (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')}
+                                {isDatabaseLanguage(activeTab.language)
+                                    ? (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')
+                                    : (getLanguageMeta(activeTab.language)?.desc || 'Sandbox Compiler')}
                             </span>
                             {isAutosaveEnabled && (
                                 <>
@@ -1436,7 +1399,7 @@ Date:          ${dateStr}
                     <div className="flex-1 relative overflow-hidden">
                         <Editor
                             height="100%"
-                            language={activeTab.language === 'sql' ? 'sql' : 'python'}
+                            language={getMonacoLanguage(activeTab.language)}
                             value={activeTab.code}
                             theme={editorTheme}
                             onChange={handleCodeChange}
@@ -1449,7 +1412,7 @@ Date:          ${dateStr}
                                 minimap: { enabled: false },
                                 scrollBeyondLastLine: false,
                                 automaticLayout: true,
-                                tabSize: activeTab.language === 'python' ? 4 : 2,
+                                tabSize: isDatabaseLanguage(activeTab.language) ? 2 : 4,
                                 insertSpaces: true,
                                 wordWrap: 'on',
                                 padding: { top: 12, bottom: 12 },
@@ -1460,13 +1423,13 @@ Date:          ${dateStr}
                         />
                     </div>
 
-                    {/* Collapsible Stdin Input (Python only) */}
-                    {activeTab.language === 'python' && (
+                    {/* Collapsible Stdin Input (For Algorithmic languages: Python, C, C++, Java) */}
+                    {!isDatabaseLanguage(activeTab.language) && (
                         <div className={`p-2.5 border-t ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                             <div className="flex items-center justify-between mb-1">
                                 <label className={`text-[11px] font-semibold flex items-center gap-1 ${isLightMode ? 'text-indigo-700' : 'text-indigo-300'}`}>
                                     <Terminal className="w-3 h-3" />
-                                    Standard Input (stdin for input() prompts)
+                                    Standard Input (stdin for interactive prompts)
                                 </label>
                             </div>
                             <textarea
@@ -1513,8 +1476,8 @@ Date:          ${dateStr}
                                 )}
                             </button>
 
-                            {/* SQL Structured Data Table Tab */}
-                            {activeTab.language === 'sql' && (
+                            {/* Database Structured Data Table Tab */}
+                            {isDatabaseLanguage(activeTab.language) && (
                                 <button
                                     onClick={() => setRightPanelMode('table')}
                                     className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
@@ -1541,7 +1504,7 @@ Date:          ${dateStr}
                                 </button>
                             )}
 
-                            {/* Flowchart / Diagram Canvas Tab */}
+                            {/* Flowchart / ER Diagram Canvas Tab (Automatically switched based on Language) */}
                             <button
                                 onClick={() => setRightPanelMode('diagram')}
                                 className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition cursor-pointer ${
@@ -1554,17 +1517,22 @@ Date:          ${dateStr}
                                         : 'border-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                             >
-                                <Shapes className="w-3.5 h-3.5" />
-                                <span>
-                                    {activeTab.language === 'python'
-                                        ? 'Flowchart Canvas'
-                                        : 'ER Diagram Designer'}
-                                </span>
+                                {isDatabaseLanguage(activeTab.language) ? (
+                                    <>
+                                        <Database className="w-3.5 h-3.5 text-sky-500" />
+                                        <span>ER Diagram Designer</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Shapes className="w-3.5 h-3.5 text-purple-500" />
+                                        <span>Flowchart Designer</span>
+                                    </>
+                                )}
                             </button>
                         </div>
 
                         {/* Persistent DB Tables list indicator (SQL mode) */}
-                        {activeTab.language === 'sql' && existingTables.length > 0 && (
+                        {isDatabaseLanguage(activeTab.language) && existingTables.length > 0 && (
                             <div className="flex items-center gap-1 text-[11px] text-sky-500 font-medium">
                                 <Database className="w-3.5 h-3.5" />
                                 <span className="font-mono font-semibold">{existingTables.length} tables saved</span>
@@ -1784,8 +1752,9 @@ Date:          ${dateStr}
                                 readOnly={Boolean(inspectingStudentId)}
                                 theme={isLightMode ? 'light' : 'dark'}
                                 language={activeTab.language}
+                                activeCode={activeTab.code || ''}
                                 onInsertSqlDdl={(sqlCode) => {
-                                    if (activeTab.language === 'sql') {
+                                    if (isDatabaseLanguage(activeTab.language)) {
                                         const newCode = activeTab.code?.trim() ? `${activeTab.code.trim()}\n\n${sqlCode}` : sqlCode;
                                         handleCodeChange(newCode);
                                         toast.success('Inserted ER SQL DDL into active SQL editor tab!');

@@ -48,6 +48,7 @@ const getWandboxCompiler = (language) => {
         'java': 'openjdk-jdk-22+36',
         'sql': 'sqlite-3.46.1',
         'sqlite': 'sqlite-3.46.1',
+        'plsql': 'sqlite-3.46.1',
         'javascript': 'nodejs-20.17.0',
         'node': 'nodejs-20.17.0',
     };
@@ -259,7 +260,7 @@ router.post('/execute', authenticate, [
     }
 
     // 2. Try persistent execution for SQL (using admin-preselected engine: MySQL or SQLite3)
-    if (langNormalized === 'sql' || langNormalized === 'sqlite' || langNormalized === 'mysql') {
+    if (langNormalized === 'sql' || langNormalized === 'sqlite' || langNormalized === 'mysql' || langNormalized === 'plsql') {
         try {
             const studentDbPath = getStudentDbPath(userId);
             const localResult = await practiceDatabaseService.executeSql(code, userId, studentDbPath);

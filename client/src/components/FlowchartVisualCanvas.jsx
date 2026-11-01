@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     Shapes,
     MousePointer,
@@ -29,20 +29,23 @@ import {
     Table,
     Layers,
     Code,
-    CheckCircle2
+    CheckCircle2,
+    Cpu,
+    FileCode2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { generateFlowchartFromCode, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
 
-// 1. Initial Starter Flowchart Nodes & Connectors (For Python / Algorithmic Flow)
+// 1. Initial Starter Flowchart Nodes & Connectors (For Python / C / C++ / Java Flow)
 const DEFAULT_INITIAL_FLOWCHART_NODES = [
     {
         id: 'node_start',
         type: 'terminator',
         text: 'Start',
-        x: 180,
+        x: 170,
         y: 40,
         width: 140,
-        height: 52,
+        height: 50,
         color: '#dcfce7',
         borderColor: '#16a34a',
         textColor: '#14532d'
@@ -51,10 +54,10 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
         id: 'node_input',
         type: 'io',
         text: 'Input n',
-        x: 165,
-        y: 140,
+        x: 155,
+        y: 130,
         width: 170,
-        height: 54,
+        height: 52,
         color: '#dbeafe',
         borderColor: '#2563eb',
         textColor: '#1e3a8a'
@@ -62,11 +65,11 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
     {
         id: 'node_decision',
         type: 'decision',
-        text: 'n > 0?',
-        x: 175,
-        y: 245,
+        text: 'n > 0 ?',
+        x: 165,
+        y: 225,
         width: 150,
-        height: 72,
+        height: 70,
         color: '#fef3c7',
         borderColor: '#d97706',
         textColor: '#78350f'
@@ -75,10 +78,10 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
         id: 'node_process',
         type: 'process',
         text: 'total = n * 2',
-        x: 165,
-        y: 370,
+        x: 155,
+        y: 340,
         width: 170,
-        height: 54,
+        height: 52,
         color: '#ffffff',
         borderColor: '#64748b',
         textColor: '#0f172a'
@@ -87,10 +90,10 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
         id: 'node_end',
         type: 'terminator',
         text: 'End',
-        x: 180,
-        y: 480,
+        x: 170,
+        y: 440,
         width: 140,
-        height: 52,
+        height: 50,
         color: '#dcfce7',
         borderColor: '#16a34a',
         textColor: '#14532d'
@@ -104,7 +107,7 @@ const DEFAULT_INITIAL_FLOWCHART_CONNECTORS = [
     { id: 'conn_4', from: 'node_process', fromPort: 'bottom', to: 'node_end', toPort: 'top', label: '' }
 ];
 
-// 2. Initial Starter ER Diagram Nodes & Connectors (For SQL / DBMS Schema Design)
+// 2. Initial Starter ER Diagram Nodes & Connectors (For SQL / PL/SQL Schema Design)
 const DEFAULT_INITIAL_ER_NODES = [
     {
         id: 'node_er_student',
@@ -237,23 +240,24 @@ export default function FlowchartVisualCanvas({
     readOnly = false,
     theme = 'light',
     language = 'python',
+    activeCode = '',
     onInsertSqlDdl = null
 }) {
-    // Mode: 'er' (DBMS) | 'flowchart' (Logic)
-    const [canvasMode, setCanvasMode] = useState(() => {
-        if (initialData?.canvasMode) return initialData.canvasMode;
-        return language === 'sql' ? 'er' : 'flowchart';
-    });
+    // Determine diagram mode strictly based on language:
+    // SQL / PLSQL -> ER Diagram Designer
+    // Python / C / C++ / Java -> Flowchart Designer
+    const isErMode = language === 'sql' || language === 'plsql';
+    const canvasMode = isErMode ? 'er' : 'flowchart';
 
     // Canvas nodes and connectors
     const [nodes, setNodes] = useState(() => {
         if (initialData?.nodes && initialData.nodes.length > 0) return initialData.nodes;
-        return language === 'sql' ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
+        return isErMode ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
     });
 
     const [connectors, setConnectors] = useState(() => {
         if (initialData?.connectors && initialData.connectors.length > 0) return initialData.connectors;
-        return language === 'sql' ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
+        return isErMode ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
     });
 
     // Active tool: 'select' | 'connector'
@@ -298,22 +302,24 @@ export default function FlowchartVisualCanvas({
 
     const isLight = theme === 'light';
 
-    // Synchronize mode if language changes externally and user hasn't explicitly set canvas
+    // Synchronize mode when language prop switches
     useEffect(() => {
         if (!initialData?.nodes) {
-            if (language === 'sql' && canvasMode !== 'er') {
-                setCanvasMode('er');
+            if (isErMode) {
                 setNodes(DEFAULT_INITIAL_ER_NODES);
                 setConnectors(DEFAULT_INITIAL_ER_CONNECTORS);
+            } else {
+                setNodes(DEFAULT_INITIAL_FLOWCHART_NODES);
+                setConnectors(DEFAULT_INITIAL_FLOWCHART_CONNECTORS);
             }
         }
-    }, [language]);
+    }, [isErMode]);
 
     // Emit changes to parent safely
-    const notifyChange = useCallback((newNodes, newConnectors, mode = canvasMode) => {
+    const notifyChange = useCallback((newNodes, newConnectors) => {
         if (!onChange) return;
         isLocalUpdateRef.current = true;
-        onChange({ nodes: newNodes, connectors: newConnectors, canvasMode: mode });
+        onChange({ nodes: newNodes, connectors: newConnectors, canvasMode });
     }, [onChange, canvasMode]);
 
     // Update if initialData changes externally
@@ -327,9 +333,6 @@ export default function FlowchartVisualCanvas({
         }
         if (initialData?.connectors && initialData.connectors !== connectors) {
             setConnectors(initialData.connectors);
-        }
-        if (initialData?.canvasMode && initialData.canvasMode !== canvasMode) {
-            setCanvasMode(initialData.canvasMode);
         }
     }, [initialData]);
 
@@ -500,12 +503,11 @@ export default function FlowchartVisualCanvas({
         }
     }, [readOnly, nodes, connectors, notifyChange]);
 
-    // Keyboard Shortcuts (Delete, Cut, Copy, Paste, Escape)
+    // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (editingNodeId || editingConnectorId) return;
 
-            // Delete / Backspace
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (selectedNodeId) {
                     e.preventDefault();
@@ -516,7 +518,6 @@ export default function FlowchartVisualCanvas({
                 }
             }
 
-            // Copy (Ctrl+C / Cmd+C)
             if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
                 if (selectedNodeId || selectedConnectorId) {
                     e.preventDefault();
@@ -524,7 +525,6 @@ export default function FlowchartVisualCanvas({
                 }
             }
 
-            // Cut (Ctrl+X / Cmd+X)
             if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
                 if (selectedNodeId || selectedConnectorId) {
                     e.preventDefault();
@@ -532,7 +532,6 @@ export default function FlowchartVisualCanvas({
                 }
             }
 
-            // Paste (Ctrl+V / Cmd+V)
             if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
                 if (clipboardRef.current) {
                     e.preventDefault();
@@ -540,7 +539,6 @@ export default function FlowchartVisualCanvas({
                 }
             }
 
-            // Escape: deselect everything
             if (e.key === 'Escape') {
                 setSelectedNodeId(null);
                 setSelectedConnectorId(null);
@@ -577,7 +575,6 @@ export default function FlowchartVisualCanvas({
         let borderColor = '#64748b';
         let textColor = '#0f172a';
 
-        // FLOWCHART SHAPES
         if (type === 'terminator') {
             defaultText = 'Start / End';
             width = 140;
@@ -606,9 +603,7 @@ export default function FlowchartVisualCanvas({
             color = '#f3e8ff';
             borderColor = '#9333ea';
             textColor = '#581c87';
-        }
-        // DBMS CHEN'S ER SHAPES
-        else if (type === 'er_entity') {
+        } else if (type === 'er_entity') {
             defaultText = 'ENTITY';
             width = 140;
             height = 54;
@@ -747,10 +742,7 @@ export default function FlowchartVisualCanvas({
         if (sourceNode?.type === 'decision') {
             const existingCount = connectors.filter((c) => c.from === connectingSource.nodeId).length;
             defaultLabel = existingCount === 0 ? 'Yes' : 'No';
-        } else if (
-            (sourceNode?.type?.startsWith('er_') && targetNode?.type?.startsWith('er_')) ||
-            canvasMode === 'er'
-        ) {
+        } else if (isErMode) {
             if (
                 (sourceNode?.type === 'er_relationship' && targetNode?.type === 'er_entity') ||
                 (sourceNode?.type === 'er_entity' && targetNode?.type === 'er_relationship')
@@ -782,7 +774,7 @@ export default function FlowchartVisualCanvas({
         );
     };
 
-    // Canvas pointer move
+    // Canvas pointer move - Zero-lag, instantaneous group drag
     const handleCanvasPointerMove = (e) => {
         if (connectingSource) {
             const mouseCanvasX = (e.clientX - pan.x) / zoom;
@@ -881,31 +873,15 @@ export default function FlowchartVisualCanvas({
         toast.success(`Set cardinality to "${tag}"`);
     };
 
-    // Mode Switcher Handler
-    const handleSwitchMode = (newMode) => {
-        if (newMode === canvasMode) return;
-        setCanvasMode(newMode);
-        if (nodes.length === 0) {
-            const starterNodes = newMode === 'er' ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
-            const starterConns = newMode === 'er' ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
-            setNodes(starterNodes);
-            setConnectors(starterConns);
-            notifyChange(starterNodes, starterConns, newMode);
-        } else {
-            notifyChange(nodes, connectors, newMode);
-        }
-        toast.success(`Switched to ${newMode === 'er' ? 'DBMS ER Diagram Designer' : 'Flowchart Canvas'}`);
-    };
-
     // Clear entire canvas
     const handleClearCanvas = () => {
         if (readOnly) return;
-        if (confirm(`Clear all shapes and connectors from the ${canvasMode === 'er' ? 'ER Diagram' : 'Flowchart'} canvas?`)) {
+        if (confirm(`Clear all shapes and connectors from the ${isErMode ? 'ER Diagram' : 'Flowchart'} canvas?`)) {
             setNodes([]);
             setConnectors([]);
             setSelectedNodeId(null);
             setSelectedConnectorId(null);
-            notifyChange([], [], canvasMode);
+            notifyChange([], []);
             toast.success('Canvas cleared');
         }
     };
@@ -913,14 +889,48 @@ export default function FlowchartVisualCanvas({
     // Reset to Starter Templates
     const handleResetToTemplate = () => {
         if (readOnly) return;
-        const starterNodes = canvasMode === 'er' ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
-        const starterConns = canvasMode === 'er' ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
+        const starterNodes = isErMode ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
+        const starterConns = isErMode ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
         setNodes(starterNodes);
         setConnectors(starterConns);
         setSelectedNodeId(null);
         setSelectedConnectorId(null);
-        notifyChange(starterNodes, starterConns, canvasMode);
-        toast.success(`Reset to standard ${canvasMode === 'er' ? 'ER model' : 'flowchart'} template`);
+        notifyChange(starterNodes, starterConns);
+        toast.success(`Reset to standard ${isErMode ? 'ER model' : 'flowchart'} template`);
+    };
+
+    // ========================================================================
+    // 3. TRADITIONAL RULE-BASED CODE -> DIAGRAM GENERATOR (ZERO AI CALLS)
+    // ========================================================================
+    const handleTraditionalGenerate = () => {
+        if (!activeCode || !activeCode.trim()) {
+            toast.error('The active editor code is empty. Write or load some code first!');
+            return;
+        }
+
+        if (isErMode) {
+            // Traditional SQL DDL parser
+            const result = generateErDiagramFromSql(activeCode);
+            if (!result.nodes || result.nodes.length === 0) {
+                toast.error('No CREATE TABLE statements found in the SQL editor. Write CREATE TABLE DDL to generate an ER diagram!');
+                return;
+            }
+            setNodes(result.nodes);
+            setConnectors(result.connectors);
+            notifyChange(result.nodes, result.connectors);
+            toast.success(`Generated ER Diagram with ${result.nodes.length} components using traditional DDL parsing (No AI used)!`, { icon: '📊' });
+        } else {
+            // Traditional CFG code parser
+            const result = generateFlowchartFromCode(activeCode, language);
+            if (!result.nodes || result.nodes.length === 0) {
+                toast.error('No actionable programming statements found in code editor to generate flowchart.');
+                return;
+            }
+            setNodes(result.nodes);
+            setConnectors(result.connectors);
+            notifyChange(result.nodes, result.connectors);
+            toast.success(`Generated Flowchart with ${result.nodes.length} steps using static code analysis (No AI used)!`, { icon: '⚡' });
+        }
     };
 
     // SQL DDL Generator from ER Canvas Entities and Attributes
@@ -940,7 +950,6 @@ export default function FlowchartVisualCanvas({
         ddlOutput += `-- Engine Compatibility: SQLite 3 / MySQL 8+\n`;
         ddlOutput += `-- ====================================================================\n\n`;
 
-        // 1. Process explicit Table Schema cards
         tableNodes.forEach((tNode) => {
             const lines = tNode.text.split('\n').map((l) => l.trim()).filter(Boolean);
             const rawTableName = lines[0] || 'unnamed_table';
@@ -962,14 +971,12 @@ export default function FlowchartVisualCanvas({
             ddlOutput += `);\n\n`;
         });
 
-        // 2. Process Chen's Entities & their connected Attributes
         const generatedEntities = {};
 
         entityNodes.forEach((eNode) => {
             const rawEntityName = eNode.text.trim();
             const tableName = rawEntityName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
 
-            // Find attributes directly connected to this entity
             const connectedConns = connectors.filter((c) => c.from === eNode.id || c.to === eNode.id);
             const connectedAttrIds = connectedConns.map((c) => (c.from === eNode.id ? c.to : c.from));
             const attrNodes = nodes.filter((n) => connectedAttrIds.includes(n.id) && n.type.startsWith('er_') && n.type.includes('attribute'));
@@ -1002,7 +1009,6 @@ export default function FlowchartVisualCanvas({
                 }
             });
 
-            // Default fallback primary key if none specified
             if (primaryKeys.length === 0) {
                 const defaultPk = `${tableName}_id`;
                 primaryKeys.push(defaultPk);
@@ -1019,7 +1025,6 @@ export default function FlowchartVisualCanvas({
             ddlOutput += `);\n\n`;
         });
 
-        // 3. Process Relationships (M:N junction tables)
         relationshipNodes.forEach((rNode) => {
             const relConns = connectors.filter((c) => c.from === rNode.id || c.to === rNode.id);
             const connectedEntityIds = relConns.map((c) => (c.from === rNode.id ? c.to : c.from));
@@ -1064,7 +1069,7 @@ export default function FlowchartVisualCanvas({
         const serializer = new XMLSerializer();
         const svgString = serializer.serializeToString(svgElement);
 
-        const prefix = canvasMode === 'er' ? 'er_diagram' : 'flowchart';
+        const prefix = isErMode ? 'er_diagram' : 'flowchart';
 
         if (format === 'svg') {
             const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
@@ -1096,9 +1101,9 @@ export default function FlowchartVisualCanvas({
         }
     };
 
-    // Render node path/geometry based on conventional flowchart & DBMS shapes
+    // Render node path/geometry starting at (0, 0) - NO CSS TRANSITIONS on positioning!
     const renderShapeGeometry = (node, isSelected, isConnectingSource) => {
-        const { x, y, width: w, height: h, type, color, borderColor } = node;
+        const { width: w, height: h, type, color, borderColor } = node;
         const strokeColor = isConnectingSource
             ? '#38bdf8'
             : isSelected
@@ -1110,8 +1115,8 @@ export default function FlowchartVisualCanvas({
         if (type === 'terminator') {
             return (
                 <rect
-                    x={x}
-                    y={y}
+                    x={0}
+                    y={0}
                     width={w}
                     height={h}
                     rx={h / 2}
@@ -1119,53 +1124,52 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'io') {
             const skew = 18;
-            const points = `${x + skew},${y} ${x + w},${y} ${x + w - skew},${y + h} ${x},${y + h}`;
+            const points = `${skew},0 ${w},0 ${w - skew},${h} 0,${h}`;
             return (
                 <polygon
                     points={points}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'decision') {
-            const points = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
+            const points = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
             return (
                 <polygon
                     points={points}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'loop') {
             const inset = 16;
-            const points = `${x + inset},${y} ${x + w - inset},${y} ${x + w},${y + h / 2} ${x + w - inset},${y + h} ${x + inset},${y + h} ${x},${y + h / 2}`;
+            const points = `${inset},0 ${w - inset},0 ${w},${h / 2} ${w - inset},${h} ${inset},${h} 0,${h / 2}`;
             return (
                 <polygon
                     points={points}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         }
 
         // DBMS CHEN'S ER GEOMETRIES
         else if (type === 'er_entity') {
-            // Strong Entity: Solid Rectangle
             return (
                 <rect
-                    x={x}
-                    y={y}
+                    x={0}
+                    y={0}
                     width={w}
                     height={h}
                     rx={4}
@@ -1173,16 +1177,15 @@ export default function FlowchartVisualCanvas({
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'er_weak_entity') {
-            // Weak Entity: Double Rectangle
             return (
-                <g className="cursor-move filter drop-shadow-xs transition-all">
+                <g className="drop-shadow-xs">
                     <rect
-                        x={x}
-                        y={y}
+                        x={0}
+                        y={0}
                         width={w}
                         height={h}
                         rx={5}
@@ -1192,8 +1195,8 @@ export default function FlowchartVisualCanvas({
                         strokeWidth={strokeWidth}
                     />
                     <rect
-                        x={x + 4}
-                        y={y + 4}
+                        x={4}
+                        y={4}
                         width={w - 8}
                         height={h - 8}
                         rx={3}
@@ -1205,48 +1208,44 @@ export default function FlowchartVisualCanvas({
                 </g>
             );
         } else if (type === 'er_relationship') {
-            // Strong / Regular Relationship: Diamond
-            const points = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
+            const points = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
             return (
                 <polygon
                     points={points}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'er_weak_relationship') {
-            // Identifying Relationship: Double Diamond
-            const outerPoints = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`;
-            const innerPoints = `${x + w / 2},${y + 6} ${x + w - 8},${y + h / 2} ${x + w / 2},${y + h - 6} ${x + 8},${y + h / 2}`;
+            const outerPoints = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
+            const innerPoints = `${w / 2},6 ${w - 8},${h / 2} ${w / 2},${h - 6} 8,${h / 2}`;
             return (
-                <g className="cursor-move filter drop-shadow-xs transition-all">
+                <g className="drop-shadow-xs">
                     <polygon points={outerPoints} fill={color} stroke={strokeColor} strokeWidth={strokeWidth} />
                     <polygon points={innerPoints} fill="none" stroke={strokeColor} strokeWidth={Math.max(1, strokeWidth - 0.5)} />
                 </g>
             );
         } else if (type === 'er_attribute' || type === 'er_key_attribute') {
-            // Regular Attribute or Key Attribute: Oval / Ellipse
             return (
                 <ellipse
-                    cx={x + w / 2}
-                    cy={y + h / 2}
+                    cx={w / 2}
+                    cy={h / 2}
                     rx={w / 2}
                     ry={h / 2}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'er_multivalued') {
-            // Multivalued Attribute: Double Oval
             return (
-                <g className="cursor-move filter drop-shadow-xs transition-all">
+                <g className="drop-shadow-xs">
                     <ellipse
-                        cx={x + w / 2}
-                        cy={y + h / 2}
+                        cx={w / 2}
+                        cy={h / 2}
                         rx={w / 2}
                         ry={h / 2}
                         fill={color}
@@ -1254,8 +1253,8 @@ export default function FlowchartVisualCanvas({
                         strokeWidth={strokeWidth}
                     />
                     <ellipse
-                        cx={x + w / 2}
-                        cy={y + h / 2}
+                        cx={w / 2}
+                        cy={h / 2}
                         rx={w / 2 - 4}
                         ry={h / 2 - 4}
                         fill="none"
@@ -1265,27 +1264,25 @@ export default function FlowchartVisualCanvas({
                 </g>
             );
         } else if (type === 'er_derived') {
-            // Derived Attribute: Dashed Oval
             return (
                 <ellipse
-                    cx={x + w / 2}
-                    cy={y + h / 2}
+                    cx={w / 2}
+                    cy={h / 2}
                     rx={w / 2}
                     ry={h / 2}
                     fill={color}
                     stroke={strokeColor}
                     strokeWidth={strokeWidth}
                     strokeDasharray="5,4"
-                    className="cursor-move filter drop-shadow-xs transition-all"
+                    className="drop-shadow-xs"
                 />
             );
         } else if (type === 'er_table') {
-            // Relational Table Card (Columns & Types)
             return (
-                <g className="cursor-move filter drop-shadow-md transition-all">
+                <g className="drop-shadow-md">
                     <rect
-                        x={x}
-                        y={y}
+                        x={0}
+                        y={0}
                         width={w}
                         height={h}
                         rx={6}
@@ -1294,10 +1291,9 @@ export default function FlowchartVisualCanvas({
                         stroke={strokeColor}
                         strokeWidth={strokeWidth}
                     />
-                    {/* Header bar */}
                     <rect
-                        x={x}
-                        y={y}
+                        x={0}
+                        y={0}
                         width={w}
                         height={26}
                         rx={6}
@@ -1305,8 +1301,8 @@ export default function FlowchartVisualCanvas({
                         fill={isSelected ? '#7c3aed' : '#334155'}
                     />
                     <rect
-                        x={x}
-                        y={y + 18}
+                        x={0}
+                        y={18}
                         width={w}
                         height={8}
                         fill={isSelected ? '#7c3aed' : '#334155'}
@@ -1315,11 +1311,10 @@ export default function FlowchartVisualCanvas({
             );
         }
 
-        // Default: Standard Process Rectangle
         return (
             <rect
-                x={x}
-                y={y}
+                x={0}
+                y={0}
                 width={w}
                 height={h}
                 rx={4}
@@ -1327,7 +1322,7 @@ export default function FlowchartVisualCanvas({
                 fill={color}
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
-                className="cursor-move filter drop-shadow-xs transition-all"
+                className="drop-shadow-xs"
             />
         );
     };
@@ -1347,43 +1342,32 @@ export default function FlowchartVisualCanvas({
                     isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
                 }`}
             >
-                {/* Left: Mode Switcher & Tools */}
+                {/* Left: Mode Title & Tools */}
                 <div className="flex flex-wrap items-center gap-1.5">
-                    {/* Canvas Mode Toggle: ER Designer vs Flowchart */}
+                    {/* Active Mode Indicator Badge */}
                     <div
-                        className={`flex items-center rounded-lg p-0.5 border mr-1 ${
-                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border mr-1 ${
+                            isErMode
+                                ? isLight
+                                    ? 'bg-sky-50 border-sky-300 text-sky-800'
+                                    : 'bg-sky-950/60 border-sky-800 text-sky-300'
+                                : isLight
+                                ? 'bg-purple-50 border-purple-300 text-purple-800'
+                                : 'bg-purple-950/60 border-purple-800 text-purple-300'
                         }`}
+                        title={isErMode ? 'ER Diagram Designer (Active for SQL/PL-SQL)' : 'Flowchart Designer (Active for Python/C/C++/Java)'}
                     >
-                        <button
-                            onClick={() => handleSwitchMode('er')}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
-                                canvasMode === 'er'
-                                    ? 'bg-sky-600 text-white shadow-xs'
-                                    : isLight
-                                    ? 'text-slate-600 hover:text-slate-900'
-                                    : 'text-slate-400 hover:text-white'
-                            }`}
-                            title="Switch to DBMS Chen's ER & Relational Schema Designer"
-                        >
-                            <Database className="w-3.5 h-3.5" />
-                            <span>ER Diagram (DBMS)</span>
-                        </button>
-
-                        <button
-                            onClick={() => handleSwitchMode('flowchart')}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer ${
-                                canvasMode === 'flowchart'
-                                    ? 'bg-purple-600 text-white shadow-xs'
-                                    : isLight
-                                    ? 'text-slate-600 hover:text-slate-900'
-                                    : 'text-slate-400 hover:text-white'
-                            }`}
-                            title="Switch to Algorithmic Flowchart Canvas"
-                        >
-                            <Shapes className="w-3.5 h-3.5" />
-                            <span>Flowchart (Logic)</span>
-                        </button>
+                        {isErMode ? (
+                            <>
+                                <Database className="w-3.5 h-3.5 text-sky-500" />
+                                <span>ER Diagram (DBMS)</span>
+                            </>
+                        ) : (
+                            <>
+                                <Shapes className="w-3.5 h-3.5 text-purple-500" />
+                                <span>Flowchart Designer</span>
+                            </>
+                        )}
                     </div>
 
                     {/* Pointer / Connector Selectors */}
@@ -1435,8 +1419,8 @@ export default function FlowchartVisualCanvas({
 
                     <div className={`h-4 w-px mx-0.5 hidden sm:block ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                    {/* ER DIAGRAM SHAPE PALETTE */}
-                    {canvasMode === 'er' && (
+                    {/* ER DIAGRAM SHAPE PALETTE (Active when in SQL / PL-SQL) */}
+                    {isErMode && (
                         <div className="flex flex-wrap items-center gap-1">
                             <button
                                 onClick={() => handleAddShape('er_entity')}
@@ -1521,8 +1505,8 @@ export default function FlowchartVisualCanvas({
                         </div>
                     )}
 
-                    {/* FLOWCHART SHAPE PALETTE */}
-                    {canvasMode === 'flowchart' && (
+                    {/* FLOWCHART SHAPE PALETTE (Active when in Python / C / C++ / Java) */}
+                    {!isErMode && (
                         <div className="flex flex-wrap items-center gap-1">
                             <button
                                 onClick={() => handleAddShape('terminator')}
@@ -1571,17 +1555,27 @@ export default function FlowchartVisualCanvas({
                     )}
                 </div>
 
-                {/* Right: SQL DDL Generator, Delete, Zoom, Export */}
+                {/* Right: Traditional Generator, DDL, Delete, Zoom, Export */}
                 <div className="flex items-center gap-1.5 text-xs">
-                    {/* One-Click Generate SQL DDL Button (in ER mode) */}
-                    {canvasMode === 'er' && (
+                    {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) */}
+                    <button
+                        onClick={handleTraditionalGenerate}
+                        className="px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                        title={`Generate ${isErMode ? 'ER Diagram' : 'Flowchart'} automatically from editor code using static parser (Traditional rule-based, 100% offline, 0 AI calls)`}
+                    >
+                        <Cpu className="w-3.5 h-3.5 text-slate-950" />
+                        <span>Generate from Code (No AI)</span>
+                    </button>
+
+                    {/* SQL DDL Generator (in ER mode) */}
+                    {isErMode && (
                         <button
                             onClick={handleGenerateSqlDdl}
                             className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-bold shadow-xs flex items-center gap-1.5 transition cursor-pointer"
                             title="Generate Executable SQL DDL CREATE TABLE Statements from Canvas"
                         >
-                            <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                            <span>Generate SQL DDL</span>
+                            <Code className="w-3.5 h-3.5 text-yellow-300" />
+                            <span className="hidden sm:inline">Export SQL DDL</span>
                         </button>
                     )}
 
@@ -1647,7 +1641,7 @@ export default function FlowchartVisualCanvas({
                         title="Download as PNG Image"
                     >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Export PNG</span>
+                        <span className="hidden sm:inline">Export PNG</span>
                     </button>
 
                     <button
@@ -1784,9 +1778,7 @@ export default function FlowchartVisualCanvas({
                             const data = getConnectorPathData(conn);
                             if (!data) return null;
                             const isSelected = selectedConnectorId === conn.id;
-
-                            // In ER model, entity-attribute lines don't necessarily need large arrowheads, but relation-entity does
-                            const showArrow = canvasMode !== 'er' || Boolean(conn.label);
+                            const showArrow = !isErMode || Boolean(conn.label);
 
                             return (
                                 <g
@@ -1820,7 +1812,7 @@ export default function FlowchartVisualCanvas({
                                         }
                                         strokeWidth={isSelected ? 3 : 2}
                                         markerEnd={showArrow ? (isSelected ? 'url(#flowchart-arrowhead-selected)' : 'url(#flowchart-arrowhead)') : undefined}
-                                        className="transition-colors group-hover:stroke-purple-500"
+                                        className="group-hover:stroke-purple-500"
                                     />
 
                                     {/* Midpoint Cardinality / Label Pill */}
@@ -1852,7 +1844,7 @@ export default function FlowchartVisualCanvas({
                                                         : '#475569'
                                                 }
                                                 strokeWidth={1.5}
-                                                className="filter drop-shadow-sm group-hover:stroke-purple-500 transition-all"
+                                                className="drop-shadow-sm group-hover:stroke-purple-500"
                                             />
                                             <text
                                                 textAnchor="middle"
@@ -1876,47 +1868,72 @@ export default function FlowchartVisualCanvas({
                             );
                         })}
 
-                        {/* Interactive Dragged Live Connector Line */}
-                        {connectingSource && connectingMousePos && (
-                            <line
-                                x1={getPortCoordinates(nodes.find((n) => n.id === connectingSource.nodeId), connectingSource.port).x}
-                                y1={getPortCoordinates(nodes.find((n) => n.id === connectingSource.nodeId), connectingSource.port).y}
-                                x2={connectingMousePos.x}
-                                y2={connectingMousePos.y}
-                                stroke="#8b5cf6"
-                                strokeWidth={2.5}
-                                strokeDasharray="6,4"
-                                markerEnd="url(#flowchart-arrowhead-selected)"
-                                className="pointer-events-none animate-pulse"
-                            />
-                        )}
+                        {/* Interactive Dragged Live Connector Line - Smooth Bézier Curve (NOT a straight dotted line) */}
+                        {connectingSource && connectingMousePos && (() => {
+                            const fromNode = nodes.find((n) => n.id === connectingSource.nodeId);
+                            if (!fromNode) return null;
+                            const start = getPortCoordinates(fromNode, connectingSource.port);
+                            const end = connectingMousePos;
 
-                        {/* 2. SHAPES / NODES LAYER */}
+                            const normalOffsets = {
+                                top: { x: 0, y: -1 },
+                                bottom: { x: 0, y: 1 },
+                                left: { x: -1, y: 0 },
+                                right: { x: 1, y: 0 }
+                            };
+                            const norm = normalOffsets[connectingSource.port] || { x: 0, y: 1 };
+                            const dist = Math.hypot(end.x - start.x, end.y - start.y);
+                            const curvature = Math.min(Math.max(dist * 0.45, 25), 120);
+
+                            const cp1 = { x: start.x + norm.x * curvature, y: start.y + norm.y * curvature };
+                            const cp2 = { x: end.x, y: end.y };
+                            const livePathD = `M ${start.x} ${start.y} C ${cp1.x} ${cp1.y}, ${cp2.x} ${cp2.y}, ${end.x} ${end.y}`;
+
+                            return (
+                                <path
+                                    d={livePathD}
+                                    fill="none"
+                                    stroke="#8b5cf6"
+                                    strokeWidth={2.5}
+                                    markerEnd="url(#flowchart-arrowhead-selected)"
+                                    className="pointer-events-none drop-shadow-sm"
+                                />
+                            );
+                        })()}
+
+                        {/* 2. SHAPES / NODES LAYER - Encapsulated into unified Translate Group (Zero Lag, Perfectly Synchronized) */}
                         {nodes.map((node) => {
                             const isSelected = selectedNodeId === node.id;
                             const isConnectingSource = connectingSource?.nodeId === node.id;
                             const isHovered = hoveredNodeId === node.id;
 
+                            // Local port relative positions
+                            const portLocs = {
+                                top: { x: node.width / 2, y: 0 },
+                                right: { x: node.type === 'io' ? node.width - 9 : node.width, y: node.height / 2 },
+                                bottom: { x: node.width / 2, y: node.height },
+                                left: { x: node.type === 'io' ? 9 : 0, y: node.height / 2 }
+                            };
+
                             return (
                                 <g
                                     key={node.id}
+                                    transform={`translate(${node.x}, ${node.y})`}
                                     onPointerDown={(e) => handleNodePointerDown(e, node)}
                                     onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                                     onPointerEnter={() => setHoveredNodeId(node.id)}
                                     onPointerLeave={() => setHoveredNodeId(null)}
                                     className="cursor-move select-none"
                                 >
-                                    {/* Geometry */}
+                                    {/* Shape Geometry */}
                                     {renderShapeGeometry(node, isSelected, isConnectingSource)}
 
-                                    {/* Inner Node Text / Content */}
+                                    {/* Inner Text Content */}
                                     {node.type === 'er_table' ? (
-                                        // Relational Table Multi-row Content
                                         <g className="pointer-events-none">
-                                            {/* Table Name Header */}
                                             <text
-                                                x={node.x + node.width / 2}
-                                                y={node.y + 16}
+                                                x={node.width / 2}
+                                                y={16}
                                                 textAnchor="middle"
                                                 fill="#ffffff"
                                                 fontSize={11}
@@ -1925,12 +1942,11 @@ export default function FlowchartVisualCanvas({
                                             >
                                                 {node.text.split('\n')[0] || 'table'}
                                             </text>
-                                            {/* Column rows */}
                                             {node.text.split('\n').slice(1).map((line, lIdx) => (
                                                 <text
                                                     key={lIdx}
-                                                    x={node.x + 8}
-                                                    y={node.y + 40 + lIdx * 18}
+                                                    x={8}
+                                                    y={40 + lIdx * 18}
                                                     fill={line.includes('PK') ? '#d97706' : node.textColor}
                                                     fontSize={10}
                                                     fontWeight={line.includes('PK') ? 'bold' : 'normal'}
@@ -1941,10 +1957,9 @@ export default function FlowchartVisualCanvas({
                                             ))}
                                         </g>
                                     ) : (
-                                        // Standard Text Inside Shape
                                         <text
-                                            x={node.x + node.width / 2}
-                                            y={node.y + node.height / 2}
+                                            x={node.width / 2}
+                                            y={node.height / 2}
                                             textAnchor="middle"
                                             dominantBaseline="central"
                                             fill={node.textColor}
@@ -1958,10 +1973,10 @@ export default function FlowchartVisualCanvas({
                                         </text>
                                     )}
 
-                                    {/* 3. WHITEBOARD-STYLE CARDINAL HOOK DOCKING PORTS */}
+                                    {/* 3. CARDINAL HOOK DOCKING PORTS (Positioned Relative to Node - Pinned Rigorously) */}
                                     {(isSelected || isHovered || isConnectingSource || activeTool === 'connector') &&
                                         PORTS.map((port) => {
-                                            const pt = getPortCoordinates(node, port);
+                                            const loc = portLocs[port];
                                             const isThisHookActive = connectingSource?.nodeId === node.id && connectingSource?.port === port;
                                             const isThisHookHovered = hoveredPortInfo?.nodeId === node.id && hoveredPortInfo?.port === port;
 
@@ -1979,10 +1994,10 @@ export default function FlowchartVisualCanvas({
                                                     onPointerEnter={() => setHoveredPortInfo({ nodeId: node.id, port })}
                                                     onPointerLeave={() => setHoveredPortInfo(null)}
                                                 >
-                                                    {/* Invisible large hit circle */}
+                                                    {/* Invisible large hit target circle */}
                                                     <circle
-                                                        cx={pt.x}
-                                                        cy={pt.y}
+                                                        cx={loc.x}
+                                                        cy={loc.y}
                                                         r={14}
                                                         fill="transparent"
                                                         className="cursor-crosshair"
@@ -1991,21 +2006,20 @@ export default function FlowchartVisualCanvas({
                                                     {/* Outer Aura Ring */}
                                                     {(isThisHookHovered || isThisHookActive) && (
                                                         <circle
-                                                            cx={pt.x}
-                                                            cy={pt.y}
+                                                            cx={loc.x}
+                                                            cy={loc.y}
                                                             r={10}
                                                             fill="none"
                                                             stroke="#8b5cf6"
                                                             strokeWidth={2}
                                                             strokeDasharray="3,2"
-                                                            className="animate-spin"
                                                         />
                                                     )}
 
                                                     {/* Hook Port Center Dot */}
                                                     <circle
-                                                        cx={pt.x}
-                                                        cy={pt.y}
+                                                        cx={loc.x}
+                                                        cy={loc.y}
                                                         r={isThisHookActive || isThisHookHovered ? 6 : 4}
                                                         fill={
                                                             isThisHookActive
@@ -2026,7 +2040,7 @@ export default function FlowchartVisualCanvas({
                                                                 : '#64748b'
                                                         }
                                                         strokeWidth={isThisHookActive || isThisHookHovered ? 2.5 : 1.5}
-                                                        className="transition-all filter drop-shadow-xs"
+                                                        className="drop-shadow-xs"
                                                     />
                                                 </g>
                                             );
@@ -2038,7 +2052,6 @@ export default function FlowchartVisualCanvas({
                 </svg>
 
                 {/* 4. FLICKER-FREE HTML OVERLAY FOR DIRECT IN-PLACE TEXT EDITING */}
-                {/* Node Text Inline Editor */}
                 {editingNodeId && (() => {
                     const node = nodes.find((n) => n.id === editingNodeId);
                     if (!node) return null;
@@ -2152,11 +2165,11 @@ export default function FlowchartVisualCanvas({
                 <span className="flex items-center gap-2">
                     <Info className="w-3.5 h-3.5 text-primary-500 flex-shrink-0" />
                     <span>
-                        <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Hooks:</strong> Click any hook dot to link • <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Shortcuts:</strong> Ctrl+C copy, Ctrl+X cut, Ctrl+V paste, Del delete • Double-click shape to edit text
+                        <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Hooks:</strong> Click any hook dot to link • <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Zero-Lag Drag:</strong> Text and hooks move in sync • <strong className={isLight ? 'text-slate-800' : 'text-slate-300'}>Shortcuts:</strong> Ctrl+C copy, Ctrl+X cut, Ctrl+V paste, Del delete
                     </span>
                 </span>
                 <span className={`text-[10px] font-mono ${isLight ? 'text-slate-500' : 'text-slate-500'}`}>
-                    {nodes.length} components • {connectors.length} connections • Mode: {canvasMode === 'er' ? 'ER Diagram' : 'Flowchart'}
+                    {nodes.length} components • {connectors.length} connections • Mode: {isErMode ? 'ER Diagram (DBMS)' : 'Flowchart (Logic)'}
                 </span>
             </div>
 
@@ -2169,7 +2182,6 @@ export default function FlowchartVisualCanvas({
                         }`}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Modal Header */}
                         <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0 border-slate-200 dark:border-slate-800">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
@@ -2190,14 +2202,12 @@ export default function FlowchartVisualCanvas({
                             </button>
                         </div>
 
-                        {/* Modal Body: Code Preview */}
                         <div className="p-4 flex-1 overflow-y-auto">
                             <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 leading-relaxed">
                                 {generatedSqlDdl}
                             </pre>
                         </div>
 
-                        {/* Modal Footer: Actions */}
                         <div className="px-5 py-3 border-t flex items-center justify-between border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
                             <span className="text-xs text-slate-500 font-medium">
                                 Ready to run in Practice SQL Engine
