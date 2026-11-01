@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Mic, Keyboard, Search, GraduationCap } from 'lucide-react';
+import { Menu, Search, GraduationCap } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
 import ProfileDropdown from './ProfileDropdown';
@@ -74,6 +74,15 @@ export default function AppLayout({ children }) {
         localStorage.setItem('sidebarCollapsed', JSON.stringify(newState));
     };
 
+    // Universal menu toggle handler: collapses/expands sidebar on desktop, toggles drawer on mobile
+    const handleToggleMenu = () => {
+        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+            handleToggleCollapse();
+        } else {
+            setSidebarOpen(prev => !prev);
+        }
+    };
+
     // If on auth page, just render children without layout
     if (isAuthPage) {
         return <>{children}</>;
@@ -108,14 +117,17 @@ export default function AppLayout({ children }) {
                 {/* Top Header */}
                 <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
                     <div className="px-4 h-16 flex items-center justify-between gap-4">
-                        {/* Left side - Mobile menu & Voice Mic Button */}
+                        {/* Left side - Menu toggle button & Branding */}
                         <div className="flex items-center gap-3 flex-1">
-                            {/* Mobile menu button */}
+                            {/* Universal Collapse / Expand Hamburger Menu Button */}
                             <button
-                                onClick={() => setSidebarOpen(true)}
-                                className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition"
+                                type="button"
+                                onClick={handleToggleMenu}
+                                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer flex items-center justify-center shrink-0 border border-slate-200 shadow-2xs"
+                                title={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
+                                aria-label="Toggle navigation menu"
                             >
-                                <Menu className="w-5 h-5 text-slate-600" />
+                                <Menu className="w-5 h-5 text-slate-700" />
                             </button>
 
                             {/* Mobile Brand: School Logo to the left of ULRMS */}
@@ -137,44 +149,6 @@ export default function AppLayout({ children }) {
                                     ULRMS
                                 </span>
                             </div>
-
-                            {/* Global Search Button (Mobile, iPad & Desktop) */}
-                            <button
-                                type="button"
-                                onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm group cursor-pointer"
-                                title="Global Search (⌘K or tap)"
-                                aria-label="Global Search"
-                            >
-                                <Search className="w-3.5 h-3.5 text-indigo-500 group-hover:scale-110 transition-transform" />
-                                <span className="hidden sm:inline text-slate-500 group-hover:text-indigo-600">Search...</span>
-                                <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-400 font-bold shadow-2xs">
-                                    <span className="text-xs">⌘</span>K
-                                </kbd>
-                            </button>
-
-                            {/* Global Voice Assistant Mic Button */}
-                            <button
-                                type="button"
-                                onClick={() => setVoiceHudOpen(true)}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm"
-                                title="Voice AI Assistant (Ctrl+Shift+V / ⌘+Shift+V)"
-                            >
-                                <Mic className="w-3.5 h-3.5 text-rose-500" />
-                                <span className="hidden sm:inline">Voice AI</span>
-                            </button>
-
-                            {/* Global Shortcuts / Quick Invocations Launcher */}
-                            <button
-                                type="button"
-                                onClick={() => window.dispatchEvent(new CustomEvent('open-quick-action', { detail: { modal: 'cheatsheet' } }))}
-                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 border border-slate-200 text-xs font-medium transition shadow-sm"
-                                title="Quick Invocations & Shortcuts (⌘? / ⌘1–⌘6)"
-                            >
-                                <Keyboard className="w-3.5 h-3.5 text-indigo-500" />
-                                <span className="hidden sm:inline">Shortcuts</span>
-                                <kbd className="hidden md:inline-block px-1 py-0.2 rounded bg-white border border-slate-200 text-[10px] font-mono text-slate-500 font-bold">⌘1–6</kbd>
-                            </button>
                         </div>
 
                         {/* Right side - Session, Status, Notifications, Profile */}

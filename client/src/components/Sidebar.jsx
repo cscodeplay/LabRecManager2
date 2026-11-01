@@ -291,7 +291,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
                         title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                     >
-                        <ChevronLeft className={`w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} />
+                        <Menu className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                     </button>
                 )}
             </div>
@@ -378,7 +378,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
 
             {/* Sidebar */}
             <aside
-                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 w-72 lg:w-auto ${
+                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 w-72 ${
                     isCollapsed ? 'lg:w-20' : 'lg:w-64'
                 } ${
                     isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
