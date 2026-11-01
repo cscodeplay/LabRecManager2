@@ -11,6 +11,10 @@
 
 /**
  * Parses Python, C, C++, or Java code into a visual Control Flow Graph (CFG) Flowchart.
+ * Features:
+ * - Groups consecutive variable definitions/initializations into a single compact Process block.
+ * - Groups consecutive print statements into a single compact Output block.
+ * - Properly structures While/For loops with 'Yes' branch, loopback arrow, and 'No' false branch.
  * @param {string} code - Source code string
  * @param {string} language - 'python' | 'c' | 'cpp' | 'java'
  * @returns {{ nodes: Array, connectors: Array }}
@@ -20,18 +24,35 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         return { nodes: [], connectors: [] };
     }
 
-    const lines = code.split('\n');
+    const rawLines = code.split('\n');
+    const statements = [];
+
+    for (let raw of rawLines) {
+        if (!raw.trim()) continue;
+        const trimmed = raw.trim();
+        // Skip comments, include directives, braces, function wrappers
+        if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+        if (trimmed.startsWith('#include') || trimmed.startsWith('import ') || trimmed.startsWith('from ') || trimmed.startsWith('package ') || trimmed.startsWith('using namespace')) continue;
+        if (trimmed === '{' || trimmed === '}' || trimmed === 'def main():' || trimmed.includes('int main(') || trimmed.includes('public static void main')) continue;
+
+        const indent = raw.match(/^\s*/)[0].replace(/\t/g, '    ').length;
+        statements.push({ text: trimmed, indent });
+    }
+
+    if (statements.length === 0) {
+        return { nodes: [], connectors: [] };
+    }
+
     const nodes = [];
     const connectors = [];
-
     const xCenter = 240;
     let yCursor = 40;
-    let nodeIdCounter = 1;
+    let counter = 1;
 
-    const makeId = (prefix) => `node_${prefix}_${nodeIdCounter++}`;
+    const makeId = (prefix) => `node_${prefix}_${counter++}`;
     const makeConnId = () => `conn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    // 1. Initial Start Terminator
+    // 1. Start Terminator
     const startId = makeId('start');
     nodes.push({
         id: startId,
@@ -45,165 +66,263 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         borderColor: '#16a34a',
         textColor: '#14532d'
     });
-
     let prevNodeId = startId;
     yCursor += 85;
 
-    // Filter relevant lines (skip comments, includes, boilerplate headers)
-    const cleanStatements = [];
-    for (let rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line) continue;
-        if (line.startsWith('#') || line.startsWith('//') || line.startsWith('/*') || line.startsWith('*')) continue;
-        if (line.startsWith('#include') || line.startsWith('import ') || line.startsWith('from ') || line.startsWith('package ') || line.startsWith('using namespace')) continue;
-        if (line === '{' || line === '}' || line === 'def main():' || line.includes('int main(') || line.includes('public static void main')) continue;
-        cleanStatements.push(line);
-    }
+    const classify = (text) => {
+        if (text.includes('input(') || text.includes('scanf(') || text.includes('cin >>') || text.includes('Scanner')) return 'input';
+        if (text.startsWith('print(') || text.startsWith('printf(') || text.includes('cout <<') || text.includes('System.out.print')) return 'output';
+        if (text.startsWith('while ') || text.startsWith('while(')) return 'while';
+        if (text.startsWith('for ') || text.startsWith('for(')) return 'for';
+        if (text.startsWith('if ') || text.startsWith('if(')) return 'if';
+        return 'assign';
+    };
 
-    // Limit maximum statements to keep diagram clean & pedagogical (max 12 steps)
-    const activeStatements = cleanStatements.slice(0, 12);
+    const cleanInput = (stmt) => {
+        const m = stmt.match(/([a-zA-Z_]\w*)\s*=\s*(?:int|float|str)?\s*\(?input\(/);
+        if (m) return `Input ${m[1]}`;
+        const cinMatch = stmt.match(/cin\s*>>\s*([a-zA-Z_]\w*)/);
+        if (cinMatch) return `Input ${cinMatch[1]}`;
+        const scanfMatch = stmt.match(/scanf\s*\([^,]+,\s*&?([a-zA-Z_]\w*)\)/);
+        if (scanfMatch) return `Input ${scanfMatch[1]}`;
+        return stmt.replace(/;\s*$/, '');
+    };
 
-    let activeLoopNode = null;
-    let activeLoopBodyFirstNode = null;
-    let activeLoopBodyLastNode = null;
-
-    activeStatements.forEach((stmt, idx) => {
-        // Classify statement type
-        const isInput = stmt.includes('input(') || stmt.includes('scanf(') || stmt.includes('cin >>') || stmt.includes('Scanner');
-        const isOutput = stmt.startsWith('print(') || stmt.startsWith('printf(') || stmt.includes('cout <<') || stmt.includes('System.out.print');
-        const isWhileLoop = stmt.startsWith('while ') || stmt.startsWith('while(');
-        const isForLoop = stmt.startsWith('for ') || stmt.startsWith('for(');
-        const isIfCondition = stmt.startsWith('if ') || stmt.startsWith('if(');
-
-        let nodeType = 'process';
-        let displayText = stmt;
-        let width = 170;
-        let height = 54;
-        let color = '#ffffff';
-        let borderColor = '#64748b';
-        let textColor = '#0f172a';
-
-        if (isInput) {
-            nodeType = 'io';
-            width = 175;
-            height = 54;
-            color = '#dbeafe';
-            borderColor = '#2563eb';
-            textColor = '#1e3a8a';
-
-            // Clean input expression
-            const match = stmt.match(/([a-zA-Z_]\w*)\s*=\s*(?:int|float|str)?\s*\(?input\(/);
-            if (match) {
-                displayText = `Input ${match[1]}`;
-            } else {
-                displayText = stmt.replace(/;\s*$/, '');
+    const cleanOutput = (stmt) => {
+        const m = stmt.match(/(?:print|printf)\s*\((.*?)\)/);
+        if (m) {
+            const inner = m[1];
+            // Strip string literals "..." and '...' to isolate variables
+            const withoutQuotes = inner.replace(/"[^"]*"/g, '').replace(/'[^']*'/g, '').replace(/f"[^"]*"/g, '');
+            const tokens = withoutQuotes
+                .split(/[,\s]+/)
+                .map((t) => t.replace(/[^a-zA-Z0-9_]/g, '').trim())
+                .filter((t) => t.length > 0 && !/^(end|sep|flush)$/i.test(t));
+            if (tokens.length > 0) {
+                return tokens.join(', ');
             }
-        } else if (isOutput) {
-            nodeType = 'io';
-            width = 175;
-            height = 54;
-            color = '#dbeafe';
-            borderColor = '#2563eb';
-            textColor = '#1e3a8a';
-
-            // Clean output expression
-            const printMatch = stmt.match(/(?:print|printf)\s*\((.*?)\)/);
-            if (printMatch) {
-                const inner = printMatch[1].replace(/["']/g, '').trim();
-                displayText = `Display ${inner.substring(0, 24)}`;
-            } else {
-                displayText = stmt.replace(/;\s*$/, '');
-            }
-        } else if (isWhileLoop || isForLoop) {
-            nodeType = 'decision';
-            width = 160;
-            height = 70;
-            color = '#fef3c7';
-            borderColor = '#d97706';
-            textColor = '#78350f';
-
-            if (isWhileLoop) {
-                const cond = stmt.replace(/^while\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim();
-                displayText = `${cond} ?`;
-            } else {
-                const forCond = stmt.replace(/^for\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim();
-                displayText = `${forCond.substring(0, 20)} ?`;
-            }
-        } else if (isIfCondition) {
-            nodeType = 'decision';
-            width = 155;
-            height = 70;
-            color = '#fef3c7';
-            borderColor = '#d97706';
-            textColor = '#78350f';
-
-            const cond = stmt.replace(/^if\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim();
-            displayText = `${cond} ?`;
-        } else {
-            // General process / assignment
-            nodeType = 'process';
-            width = 170;
-            height = 54;
-            color = '#ffffff';
-            borderColor = '#64748b';
-            textColor = '#0f172a';
-            displayText = stmt.replace(/;\s*$/, '').substring(0, 28);
+            const fallback = inner.replace(/["']/g, '').trim();
+            return fallback.substring(0, 24);
         }
+        const coutMatch = stmt.match(/cout\s*<<\s*(.*?);/);
+        if (coutMatch) {
+            const parts = coutMatch[1].split('<<').map(p => p.trim()).filter(p => !p.startsWith('"') && !p.startsWith("'") && p !== 'endl');
+            return parts.length > 0 ? parts.join(', ') : 'result';
+        }
+        return stmt.replace(/;\s*$/, '').substring(0, 24);
+    };
 
-        const nodeId = makeId(nodeType);
-        nodes.push({
-            id: nodeId,
-            type: nodeType,
-            text: displayText,
-            x: xCenter - width / 2,
-            y: yCursor,
-            width,
-            height,
-            color,
-            borderColor,
-            textColor
-        });
+    const cleanCondition = (stmt, type) => {
+        if (type === 'while') {
+            return stmt.replace(/^while\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim() + ' ?';
+        }
+        if (type === 'for') {
+            const m = stmt.match(/for\s+(.*?)\s+in\s+range\((.*?)\)/);
+            if (m) return `${m[1]} in range(${m[2]}) ?`;
+            const cFor = stmt.match(/for\s*\([^;]*;\s*([^;]+);/);
+            if (cFor) return `${cFor[1].trim()} ?`;
+            return stmt.replace(/^for\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim() + ' ?';
+        }
+        if (type === 'if') {
+            return stmt.replace(/^if\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim() + ' ?';
+        }
+        return stmt;
+    };
 
-        // Create sequential connector from previous node
-        if (prevNodeId) {
-            const isPrevDecision = nodes.find((n) => n.id === prevNodeId)?.type === 'decision';
-            connectors.push({
-                id: makeConnId(),
-                from: prevNodeId,
-                fromPort: 'bottom',
-                to: nodeId,
-                toPort: 'top',
-                label: isPrevDecision ? 'Yes' : ''
+    let idx = 0;
+    let pendingFalseSource = null;
+
+    while (idx < statements.length) {
+        const item = statements[idx];
+        const kind = classify(item.text);
+
+        if (kind === 'input') {
+            const width = 170;
+            const height = 52;
+            const nodeId = makeId('io');
+            nodes.push({
+                id: nodeId,
+                type: 'io',
+                text: cleanInput(item.text),
+                x: xCenter - width / 2,
+                y: yCursor,
+                width,
+                height,
+                color: '#dbeafe',
+                borderColor: '#2563eb',
+                textColor: '#1e3a8a'
             });
+
+            if (pendingFalseSource) {
+                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
+                pendingFalseSource = null;
+            } else if (prevNodeId) {
+                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
+            }
+            prevNodeId = nodeId;
+            yCursor += height + 35;
+            idx++;
+        } else if (kind === 'assign') {
+            // Group consecutive assignment/variable statements at the same scope into ONE combined process block
+            const group = [];
+            const startIndent = item.indent;
+            while (idx < statements.length && classify(statements[idx].text) === 'assign' && statements[idx].indent === startIndent) {
+                const cleanStmt = statements[idx].text
+                    .replace(/^(int|float|double|long|char|auto)\s+/, '')
+                    .replace(/;\s*$/, '');
+                group.push(cleanStmt);
+                idx++;
+            }
+
+            const width = 180;
+            const height = Math.max(54, 30 + group.length * 16);
+            const nodeId = makeId('process');
+            nodes.push({
+                id: nodeId,
+                type: 'process',
+                text: group.join('\n'),
+                x: xCenter - width / 2,
+                y: yCursor,
+                width,
+                height,
+                color: '#ffffff',
+                borderColor: '#64748b',
+                textColor: '#0f172a'
+            });
+
+            if (pendingFalseSource) {
+                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
+                pendingFalseSource = null;
+            } else if (prevNodeId) {
+                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
+            }
+            prevNodeId = nodeId;
+            yCursor += height + 35;
+        } else if (kind === 'while' || kind === 'for') {
+            const loopIndent = item.indent;
+            const loopNodeId = makeId('decision');
+            const loopWidth = 160;
+            const loopHeight = 72;
+            const condText = cleanCondition(item.text, kind);
+
+            nodes.push({
+                id: loopNodeId,
+                type: 'decision',
+                text: condText,
+                x: xCenter - loopWidth / 2,
+                y: yCursor,
+                width: loopWidth,
+                height: loopHeight,
+                color: '#fef3c7',
+                borderColor: '#d97706',
+                textColor: '#78350f'
+            });
+
+            if (pendingFalseSource) {
+                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: loopNodeId, toPort: 'top', label: 'No' });
+                pendingFalseSource = null;
+            } else if (prevNodeId) {
+                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: loopNodeId, toPort: 'top', label: '' });
+            }
+
+            idx++;
+            yCursor += loopHeight + 40;
+
+            // Collect loop body statements (statements belonging inside the loop)
+            const bodyStmts = [];
+            while (idx < statements.length && statements[idx].indent > loopIndent) {
+                const cleanStmt = statements[idx].text
+                    .replace(/^(int|float|double|long|char|auto)\s+/, '')
+                    .replace(/;\s*$/, '');
+                bodyStmts.push(cleanStmt);
+                idx++;
+            }
+
+            if (bodyStmts.length > 0) {
+                const bodyNodeId = makeId('process');
+                const bodyWidth = 180;
+                const bodyHeight = Math.max(54, 30 + bodyStmts.length * 16);
+
+                nodes.push({
+                    id: bodyNodeId,
+                    type: 'process',
+                    text: bodyStmts.join('\n'),
+                    x: xCenter - bodyWidth / 2,
+                    y: yCursor,
+                    width: bodyWidth,
+                    height: bodyHeight,
+                    color: '#ffffff',
+                    borderColor: '#64748b',
+                    textColor: '#0f172a'
+                });
+
+                // 'Yes' connector from loop decision to loop body
+                connectors.push({
+                    id: makeConnId(),
+                    from: loopNodeId,
+                    fromPort: 'bottom',
+                    to: bodyNodeId,
+                    toPort: 'top',
+                    label: 'Yes'
+                });
+
+                // Loopback connector returning from loop body left port back to loop condition
+                connectors.push({
+                    id: makeConnId(),
+                    from: bodyNodeId,
+                    fromPort: 'left',
+                    to: loopNodeId,
+                    toPort: 'left',
+                    label: 'Loop'
+                });
+
+                yCursor += bodyHeight + 40;
+            }
+
+            // The loop decision's False branch connects to the subsequent statement outside loop
+            prevNodeId = null;
+            pendingFalseSource = loopNodeId;
+        } else if (kind === 'output') {
+            // Group consecutive print/output statements into ONE combined display node
+            const outputs = [];
+            while (idx < statements.length && classify(statements[idx].text) === 'output') {
+                const clean = cleanOutput(statements[idx].text);
+                if (clean) outputs.push(clean);
+                idx++;
+            }
+
+            const width = 185;
+            const height = 54;
+            const nodeId = makeId('io');
+            nodes.push({
+                id: nodeId,
+                type: 'io',
+                text: `Display ${outputs.join(', ')}`,
+                x: xCenter - width / 2,
+                y: yCursor,
+                width,
+                height,
+                color: '#dbeafe',
+                borderColor: '#2563eb',
+                textColor: '#1e3a8a'
+            });
+
+            if (pendingFalseSource) {
+                // False condition connector from loop decision!
+                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
+                pendingFalseSource = null;
+            } else if (prevNodeId) {
+                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
+            }
+
+            prevNodeId = nodeId;
+            yCursor += height + 35;
+        } else {
+            idx++;
         }
-
-        // Track loop nesting for loopback arrow
-        if (isWhileLoop || isForLoop) {
-            activeLoopNode = nodeId;
-        } else if (activeLoopNode && !activeLoopBodyFirstNode) {
-            activeLoopBodyFirstNode = nodeId;
-            activeLoopBodyLastNode = nodeId;
-        } else if (activeLoopNode) {
-            activeLoopBodyLastNode = nodeId;
-        }
-
-        prevNodeId = nodeId;
-        yCursor += height + 35;
-    });
-
-    // If a loop was detected, add loopback arrow from the last body node back to the loop decision
-    if (activeLoopNode && activeLoopBodyLastNode) {
-        connectors.push({
-            id: makeConnId(),
-            from: activeLoopBodyLastNode,
-            fromPort: 'right',
-            to: activeLoopNode,
-            toPort: 'right',
-            label: 'Loop'
-        });
     }
 
-    // Add End Terminator
+    // End Terminator
     const endId = makeId('end');
     nodes.push({
         id: endId,
@@ -218,16 +337,10 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         textColor: '#14532d'
     });
 
-    if (prevNodeId) {
-        const isPrevDecision = nodes.find((n) => n.id === prevNodeId)?.type === 'decision';
-        connectors.push({
-            id: makeConnId(),
-            from: prevNodeId,
-            fromPort: 'bottom',
-            to: endId,
-            toPort: 'top',
-            label: isPrevDecision ? 'No' : ''
-        });
+    if (pendingFalseSource) {
+        connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: endId, toPort: 'top', label: 'No' });
+    } else if (prevNodeId) {
+        connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: endId, toPort: 'top', label: '' });
     }
 
     return { nodes, connectors };
@@ -348,7 +461,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
         });
     }
 
-    // Fallback if no CREATE TABLE was found in code
     if (parsedTables.length === 0) {
         return { nodes: [], connectors: [] };
     }
@@ -370,7 +482,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
         const isJunction = table.foreignKeys.length >= 2 && table.columns.length <= 4;
 
         if (isJunction) {
-            // Represent as Relationship Diamond
             const relId = makeId('er_rel');
             const relWidth = 140;
             const relHeight = 66;
@@ -436,7 +547,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
             };
             nodes.push(attrNode);
 
-            // Connect attribute to entity
             connectors.push({
                 id: makeConnId(),
                 from: entityId,
@@ -458,7 +568,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
             if (!targetInfo) return;
 
             if (sourceInfo.isRel) {
-                // Connect junction relationship to target entity
                 connectors.push({
                     id: makeConnId(),
                     from: sourceInfo.id,
@@ -468,7 +577,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
                     label: 'N'
                 });
             } else {
-                // Create a Relationship Diamond between source and target
                 const relId = makeId('er_fk_rel');
                 const midX = Math.round((sourceInfo.node.x + targetInfo.node.x) / 2);
                 const midY = Math.round((sourceInfo.node.y + targetInfo.node.y) / 2);
@@ -487,7 +595,6 @@ export function generateErDiagramFromSql(sqlCode = '') {
                 };
                 nodes.push(relNode);
 
-                // Source (N) -> Relationship -> Target (1)
                 connectors.push({
                     id: makeConnId(),
                     from: sourceInfo.id,

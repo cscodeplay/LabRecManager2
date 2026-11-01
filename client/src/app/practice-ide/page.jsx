@@ -35,6 +35,7 @@ import {
     RefreshCw,
     Lock,
     Unlock,
+    Edit2,
     Edit3,
     ArrowRight,
     CornerDownRight,
@@ -222,6 +223,17 @@ export function PracticeIDEPage() {
             console.warn('Failed to load documents list:', err.message);
         }
     }, []);
+
+    // Absolute Path Resolver for Program Tabs (displayed on hover and quick rename)
+    const getTabAbsolutePath = useCallback(
+        (tab) => {
+            if (!tab) return '';
+            const safeUser = (user?.id || studentIdentifier || 'student').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const fname = tab.filename || `${tab.title || 'program'}.${tab.language === 'sql' ? 'sql' : 'py'}`;
+            return `/Users/charanpreetsingh/Downloads/LabRecManager/server/storage/workspaces/students/${safeUser}/${fname}`;
+        },
+        [user?.id, studentIdentifier]
+    );
 
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
@@ -1092,7 +1104,7 @@ Date:          ${dateStr}
                                     setEditingTabId(tab.id);
                                     setEditingTabTitle(tab.title);
                                 }}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[200px] group ${
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[210px] group ${
                                     isActive
                                         ? isLightMode
                                             ? 'bg-white border-primary-600 text-slate-900 shadow-xs'
@@ -1101,7 +1113,7 @@ Date:          ${dateStr}
                                         ? 'bg-slate-100 border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-200/80'
                                         : 'bg-slate-900 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                                 }`}
-                                title={`${tab.title} (${tab.filename}) - Double click to rename tab`}
+                                title={`Path: ${getTabAbsolutePath(tab)}\nFile: ${tab.filename}\n(Double-click or click pencil to rename)`}
                             >
                                 <span
                                     className={`text-[9px] font-bold px-1 py-0.2 rounded font-mono ${
@@ -1118,6 +1130,7 @@ Date:          ${dateStr}
                                         autoFocus
                                         type="text"
                                         value={editingTabTitle}
+                                        onFocus={(e) => e.target.select()}
                                         onClick={(e) => e.stopPropagation()}
                                         onPointerDown={(e) => e.stopPropagation()}
                                         onChange={(e) => setEditingTabTitle(e.target.value)}
@@ -1126,16 +1139,36 @@ Date:          ${dateStr}
                                             if (e.key === 'Escape') setEditingTabId(null);
                                         }}
                                         onBlur={() => handleCommitTabRename(tab.id)}
-                                        className={`w-24 px-1 py-0.2 border rounded text-[11px] font-mono focus:outline-none ${
+                                        className={`w-28 px-1 py-0.2 border rounded text-[11px] font-mono focus:outline-none ${
                                             isLightMode
-                                                ? 'bg-white border-primary-600 text-slate-900'
-                                                : 'bg-slate-900 border-primary-500 text-white'
+                                                ? 'bg-white border-primary-600 text-slate-900 shadow-xs'
+                                                : 'bg-slate-900 border-primary-500 text-white shadow-xs'
                                         }`}
                                     />
                                 ) : (
-                                    <span className="truncate flex-1 font-mono text-[11px] cursor-text" title="Double click to rename">
-                                        {tab.title || `Tab ${idx + 1}`}
-                                    </span>
+                                    <div className="flex items-center gap-1 min-w-0 flex-1">
+                                        <span className="truncate font-mono text-[11px] cursor-text" title={`Path: ${getTabAbsolutePath(tab)}`}>
+                                            {tab.title || `Tab ${idx + 1}`}
+                                        </span>
+                                        {!inspectingStudentId && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setEditingTabId(tab.id);
+                                                    setEditingTabTitle(tab.title);
+                                                }}
+                                                className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition ${
+                                                    isLightMode
+                                                        ? 'hover:bg-slate-200 text-slate-400 hover:text-slate-700'
+                                                        : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                                                }`}
+                                                title="Quick rename tab"
+                                            >
+                                                <Edit2 className="w-2.5 h-2.5" />
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
 
                                 {tab.isDirty && !isAutosaveEnabled && (
@@ -1272,34 +1305,78 @@ Date:          ${dateStr}
                 <section className={`flex flex-col h-full border-r overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                        {/* Left: Active filename & SINGLE UNIFIED LANGUAGE SELECTOR */}
+                        {/* Left: Active filename with quick rename & Read-only preselected language indicator */}
                         <div className="flex items-center gap-2">
-                            <span className={`font-mono text-xs font-bold ${isLightMode ? 'text-primary-700' : 'text-emerald-400'}`}>
-                                {activeTab.filename}
-                            </span>
+                            {/* Quick Rename Program from Sub-Toolbar */}
+                            {editingTabId === activeTab.id ? (
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={editingTabTitle}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => setEditingTabTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleCommitTabRename(activeTab.id);
+                                        if (e.key === 'Escape') setEditingTabId(null);
+                                    }}
+                                    onBlur={() => handleCommitTabRename(activeTab.id)}
+                                    className={`w-36 px-2 py-0.5 border rounded text-xs font-mono font-bold focus:outline-none ${
+                                        isLightMode
+                                            ? 'bg-white border-primary-600 text-slate-900 shadow-xs'
+                                            : 'bg-slate-900 border-primary-500 text-white shadow-xs'
+                                    }`}
+                                />
+                            ) : (
+                                <div className="flex items-center gap-1 group">
+                                    <span
+                                        className={`font-mono text-xs font-bold cursor-pointer hover:underline ${
+                                            isLightMode ? 'text-primary-700' : 'text-emerald-400'
+                                        }`}
+                                        title={`Absolute Path: ${getTabAbsolutePath(activeTab)}\n(Click or click pencil to rename)`}
+                                        onClick={() => {
+                                            if (inspectingStudentId) return;
+                                            setEditingTabId(activeTab.id);
+                                            setEditingTabTitle(activeTab.title);
+                                        }}
+                                    >
+                                        {activeTab.filename}
+                                    </span>
+                                    {!inspectingStudentId && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setEditingTabId(activeTab.id);
+                                                setEditingTabTitle(activeTab.title);
+                                            }}
+                                            className={`p-0.5 rounded transition opacity-70 hover:opacity-100 ${
+                                                isLightMode
+                                                    ? 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
+                                                    : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                                            }`}
+                                            title="Quick rename program filename"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                </div>
+                            )}
 
-                            {/* Single Unified Language Selector */}
-                            <select
-                                value={activeTab.language || 'python'}
-                                onChange={(e) => handleSwitchLanguage(e.target.value)}
-                                className={`px-2 py-0.5 rounded text-xs font-bold border transition cursor-pointer shadow-2xs focus:outline-none focus:ring-1 focus:ring-primary-500 ${
-                                    isLightMode
-                                        ? 'bg-white border-slate-300 text-slate-800 hover:border-slate-400'
-                                        : 'bg-slate-800 border-slate-700 text-slate-100 hover:border-slate-600'
+                            {/* Read-Only Preselected Language Badge */}
+                            <div
+                                className={`px-2 py-0.5 rounded text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+                                    isDatabaseLanguage(activeTab.language)
+                                        ? isLightMode
+                                            ? 'bg-sky-50 border-sky-300 text-sky-800'
+                                            : 'bg-sky-950/60 border-sky-800 text-sky-300'
+                                        : isLightMode
+                                        ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                        : 'bg-amber-950/60 border-amber-800 text-amber-300'
                                 }`}
-                                title="Single Unified Language Selector: Switches Diagram Mode automatically"
+                                title={`Language preselected: ${getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}. Code output and diagram (${isDatabaseLanguage(activeTab.language) ? 'ER Designer' : 'Flowchart Designer'}) are automatically configured.`}
                             >
-                                <optgroup label="Algorithmic (Flowchart Designer)">
-                                    <option value="python">🐍 Python 3 (.py)</option>
-                                    <option value="c">⚡ C (.c)</option>
-                                    <option value="cpp">🔷 C++ (.cpp)</option>
-                                    <option value="java">☕ Java (.java)</option>
-                                </optgroup>
-                                <optgroup label="Database (ER Diagram Designer)">
-                                    <option value="sql">🗄️ SQL (.sql)</option>
-                                    <option value="plsql">📜 PL/SQL (.pls)</option>
-                                </optgroup>
-                            </select>
+                                <span>{getLanguageMeta(activeTab.language)?.icon || (isDatabaseLanguage(activeTab.language) ? '🗄️' : '🐍')}</span>
+                                <span>{getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}</span>
+                            </div>
 
                             <span className="text-slate-400 hidden sm:inline">•</span>
                             <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>

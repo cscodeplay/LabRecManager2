@@ -55,7 +55,7 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
         type: 'io',
         text: 'Input n',
         x: 155,
-        y: 130,
+        y: 125,
         width: 170,
         height: 52,
         color: '#dbeafe',
@@ -63,35 +63,59 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
         textColor: '#1e3a8a'
     },
     {
+        id: 'node_init',
+        type: 'process',
+        text: 'total_sum = 0\nfactorial = 1\ni = 1',
+        x: 150,
+        y: 215,
+        width: 180,
+        height: 72,
+        color: '#ffffff',
+        borderColor: '#64748b',
+        textColor: '#0f172a'
+    },
+    {
         id: 'node_decision',
         type: 'decision',
-        text: 'n > 0 ?',
-        x: 165,
-        y: 225,
-        width: 150,
-        height: 70,
+        text: 'i <= n ?',
+        x: 160,
+        y: 325,
+        width: 160,
+        height: 72,
         color: '#fef3c7',
         borderColor: '#d97706',
         textColor: '#78350f'
     },
     {
-        id: 'node_process',
+        id: 'node_loop_body',
         type: 'process',
-        text: 'total = n * 2',
-        x: 155,
-        y: 340,
-        width: 170,
-        height: 52,
+        text: 'total_sum = total_sum + i\nfactorial = factorial * i\ni = i + 1',
+        x: 150,
+        y: 440,
+        width: 180,
+        height: 72,
         color: '#ffffff',
         borderColor: '#64748b',
         textColor: '#0f172a'
+    },
+    {
+        id: 'node_output',
+        type: 'io',
+        text: 'Display total_sum, factorial',
+        x: 145,
+        y: 560,
+        width: 190,
+        height: 54,
+        color: '#dbeafe',
+        borderColor: '#2563eb',
+        textColor: '#1e3a8a'
     },
     {
         id: 'node_end',
         type: 'terminator',
         text: 'End',
         x: 170,
-        y: 440,
+        y: 655,
         width: 140,
         height: 50,
         color: '#dcfce7',
@@ -102,9 +126,12 @@ const DEFAULT_INITIAL_FLOWCHART_NODES = [
 
 const DEFAULT_INITIAL_FLOWCHART_CONNECTORS = [
     { id: 'conn_1', from: 'node_start', fromPort: 'bottom', to: 'node_input', toPort: 'top', label: '' },
-    { id: 'conn_2', from: 'node_input', fromPort: 'bottom', to: 'node_decision', toPort: 'top', label: '' },
-    { id: 'conn_3', from: 'node_decision', fromPort: 'bottom', to: 'node_process', toPort: 'top', label: 'Yes' },
-    { id: 'conn_4', from: 'node_process', fromPort: 'bottom', to: 'node_end', toPort: 'top', label: '' }
+    { id: 'conn_2', from: 'node_input', fromPort: 'bottom', to: 'node_init', toPort: 'top', label: '' },
+    { id: 'conn_3', from: 'node_init', fromPort: 'bottom', to: 'node_decision', toPort: 'top', label: '' },
+    { id: 'conn_4', from: 'node_decision', fromPort: 'bottom', to: 'node_loop_body', toPort: 'top', label: 'Yes' },
+    { id: 'conn_5', from: 'node_loop_body', fromPort: 'left', to: 'node_decision', toPort: 'left', label: 'Loop' },
+    { id: 'conn_6', from: 'node_decision', fromPort: 'right', to: 'node_output', toPort: 'top', label: 'No' },
+    { id: 'conn_7', from: 'node_output', fromPort: 'bottom', to: 'node_end', toPort: 'top', label: '' }
 ];
 
 // 2. Initial Starter ER Diagram Nodes & Connectors (For SQL / PL/SQL Schema Design)
@@ -688,6 +715,16 @@ export default function FlowchartVisualCanvas({
         toast.success(`Placed ${type.replace('er_', 'ER ').toUpperCase()} shape`);
     };
 
+    // Helper to calculate exact coordinates relative to SVG canvas in world-space
+    const getCanvasMousePos = (e) => {
+        if (!svgRef.current) return { x: 0, y: 0 };
+        const rect = svgRef.current.getBoundingClientRect();
+        return {
+            x: (e.clientX - rect.left - pan.x) / zoom,
+            y: (e.clientY - rect.top - pan.y) / zoom
+        };
+    };
+
     // Node pointer down
     const handleNodePointerDown = (e, node) => {
         if (readOnly) return;
@@ -707,9 +744,10 @@ export default function FlowchartVisualCanvas({
         setSelectedNodeId(node.id);
         setSelectedConnectorId(null);
         setDraggingNodeId(node.id);
+        const mouse = getCanvasMousePos(e);
         setDragOffset({
-            x: e.clientX / zoom - node.x,
-            y: e.clientY / zoom - node.y
+            x: mouse.x - node.x,
+            y: mouse.y - node.y
         });
     };
 
@@ -774,18 +812,18 @@ export default function FlowchartVisualCanvas({
         );
     };
 
-    // Canvas pointer move - Zero-lag, instantaneous group drag
+    // Canvas pointer move - Zero-lag, instantaneous group drag with exact canvas mouse projection
     const handleCanvasPointerMove = (e) => {
         if (connectingSource) {
-            const mouseCanvasX = (e.clientX - pan.x) / zoom;
-            const mouseCanvasY = (e.clientY - pan.y) / zoom;
-            setConnectingMousePos({ x: mouseCanvasX, y: mouseCanvasY });
+            const mouse = getCanvasMousePos(e);
+            setConnectingMousePos(mouse);
             return;
         }
 
         if (draggingNodeId) {
-            const newX = Math.round(e.clientX / zoom - dragOffset.x);
-            const newY = Math.round(e.clientY / zoom - dragOffset.y);
+            const mouse = getCanvasMousePos(e);
+            const newX = Math.round(mouse.x - dragOffset.x);
+            const newY = Math.round(mouse.y - dragOffset.y);
             setNodes((prev) =>
                 prev.map((n) => (n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n))
             );
@@ -1956,6 +1994,28 @@ export default function FlowchartVisualCanvas({
                                                 </text>
                                             ))}
                                         </g>
+                                    ) : node.text.includes('\n') ? (
+                                        <text
+                                            x={node.width / 2}
+                                            y={node.height / 2 - ((node.text.split('\n').length - 1) * 8.5)}
+                                            textAnchor="middle"
+                                            dominantBaseline="central"
+                                            fill={node.textColor}
+                                            fontSize={11.5}
+                                            fontWeight="600"
+                                            fontFamily="monospace"
+                                            className="pointer-events-none"
+                                        >
+                                            {node.text.split('\n').map((line, lIdx) => (
+                                                <tspan
+                                                    key={lIdx}
+                                                    x={node.width / 2}
+                                                    dy={lIdx === 0 ? 0 : 17}
+                                                >
+                                                    {line}
+                                                </tspan>
+                                            ))}
+                                        </text>
                                     ) : (
                                         <text
                                             x={node.width / 2}
@@ -2077,13 +2137,14 @@ export default function FlowchartVisualCanvas({
                             onTouchStart={(e) => e.stopPropagation()}
                             onClick={(e) => e.stopPropagation()}
                         >
-                            {node.type === 'er_table' ? (
+                            {node.type === 'er_table' || node.text.includes('\n') ? (
                                 <textarea
                                     autoFocus
                                     value={editingNodeText}
                                     onChange={(e) => setEditingNodeText(e.target.value)}
                                     onKeyDown={(e) => {
                                         if (e.key === 'Escape') setEditingNodeId(null);
+                                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSaveNodeText();
                                     }}
                                     onBlur={handleSaveNodeText}
                                     className={`w-full h-full p-1.5 rounded text-xs font-mono focus:outline-none shadow-2xl ring-2 ring-sky-500 border-2 border-sky-500 resize-none ${
