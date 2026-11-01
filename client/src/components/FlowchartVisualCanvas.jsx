@@ -31,7 +31,9 @@ import {
     Code,
     CheckCircle2,
     Cpu,
-    FileCode2
+    FileCode2,
+    X,
+    AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { generateFlowchartFromCode, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
@@ -276,22 +278,24 @@ export default function FlowchartVisualCanvas({
     const isErMode = language === 'sql' || language === 'plsql';
     const canvasMode = isErMode ? 'er' : 'flowchart';
 
-    // Canvas nodes and connectors
+    // Canvas nodes and connectors - Blank canvas by default for new files
     const [nodes, setNodes] = useState(() => {
-        if (initialData?.nodes && initialData.nodes.length > 0) return initialData.nodes;
-        return isErMode ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
+        if (initialData?.nodes && Array.isArray(initialData.nodes)) return initialData.nodes;
+        return [];
     });
 
     const [connectors, setConnectors] = useState(() => {
-        if (initialData?.connectors && initialData.connectors.length > 0) return initialData.connectors;
-        return isErMode ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
+        if (initialData?.connectors && Array.isArray(initialData.connectors)) return initialData.connectors;
+        return [];
     });
 
-    // Active tool: 'select' | 'connector'
+    // Active tool: 'select' | 'connector' | 'place_shape'
     const [activeTool, setActiveTool] = useState('select');
+    const [pendingShapeType, setPendingShapeType] = useState(null); // Shape selected in palette to be placed on click
 
-    // Selection & connection state
-    const [selectedNodeId, setSelectedNodeId] = useState(null);
+    // Selection & connection state - Multi-select supported
+    const [selectedNodeIds, setSelectedNodeIds] = useState([]);
+    const selectedNodeId = selectedNodeIds[0] || null; // Primary selected node
     const [selectedConnectorId, setSelectedConnectorId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [hoveredPortInfo, setHoveredPortInfo] = useState(null); // { nodeId, port }
@@ -299,6 +303,17 @@ export default function FlowchartVisualCanvas({
     // Connecting from a port: { nodeId, port }
     const [connectingSource, setConnectingSource] = useState(null);
     const [connectingMousePos, setConnectingMousePos] = useState(null);
+    const [canvasMousePos, setCanvasMousePos] = useState(null);
+
+    // Marquee / Box drag selection
+    const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
+    const [marqueeBox, setMarqueeBox] = useState(null); // { startX, startY, currentX, currentY }
+
+    // Right-click Context Menu: { x, y, targetType, targetId, canvasPos }
+    const [contextMenu, setContextMenu] = useState(null);
+
+    // Confirmation Modal for Clear Canvas
+    const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
 
     // Editing text inline
     const [editingNodeId, setEditingNodeId] = useState(null);
@@ -312,9 +327,10 @@ export default function FlowchartVisualCanvas({
     const [isPanning, setIsPanning] = useState(false);
     const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-    // Dragging a node
+    // Dragging node(s)
     const [draggingNodeId, setDraggingNodeId] = useState(null);
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const dragInitialPositionsRef = useRef(new Map());
 
     // Internal clipboard for cut / copy / paste
     const clipboardRef = useRef(null);
@@ -329,19 +345,6 @@ export default function FlowchartVisualCanvas({
 
     const isLight = theme === 'light';
 
-    // Synchronize mode when language prop switches
-    useEffect(() => {
-        if (!initialData?.nodes) {
-            if (isErMode) {
-                setNodes(DEFAULT_INITIAL_ER_NODES);
-                setConnectors(DEFAULT_INITIAL_ER_CONNECTORS);
-            } else {
-                setNodes(DEFAULT_INITIAL_FLOWCHART_NODES);
-                setConnectors(DEFAULT_INITIAL_FLOWCHART_CONNECTORS);
-            }
-        }
-    }, [isErMode]);
-
     // Emit changes to parent safely
     const notifyChange = useCallback((newNodes, newConnectors) => {
         if (!onChange) return;
@@ -355,10 +358,10 @@ export default function FlowchartVisualCanvas({
             isLocalUpdateRef.current = false;
             return;
         }
-        if (initialData?.nodes && initialData.nodes !== nodes) {
+        if (initialData && Array.isArray(initialData.nodes)) {
             setNodes(initialData.nodes);
         }
-        if (initialData?.connectors && initialData.connectors !== connectors) {
+        if (initialData && Array.isArray(initialData.connectors)) {
             setConnectors(initialData.connectors);
         }
     }, [initialData]);
@@ -468,10 +471,23 @@ export default function FlowchartVisualCanvas({
         const nextConns = connectors.filter((c) => c.from !== nodeId && c.to !== nodeId);
         setNodes(nextNodes);
         setConnectors(nextConns);
-        setSelectedNodeId(null);
+        setSelectedNodeIds((prev) => prev.filter((id) => id !== nodeId));
         notifyChange(nextNodes, nextConns);
         toast.success('Deleted shape & attached connectors');
     }, [nodes, connectors, readOnly, notifyChange]);
+
+    const deleteSelectedNodes = useCallback(() => {
+        if (readOnly || selectedNodeIds.length === 0) return;
+        const setIds = new Set(selectedNodeIds);
+        const nextNodes = nodes.filter((n) => !setIds.has(n.id));
+        const nextConns = connectors.filter((c) => !setIds.has(c.from) && !setIds.has(c.to));
+        setNodes(nextNodes);
+        setConnectors(nextConns);
+        const count = selectedNodeIds.length;
+        setSelectedNodeIds([]);
+        notifyChange(nextNodes, nextConns);
+        toast.success(`Deleted ${count} shape(s)`);
+    }, [nodes, connectors, readOnly, selectedNodeIds, notifyChange]);
 
     const deleteConnector = useCallback((connectorId) => {
         if (readOnly) return;
@@ -484,8 +500,8 @@ export default function FlowchartVisualCanvas({
 
     // Cut / Copy / Paste
     const copySelected = useCallback(() => {
-        if (selectedNodeId) {
-            const node = nodes.find((n) => n.id === selectedNodeId);
+        if (selectedNodeIds.length > 0) {
+            const node = nodes.find((n) => n.id === selectedNodeIds[0]);
             if (node) {
                 clipboardRef.current = { type: 'node', data: { ...node } };
                 toast.success(`Copied shape "${node.text}"`);
@@ -497,48 +513,63 @@ export default function FlowchartVisualCanvas({
                 toast.success('Copied connector');
             }
         }
-    }, [selectedNodeId, selectedConnectorId, nodes, connectors]);
+    }, [selectedNodeIds, selectedConnectorId, nodes, connectors]);
 
     const cutSelected = useCallback(() => {
         if (readOnly) return;
-        if (selectedNodeId) {
+        if (selectedNodeIds.length > 0) {
             copySelected();
-            deleteNode(selectedNodeId);
+            deleteSelectedNodes();
         } else if (selectedConnectorId) {
             copySelected();
             deleteConnector(selectedConnectorId);
         }
-    }, [readOnly, selectedNodeId, selectedConnectorId, copySelected, deleteNode, deleteConnector]);
+    }, [readOnly, selectedNodeIds, selectedConnectorId, copySelected, deleteSelectedNodes, deleteConnector]);
 
-    const pasteClipboard = useCallback(() => {
+    const pasteClipboard = useCallback((targetPos = null) => {
         if (readOnly || !clipboardRef.current) return;
         const { type, data } = clipboardRef.current;
 
         if (type === 'node') {
             const randId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            const spawnX = targetPos ? Math.round(targetPos.x - data.width / 2) : data.x + 35;
+            const spawnY = targetPos ? Math.round(targetPos.y - data.height / 2) : data.y + 35;
             const newNode = {
                 ...data,
                 id: randId,
-                x: data.x + 40,
-                y: data.y + 40
+                x: spawnX,
+                y: spawnY
             };
             const nextNodes = [...nodes, newNode];
             setNodes(nextNodes);
-            setSelectedNodeId(randId);
+            setSelectedNodeIds([randId]);
             notifyChange(nextNodes, connectors);
             toast.success(`Pasted shape "${newNode.text}"`);
         }
     }, [readOnly, nodes, connectors, notifyChange]);
 
-    // Keyboard Shortcuts
+    // Keyboard Shortcuts (Ctrl+A, Del, Backspace, Ctrl+C, Ctrl+X, Ctrl+V, Esc)
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (editingNodeId || editingConnectorId) return;
 
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedNodeId) {
+            // Select All (Ctrl+A / Cmd+A)
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
+                if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                     e.preventDefault();
-                    deleteNode(selectedNodeId);
+                    if (nodes.length > 0) {
+                        setSelectedNodeIds(nodes.map((n) => n.id));
+                        toast.success(`Selected all (${nodes.length}) shapes`, { icon: '🔲' });
+                    }
+                }
+                return;
+            }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                if (selectedNodeIds.length > 0) {
+                    e.preventDefault();
+                    deleteSelectedNodes();
                 } else if (selectedConnectorId) {
                     e.preventDefault();
                     deleteConnector(selectedConnectorId);
@@ -546,14 +577,14 @@ export default function FlowchartVisualCanvas({
             }
 
             if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
-                if (selectedNodeId || selectedConnectorId) {
+                if (selectedNodeIds.length > 0 || selectedConnectorId) {
                     e.preventDefault();
                     copySelected();
                 }
             }
 
             if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
-                if (selectedNodeId || selectedConnectorId) {
+                if (selectedNodeIds.length > 0 || selectedConnectorId) {
                     e.preventDefault();
                     cutSelected();
                 }
@@ -567,10 +598,15 @@ export default function FlowchartVisualCanvas({
             }
 
             if (e.key === 'Escape') {
-                setSelectedNodeId(null);
+                setSelectedNodeIds([]);
                 setSelectedConnectorId(null);
                 setConnectingSource(null);
                 setConnectingMousePos(null);
+                setPendingShapeType(null);
+                setActiveTool('select');
+                setContextMenu(null);
+                setIsMarqueeSelecting(false);
+                setMarqueeBox(null);
             }
         };
 
@@ -579,22 +615,19 @@ export default function FlowchartVisualCanvas({
     }, [
         editingNodeId,
         editingConnectorId,
-        selectedNodeId,
+        selectedNodeIds,
         selectedConnectorId,
+        nodes,
         deleteNode,
+        deleteSelectedNodes,
         deleteConnector,
         copySelected,
         cutSelected,
         pasteClipboard
     ]);
 
-    // Add Shape Handler
-    const handleAddShape = (type) => {
-        if (readOnly) return;
-        const randId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-        const spawnX = Math.round((-pan.x + 220) / zoom);
-        const spawnY = Math.round((-pan.y + 140) / zoom);
-
+    // Shape Configuration Specifications
+    const getShapeConfig = (type) => {
         let defaultText = 'Process';
         let width = 160;
         let height = 54;
@@ -695,24 +728,58 @@ export default function FlowchartVisualCanvas({
             textColor = '#0f172a';
         }
 
+        return { defaultText, width, height, color, borderColor, textColor };
+    };
+
+    // User selects a shape from toolbar to place on canvas click
+    const handleSelectShapeToPlace = (type) => {
+        if (readOnly) return;
+        if (pendingShapeType === type) {
+            setPendingShapeType(null);
+            setActiveTool('select');
+        } else {
+            setPendingShapeType(type);
+            setActiveTool('place_shape');
+            setSelectedNodeIds([]);
+            setSelectedConnectorId(null);
+            toast(`Click on canvas to place ${type.replace('er_', 'ER ').toUpperCase()}`, {
+                icon: '📍',
+                duration: 2500
+            });
+        }
+    };
+
+    // Place Shape at specific canvas world coordinates
+    const placeShapeAt = (type, targetX, targetY) => {
+        if (readOnly) return;
+        const cfg = getShapeConfig(type);
+        const randId = `node_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
         const newNode = {
             id: randId,
             type,
-            text: defaultText,
-            x: spawnX,
-            y: spawnY,
-            width,
-            height,
-            color,
-            borderColor,
-            textColor
+            text: cfg.defaultText,
+            x: Math.round(targetX - cfg.width / 2),
+            y: Math.round(targetY - cfg.height / 2),
+            width: cfg.width,
+            height: cfg.height,
+            color: cfg.color,
+            borderColor: cfg.borderColor,
+            textColor: cfg.textColor
         };
-
         const nextNodes = [...nodes, newNode];
         setNodes(nextNodes);
-        setSelectedNodeId(randId);
+        setSelectedNodeIds([randId]);
         notifyChange(nextNodes, connectors);
         toast.success(`Placed ${type.replace('er_', 'ER ').toUpperCase()} shape`);
+        return newNode;
+    };
+
+    // Add Shape Handler (Toolbar fallback)
+    const handleAddShape = (type) => {
+        if (readOnly) return;
+        const spawnX = Math.round((-pan.x + 220) / zoom);
+        const spawnY = Math.round((-pan.y + 140) / zoom);
+        placeShapeAt(type, spawnX, spawnY);
     };
 
     // Helper to calculate exact coordinates relative to SVG canvas in world-space
@@ -725,10 +792,36 @@ export default function FlowchartVisualCanvas({
         };
     };
 
-    // Node pointer down
+    // Context menu opening helper
+    const handleContextMenu = (e, targetType, targetId = null) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (readOnly) return;
+
+        if (targetType === 'node') {
+            if (!selectedNodeIds.includes(targetId)) {
+                setSelectedNodeIds([targetId]);
+            }
+            setSelectedConnectorId(null);
+        } else if (targetType === 'connector') {
+            setSelectedConnectorId(targetId);
+            setSelectedNodeIds([]);
+        }
+
+        setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            targetType,
+            targetId,
+            canvasPos: getCanvasMousePos(e)
+        });
+    };
+
+    // Node pointer down - Multi-selection and group drag
     const handleNodePointerDown = (e, node) => {
         if (readOnly) return;
         e.stopPropagation();
+        if (contextMenu) setContextMenu(null);
 
         if (activeTool === 'connector') {
             if (!connectingSource) {
@@ -741,20 +834,40 @@ export default function FlowchartVisualCanvas({
             return;
         }
 
-        setSelectedNodeId(node.id);
+        let nextSelected = selectedNodeIds;
+        if (e.shiftKey) {
+            nextSelected = nextSelected.includes(node.id)
+                ? nextSelected.filter((id) => id !== node.id)
+                : [...nextSelected, node.id];
+            setSelectedNodeIds(nextSelected);
+        } else if (!nextSelected.includes(node.id)) {
+            nextSelected = [node.id];
+            setSelectedNodeIds(nextSelected);
+        }
         setSelectedConnectorId(null);
         setDraggingNodeId(node.id);
+
         const mouse = getCanvasMousePos(e);
         setDragOffset({
             x: mouse.x - node.x,
             y: mouse.y - node.y
         });
+
+        // Store initial positions of all selected nodes for synchronized group dragging
+        const posMap = new Map();
+        nodes.forEach((n) => {
+            if (nextSelected.includes(n.id)) {
+                posMap.set(n.id, { x: n.x, y: n.y });
+            }
+        });
+        dragInitialPositionsRef.current = posMap;
     };
 
     // Hook Port pointer down
     const handlePortPointerDown = (e, nodeId, port) => {
         if (readOnly) return;
         e.stopPropagation();
+        if (contextMenu) setContextMenu(null);
         setConnectingSource({ nodeId, port });
         const fromNode = nodes.find((n) => n.id === nodeId);
         if (fromNode) {
@@ -763,7 +876,7 @@ export default function FlowchartVisualCanvas({
         }
     };
 
-    // Complete connection to a target node & port
+    // Complete connection to a target node & port - NO default labels by default
     const completeConnection = (targetNodeId, targetPort = 'top') => {
         if (!connectingSource) return;
 
@@ -773,21 +886,8 @@ export default function FlowchartVisualCanvas({
             return;
         }
 
-        const sourceNode = nodes.find((n) => n.id === connectingSource.nodeId);
-        const targetNode = nodes.find((n) => n.id === targetNodeId);
-
-        let defaultLabel = '';
-        if (sourceNode?.type === 'decision') {
-            const existingCount = connectors.filter((c) => c.from === connectingSource.nodeId).length;
-            defaultLabel = existingCount === 0 ? 'Yes' : 'No';
-        } else if (isErMode) {
-            if (
-                (sourceNode?.type === 'er_relationship' && targetNode?.type === 'er_entity') ||
-                (sourceNode?.type === 'er_entity' && targetNode?.type === 'er_relationship')
-            ) {
-                defaultLabel = '1';
-            }
-        }
+        // By default do NOT put labels on connectors
+        const defaultLabel = '';
 
         const newConn = {
             id: `conn_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
@@ -812,21 +912,36 @@ export default function FlowchartVisualCanvas({
         );
     };
 
-    // Canvas pointer move - Zero-lag, instantaneous group drag with exact canvas mouse projection
+    // Canvas pointer move - Zero-lag group drag & marquee drag selection
     const handleCanvasPointerMove = (e) => {
+        const mouse = getCanvasMousePos(e);
+        setCanvasMousePos(mouse);
+
         if (connectingSource) {
-            const mouse = getCanvasMousePos(e);
             setConnectingMousePos(mouse);
             return;
         }
 
+        if (isMarqueeSelecting) {
+            setMarqueeBox((prev) => (prev ? { ...prev, currentX: mouse.x, currentY: mouse.y } : null));
+            return;
+        }
+
         if (draggingNodeId) {
-            const mouse = getCanvasMousePos(e);
-            const newX = Math.round(mouse.x - dragOffset.x);
-            const newY = Math.round(mouse.y - dragOffset.y);
-            setNodes((prev) =>
-                prev.map((n) => (n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n))
-            );
+            const targetStart = dragInitialPositionsRef.current.get(draggingNodeId);
+            if (targetStart) {
+                const dx = Math.round(mouse.x - dragOffset.x - targetStart.x);
+                const dy = Math.round(mouse.y - dragOffset.y - targetStart.y);
+                setNodes((prev) =>
+                    prev.map((n) => {
+                        const startPos = dragInitialPositionsRef.current.get(n.id);
+                        if (startPos) {
+                            return { ...n, x: startPos.x + dx, y: startPos.y + dy };
+                        }
+                        return n;
+                    })
+                );
+            }
         } else if (isPanning) {
             setPan({
                 x: e.clientX - panStart.x,
@@ -838,10 +953,26 @@ export default function FlowchartVisualCanvas({
     const handleCanvasPointerUp = () => {
         if (draggingNodeId) {
             setDraggingNodeId(null);
+            dragInitialPositionsRef.current.clear();
             notifyChange(nodes, connectors);
         }
         if (isPanning) {
             setIsPanning(false);
+        }
+        if (isMarqueeSelecting && marqueeBox) {
+            const x1 = Math.min(marqueeBox.startX, marqueeBox.currentX);
+            const x2 = Math.max(marqueeBox.startX, marqueeBox.currentX);
+            const y1 = Math.min(marqueeBox.startY, marqueeBox.currentY);
+            const y2 = Math.max(marqueeBox.startY, marqueeBox.currentY);
+
+            if (x2 - x1 > 8 || y2 - y1 > 8) {
+                const hitIds = nodes
+                    .filter((n) => n.x < x2 && n.x + n.width > x1 && n.y < y2 && n.y + n.height > y1)
+                    .map((n) => n.id);
+                setSelectedNodeIds(hitIds);
+            }
+            setIsMarqueeSelecting(false);
+            setMarqueeBox(null);
         }
         if (connectingSource && activeTool !== 'connector') {
             setConnectingSource(null);
@@ -850,17 +981,34 @@ export default function FlowchartVisualCanvas({
     };
 
     const handleCanvasPointerDown = (e) => {
+        if (contextMenu) setContextMenu(null);
+        const mouse = getCanvasMousePos(e);
+
+        if (pendingShapeType) {
+            placeShapeAt(pendingShapeType, mouse.x, mouse.y);
+            if (!e.shiftKey) {
+                setPendingShapeType(null);
+                setActiveTool('select');
+            }
+            return;
+        }
+
         const target = e.target;
         if (target.tagName === 'svg' || target.id === 'canvas-bg' || target.id === 'flowchart-svg-canvas') {
-            setSelectedNodeId(null);
+            if (!e.shiftKey) {
+                setSelectedNodeIds([]);
+            }
             setSelectedConnectorId(null);
             setConnectingSource(null);
             setConnectingMousePos(null);
-            setIsPanning(true);
-            setPanStart({
-                x: e.clientX - pan.x,
-                y: e.clientY - pan.y
-            });
+
+            if (e.button === 1 || e.spaceKey) {
+                setIsPanning(true);
+                setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+            } else if (e.button === 0) {
+                setIsMarqueeSelecting(true);
+                setMarqueeBox({ startX: mouse.x, startY: mouse.y, currentX: mouse.x, currentY: mouse.y });
+            }
         }
     };
 
@@ -911,17 +1059,20 @@ export default function FlowchartVisualCanvas({
         toast.success(`Set cardinality to "${tag}"`);
     };
 
-    // Clear entire canvas
+    // Clear entire canvas (Trigger styled modal)
     const handleClearCanvas = () => {
         if (readOnly) return;
-        if (confirm(`Clear all shapes and connectors from the ${isErMode ? 'ER Diagram' : 'Flowchart'} canvas?`)) {
-            setNodes([]);
-            setConnectors([]);
-            setSelectedNodeId(null);
-            setSelectedConnectorId(null);
-            notifyChange([], []);
-            toast.success('Canvas cleared');
-        }
+        setShowClearConfirmModal(true);
+    };
+
+    const executeClearCanvas = () => {
+        setNodes([]);
+        setConnectors([]);
+        setSelectedNodeIds([]);
+        setSelectedConnectorId(null);
+        notifyChange([], []);
+        setShowClearConfirmModal(false);
+        toast.success('Canvas cleared');
     };
 
     // Reset to Starter Templates
@@ -1460,140 +1611,69 @@ export default function FlowchartVisualCanvas({
                     {/* ER DIAGRAM SHAPE PALETTE (Active when in SQL / PL-SQL) */}
                     {isErMode && (
                         <div className="flex flex-wrap items-center gap-1">
-                            <button
-                                onClick={() => handleAddShape('er_entity')}
-                                className="px-2 py-1 rounded bg-sky-50 border border-sky-300 text-sky-800 hover:bg-sky-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Strong Entity (Rectangle)"
-                            >
-                                <span className="w-2.5 h-2 bg-sky-500 rounded-2xs inline-block" />
-                                <span>Entity</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_weak_entity')}
-                                className="px-2 py-1 rounded bg-cyan-50 border border-cyan-300 text-cyan-800 hover:bg-cyan-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Weak Entity (Double Rectangle)"
-                            >
-                                <span className="w-2.5 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />
-                                <span>Weak Ent.</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_relationship')}
-                                className="px-2 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Relationship (Diamond)"
-                            >
-                                <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />
-                                <span>Relationship</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_weak_relationship')}
-                                className="px-2 py-1 rounded bg-orange-50 border border-orange-300 text-orange-800 hover:bg-orange-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Identifying Relationship (Double Diamond)"
-                            >
-                                <span className="w-2 h-2 border border-orange-600 bg-orange-300 rotate-45 inline-block" />
-                                <span>Ident. Rel.</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_attribute')}
-                                className="px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Regular Attribute (Oval)"
-                            >
-                                <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                                <span>Attribute</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_key_attribute')}
-                                className="px-2 py-1 rounded bg-yellow-50 border border-yellow-400 text-yellow-900 hover:bg-yellow-100 text-xs font-bold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Primary Key Attribute (Underlined + 🔑 Key)"
-                            >
-                                <Key className="w-3 h-3 text-amber-600" />
-                                <span className="underline decoration-amber-600">Key (PK)</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_multivalued')}
-                                className="px-2 py-1 rounded bg-purple-50 border border-purple-300 text-purple-800 hover:bg-purple-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Multivalued Attribute (Double Oval)"
-                            >
-                                <span className="w-2.5 h-1.5 rounded-full border border-purple-600 bg-purple-200 inline-block" />
-                                <span>Multivalued</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_derived')}
-                                className="px-2 py-1 rounded bg-fuchsia-50 border border-fuchsia-300 text-fuchsia-800 hover:bg-fuchsia-100 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Derived Attribute (Dashed Oval)"
-                            >
-                                <span className="w-2.5 h-1.5 rounded-full border border-dashed border-fuchsia-600 inline-block" />
-                                <span>Derived</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('er_table')}
-                                className="px-2 py-1 rounded bg-slate-100 border border-slate-300 text-slate-800 hover:bg-slate-200 text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Relational Table Schema Card"
-                            >
-                                <Table className="w-3 h-3 text-slate-600" />
-                                <span>Table Card</span>
-                            </button>
+                            {[
+                                { id: 'er_entity', label: 'Entity', title: 'Add Strong Entity (Rectangle)', icon: <span className="w-2.5 h-2 bg-sky-500 rounded-2xs inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
+                                { id: 'er_weak_entity', label: 'Weak Ent.', title: 'Add Weak Entity (Double Rectangle)', icon: <span className="w-2.5 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />, color: 'bg-cyan-50 border-cyan-300 text-cyan-800' },
+                                { id: 'er_relationship', label: 'Relationship', title: 'Add Relationship (Diamond)', icon: <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
+                                { id: 'er_weak_relationship', label: 'Ident. Rel.', title: 'Add Identifying Relationship (Double Diamond)', icon: <span className="w-2 h-2 border border-orange-600 bg-orange-300 rotate-45 inline-block" />, color: 'bg-orange-50 border-orange-300 text-orange-800' },
+                                { id: 'er_attribute', label: 'Attribute', title: 'Add Regular Attribute (Oval)', icon: <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
+                                { id: 'er_key_attribute', label: 'Key (PK)', title: 'Add Primary Key Attribute (Underlined + 🔑 Key)', icon: <Key className="w-3 h-3 text-amber-600" />, color: 'bg-yellow-50 border-yellow-400 text-yellow-900' },
+                                { id: 'er_multivalued', label: 'Multivalued', title: 'Add Multivalued Attribute (Double Oval)', icon: <span className="w-2.5 h-1.5 rounded-full border border-purple-600 bg-purple-200 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' },
+                                { id: 'er_derived', label: 'Derived', title: 'Add Derived Attribute (Dashed Oval)', icon: <span className="w-2.5 h-1.5 rounded-full border border-dashed border-fuchsia-600 inline-block" />, color: 'bg-fuchsia-50 border-fuchsia-300 text-fuchsia-800' },
+                                { id: 'er_table', label: 'Table Card', title: 'Add Relational Table Schema Card', icon: <Table className="w-3 h-3 text-slate-600" />, color: 'bg-slate-100 border-slate-300 text-slate-800' }
+                            ].map((s) => {
+                                const isShapeActive = pendingShapeType === s.id;
+                                return (
+                                    <button
+                                        key={s.id}
+                                        onClick={() => handleSelectShapeToPlace(s.id)}
+                                        className={`px-2 py-1 rounded border text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs ${
+                                            isShapeActive
+                                                ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900 border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200'
+                                                : `${s.color} hover:opacity-90`
+                                        }`}
+                                        title={`${s.title} (Click then click canvas)`}
+                                    >
+                                        {s.icon}
+                                        <span>{s.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
 
                     {/* FLOWCHART SHAPE PALETTE (Active when in Python / C / C++ / Java) */}
                     {!isErMode && (
                         <div className="flex flex-wrap items-center gap-1">
-                            <button
-                                onClick={() => handleAddShape('terminator')}
-                                className="px-2 py-1 rounded bg-emerald-50 border border-emerald-300 text-emerald-800 hover:bg-emerald-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Start/End Oval Terminator"
-                            >
-                                <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
-                                <span>Oval</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('io')}
-                                className="px-2 py-1 rounded bg-sky-50 border border-sky-300 text-sky-800 hover:bg-sky-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Input/Output Parallelogram"
-                            >
-                                <span className="w-2.5 h-2 bg-sky-500 skew-x-12 inline-block" />
-                                <span>Parallelogram</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('process')}
-                                className="px-2 py-1 rounded bg-white border border-slate-300 text-slate-800 hover:bg-slate-50 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Calculation/Assignment Rectangle"
-                            >
-                                <span className="w-2.5 h-2 bg-slate-400 rounded-2xs inline-block" />
-                                <span>Rectangle</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('decision')}
-                                className="px-2 py-1 rounded bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Decision Diamond"
-                            >
-                                <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />
-                                <span>Diamond</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddShape('loop')}
-                                className="px-2 py-1 rounded bg-purple-50 border border-purple-300 text-purple-800 hover:bg-purple-100 text-xs font-medium transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Add Loop Iteration Hexagon"
-                            >
-                                <span>Hexagon</span>
-                            </button>
+                            {[
+                                { id: 'terminator', label: 'Oval', title: 'Start/End Oval Terminator', icon: <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
+                                { id: 'io', label: 'Parallelogram', title: 'Input/Output Parallelogram', icon: <span className="w-2.5 h-2 bg-sky-500 skew-x-12 inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
+                                { id: 'process', label: 'Rectangle', title: 'Calculation/Assignment Rectangle', icon: <span className="w-2.5 h-2 bg-slate-400 rounded-2xs inline-block" />, color: 'bg-white border-slate-300 text-slate-800' },
+                                { id: 'decision', label: 'Diamond', title: 'Decision Condition Diamond', icon: <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
+                                { id: 'loop', label: 'Hexagon', title: 'Loop Iteration Hexagon', icon: <span className="w-2.5 h-2 bg-purple-500 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' }
+                            ].map((s) => {
+                                const isShapeActive = pendingShapeType === s.id;
+                                return (
+                                    <button
+                                        key={s.id}
+                                        onClick={() => handleSelectShapeToPlace(s.id)}
+                                        className={`px-2 py-1 rounded border text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs ${
+                                            isShapeActive
+                                                ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900 border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200'
+                                                : `${s.color} hover:opacity-90`
+                                        }`}
+                                        title={`${s.title} (Click then click canvas)`}
+                                    >
+                                        {s.icon}
+                                        <span>{s.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
 
-                {/* Right: Traditional Generator, DDL, Delete, Zoom, Export */}
+                {/* Right: Traditional Generator, DDL, Export & Clear */}
                 <div className="flex items-center gap-1.5 text-xs">
                     {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) */}
                     <button
@@ -1617,61 +1697,6 @@ export default function FlowchartVisualCanvas({
                         </button>
                     )}
 
-                    {/* Delete Selected */}
-                    {(selectedNodeId || selectedConnectorId) && (
-                        <button
-                            onClick={() => {
-                                if (selectedNodeId) deleteNode(selectedNodeId);
-                                else if (selectedConnectorId) deleteConnector(selectedConnectorId);
-                            }}
-                            className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-700 rounded font-medium flex items-center gap-1 transition cursor-pointer shadow-xs"
-                            title="Delete Selected (Del / Backspace)"
-                        >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Delete</span>
-                        </button>
-                    )}
-
-                    {/* Zoom controls */}
-                    <div
-                        className={`flex items-center rounded border ${
-                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
-                        }`}
-                    >
-                        <button
-                            onClick={() => setZoom(Math.max(0.4, zoom - 0.15))}
-                            className={`p-1 ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
-                            title="Zoom Out"
-                        >
-                            <ZoomOut className="w-3.5 h-3.5" />
-                        </button>
-                        <span className={`px-1.5 text-[11px] font-mono ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
-                            {Math.round(zoom * 100)}%
-                        </span>
-                        <button
-                            onClick={() => setZoom(Math.min(2.5, zoom + 0.15))}
-                            className={`p-1 ${isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'}`}
-                            title="Zoom In"
-                        >
-                            <ZoomIn className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-
-                    <button
-                        onClick={() => {
-                            setZoom(1);
-                            setPan({ x: 0, y: 0 });
-                        }}
-                        className={`p-1 rounded border transition cursor-pointer ${
-                            isLight
-                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                        title="Reset Canvas View"
-                    >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-
                     {/* Export Dropdown */}
                     <button
                         onClick={() => handleExportCanvas('png')}
@@ -1684,18 +1709,18 @@ export default function FlowchartVisualCanvas({
 
                     <button
                         onClick={handleResetToTemplate}
-                        className={`p-1 transition cursor-pointer ${
-                            isLight ? 'text-slate-400 hover:text-sky-600' : 'text-slate-500 hover:text-sky-400'
+                        className={`p-1.5 rounded transition cursor-pointer ${
+                            isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-100' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
                         }`}
-                        title="Reset to Starter Template"
+                        title="Load Starter Template Example"
                     >
                         <Layers className="w-3.5 h-3.5" />
                     </button>
 
                     <button
                         onClick={handleClearCanvas}
-                        className={`p-1 transition cursor-pointer ${
-                            isLight ? 'text-slate-400 hover:text-rose-600' : 'text-slate-500 hover:text-rose-400'
+                        className={`p-1.5 rounded transition cursor-pointer ${
+                            isLight ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-rose-400 hover:bg-rose-950/40'
                         }`}
                         title="Clear Canvas"
                     >
@@ -1768,19 +1793,97 @@ export default function FlowchartVisualCanvas({
 
             {/* Canvas Main SVG Layer */}
             <div
-                className="flex-1 w-full h-full relative overflow-hidden cursor-default"
+                className="flex-1 w-full h-full relative overflow-hidden cursor-default select-none"
                 onPointerDown={handleCanvasPointerDown}
             >
+                {/* Floating Fixed Top-Right Zoom Tool */}
+                <div
+                    className={`absolute top-3 right-3 z-20 flex items-center gap-1 p-1 rounded-lg border shadow-md backdrop-blur-md transition select-none ${
+                        isLight
+                            ? 'bg-white/90 border-slate-200 text-slate-700 shadow-slate-200/50'
+                            : 'bg-slate-900/90 border-slate-700 text-slate-200 shadow-slate-950/50'
+                    }`}
+                >
+                    <button
+                        onClick={() => setZoom((prev) => Math.max(0.3, +(prev - 0.15).toFixed(2)))}
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                        title="Zoom Out (-)"
+                    >
+                        <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => setZoom(1)}
+                        className="px-2 py-0.5 text-xs font-mono font-bold hover:underline cursor-pointer"
+                        title="Click to reset zoom to 100%"
+                    >
+                        {Math.round(zoom * 100)}%
+                    </button>
+                    <button
+                        onClick={() => setZoom((prev) => Math.min(2.5, +(prev + 0.15).toFixed(2)))}
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                        title="Zoom In (+)"
+                    >
+                        <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => {
+                            setZoom(1);
+                            setPan({ x: 0, y: 0 });
+                        }}
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition border-l border-slate-200 dark:border-slate-700 cursor-pointer"
+                        title="Reset Canvas View (Recenter)"
+                    >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+
+                {/* Floating Shape Placement Helper Pill */}
+                {pendingShapeType && (
+                    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 px-3.5 py-1.5 bg-indigo-600 text-white rounded-full text-xs font-semibold shadow-lg flex items-center gap-2 select-none animate-in fade-in slide-in-from-top-2">
+                        <span>Click canvas to place {pendingShapeType.replace('er_', 'ER ').toUpperCase()}</span>
+                        <button
+                            onClick={() => {
+                                setPendingShapeType(null);
+                                setActiveTool('select');
+                            }}
+                            className="p-0.5 rounded-full hover:bg-white/20 transition cursor-pointer"
+                            title="Cancel placement (Esc)"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                )}
+
+                {/* Empty Canvas Watermark / Guide */}
+                {nodes.length === 0 && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none text-center p-6 space-y-2 z-0">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border shadow-2xs ${
+                            isLight ? 'bg-slate-100 border-slate-200 text-slate-400' : 'bg-slate-900 border-slate-800 text-slate-500'
+                        }`}>
+                            {isErMode ? <Database className="w-6 h-6" /> : <Shapes className="w-6 h-6" />}
+                        </div>
+                        <p className={`text-sm font-semibold ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+                            Empty {isErMode ? 'ER Diagram' : 'Flowchart'} Canvas
+                        </p>
+                        <p className={`text-xs max-w-sm ${isLight ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Select a shape from the toolbar above and click on canvas to place it, or click{' '}
+                            <span className="font-semibold text-primary-600 dark:text-primary-400">Generate from Code</span> to auto-generate from your script.
+                        </p>
+                    </div>
+                )}
+
                 <svg
                     ref={svgRef}
                     id="flowchart-svg-canvas"
                     className="w-full h-full absolute inset-0"
+                    onContextMenu={(e) => handleContextMenu(e, 'canvas')}
                     style={{
                         backgroundImage: isLight
                             ? `radial-gradient(#cbd5e1 1.2px, transparent 1.2px)`
                             : `radial-gradient(#334155 1.2px, transparent 1.2px)`,
                         backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
-                        backgroundPosition: `${pan.x}px ${pan.y}px`
+                        backgroundPosition: `${pan.x}px ${pan.y}px`,
+                        touchAction: 'none'
                     }}
                 >
                     {/* Definitions for Markers and Styles */}
@@ -1811,6 +1914,60 @@ export default function FlowchartVisualCanvas({
 
                     {/* Master Zoom and Pan Group */}
                     <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+                        {/* Ghost Shape Placement Preview */}
+                        {pendingShapeType && canvasMousePos && (() => {
+                            const cfg = getShapeConfig(pendingShapeType);
+                            const ghostNode = {
+                                id: 'ghost_preview',
+                                type: pendingShapeType,
+                                text: cfg.defaultText,
+                                x: Math.round(canvasMousePos.x - cfg.width / 2),
+                                y: Math.round(canvasMousePos.y - cfg.height / 2),
+                                width: cfg.width,
+                                height: cfg.height,
+                                color: cfg.color,
+                                borderColor: cfg.borderColor,
+                                textColor: cfg.textColor
+                            };
+                            return (
+                                <g transform={`translate(${ghostNode.x}, ${ghostNode.y})`} className="pointer-events-none opacity-45">
+                                    {renderShapeGeometry(ghostNode, false, false)}
+                                    <text
+                                        x={ghostNode.width / 2}
+                                        y={ghostNode.height / 2}
+                                        textAnchor="middle"
+                                        dominantBaseline="central"
+                                        fill={ghostNode.textColor}
+                                        fontSize={12}
+                                        fontFamily="sans-serif"
+                                    >
+                                        {ghostNode.text.split('\n')[0]}
+                                    </text>
+                                </g>
+                            );
+                        })()}
+
+                        {/* Marquee Drag-To-Select Box */}
+                        {marqueeBox && (() => {
+                            const x = Math.min(marqueeBox.startX, marqueeBox.currentX);
+                            const y = Math.min(marqueeBox.startY, marqueeBox.currentY);
+                            const w = Math.abs(marqueeBox.currentX - marqueeBox.startX);
+                            const h = Math.abs(marqueeBox.currentY - marqueeBox.startY);
+                            return (
+                                <rect
+                                    x={x}
+                                    y={y}
+                                    width={w}
+                                    height={h}
+                                    fill={isLight ? 'rgba(99, 102, 241, 0.12)' : 'rgba(129, 140, 248, 0.18)'}
+                                    stroke={isLight ? '#6366f1' : '#818cf8'}
+                                    strokeWidth={1.5}
+                                    strokeDasharray="4 3"
+                                    className="pointer-events-none"
+                                />
+                            );
+                        })()}
+
                         {/* 1. CONNECTORS LAYER */}
                         {connectors.map((conn) => {
                             const data = getConnectorPathData(conn);
@@ -1824,8 +1981,9 @@ export default function FlowchartVisualCanvas({
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setSelectedConnectorId(conn.id);
-                                        setSelectedNodeId(null);
+                                        setSelectedNodeIds([]);
                                     }}
+                                    onContextMenu={(e) => handleContextMenu(e, 'connector', conn.id)}
                                     className="cursor-pointer group"
                                 >
                                     {/* Hit target */}
@@ -1941,7 +2099,7 @@ export default function FlowchartVisualCanvas({
 
                         {/* 2. SHAPES / NODES LAYER - Encapsulated into unified Translate Group (Zero Lag, Perfectly Synchronized) */}
                         {nodes.map((node) => {
-                            const isSelected = selectedNodeId === node.id;
+                            const isSelected = selectedNodeIds.includes(node.id);
                             const isConnectingSource = connectingSource?.nodeId === node.id;
                             const isHovered = hoveredNodeId === node.id;
 
@@ -1958,6 +2116,7 @@ export default function FlowchartVisualCanvas({
                                     key={node.id}
                                     transform={`translate(${node.x}, ${node.y})`}
                                     onPointerDown={(e) => handleNodePointerDown(e, node)}
+                                    onContextMenu={(e) => handleContextMenu(e, 'node', node.id)}
                                     onDoubleClick={(e) => handleNodeDoubleClick(e, node)}
                                     onPointerEnter={() => setHoveredNodeId(node.id)}
                                     onPointerLeave={() => setHoveredNodeId(null)}
@@ -2298,6 +2457,205 @@ export default function FlowchartVisualCanvas({
                                     </button>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Right-Click Context Menu */}
+            {contextMenu && (
+                <div
+                    className={`fixed z-50 py-1.5 rounded-xl border shadow-2xl min-w-[170px] text-xs backdrop-blur-md animate-in fade-in zoom-in-95 duration-100 select-none ${
+                        isLight
+                            ? 'bg-white/95 border-slate-200 text-slate-800 shadow-slate-300/50'
+                            : 'bg-slate-900/95 border-slate-700 text-slate-100 shadow-slate-950/80'
+                    }`}
+                    style={{ left: Math.min(contextMenu.x, typeof window !== 'undefined' ? window.innerWidth - 180 : contextMenu.x), top: Math.min(contextMenu.y, typeof window !== 'undefined' ? window.innerHeight - 200 : contextMenu.y) }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {contextMenu.targetType === 'node' && (
+                        <>
+                            <button
+                                onClick={() => {
+                                    cutSelected();
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                            >
+                                <Scissors className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Cut</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Ctrl+X</span>
+                            </button>
+                            <button
+                                onClick={() => {
+                                    copySelected();
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                            >
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Copy</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Ctrl+C</span>
+                            </button>
+                            {clipboardRef.current && (
+                                <button
+                                    onClick={() => {
+                                        pasteClipboard(contextMenu.canvasPos);
+                                        setContextMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                                >
+                                    <Clipboard className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Paste</span>
+                                    <span className="ml-auto text-[10px] text-slate-400 font-mono">Ctrl+V</span>
+                                </button>
+                            )}
+                            <button
+                                onClick={() => {
+                                    const node = nodes.find((n) => n.id === contextMenu.targetId);
+                                    if (node) {
+                                        setEditingNodeId(node.id);
+                                        setEditingNodeText(node.text);
+                                    }
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                            >
+                                <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Edit Text</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Enter</span>
+                            </button>
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                            <button
+                                onClick={() => {
+                                    deleteSelectedNodes();
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left transition cursor-pointer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete Shape</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Del</span>
+                            </button>
+                        </>
+                    )}
+
+                    {contextMenu.targetType === 'connector' && (
+                        <>
+                            <button
+                                onClick={() => {
+                                    const conn = connectors.find((c) => c.id === contextMenu.targetId);
+                                    if (conn) {
+                                        setEditingConnectorId(conn.id);
+                                        setEditingConnectorLabel(conn.label || '');
+                                    }
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                            >
+                                <Edit2 className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Edit Label</span>
+                            </button>
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                            <button
+                                onClick={() => {
+                                    deleteConnector(contextMenu.targetId);
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left transition cursor-pointer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Delete Connector</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Del</span>
+                            </button>
+                        </>
+                    )}
+
+                    {contextMenu.targetType === 'canvas' && (
+                        <>
+                            {clipboardRef.current && (
+                                <button
+                                    onClick={() => {
+                                        pasteClipboard(contextMenu.canvasPos);
+                                        setContextMenu(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                                >
+                                    <Clipboard className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Paste Here</span>
+                                    <span className="ml-auto text-[10px] text-slate-400 font-mono">Ctrl+V</span>
+                                </button>
+                            )}
+                            <button
+                                onClick={() => {
+                                    setSelectedNodeIds(nodes.map((n) => n.id));
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-left transition cursor-pointer"
+                            >
+                                <Maximize2 className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Select All</span>
+                                <span className="ml-auto text-[10px] text-slate-400 font-mono">Ctrl+A</span>
+                            </button>
+                            <div className="h-px bg-slate-200 dark:bg-slate-800 my-1" />
+                            <button
+                                onClick={() => {
+                                    setShowClearConfirmModal(true);
+                                    setContextMenu(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-left transition cursor-pointer"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Clear Canvas...</span>
+                            </button>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* Clear Canvas UI-Aligned Confirmation Modal */}
+            {showClearConfirmModal && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none"
+                    onClick={() => setShowClearConfirmModal(false)}
+                >
+                    <div
+                        className={`w-full max-w-sm rounded-2xl p-5 border shadow-2xl space-y-4 animate-in zoom-in-95 duration-150 ${
+                            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-white'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center text-rose-600 shrink-0 border border-rose-200 dark:border-rose-900">
+                                <AlertTriangle className="w-5 h-5 text-rose-600" />
+                            </div>
+                            <div className="space-y-1">
+                                <h3 className="font-bold text-sm">Clear Canvas?</h3>
+                                <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    Are you sure you want to clear all {nodes.length} shape(s) and {connectors.length} connection(s)? This action cannot be undone.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <button
+                                type="button"
+                                onClick={() => setShowClearConfirmModal(false)}
+                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                                    isLight
+                                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                                }`}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={executeClearCanvas}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition cursor-pointer shadow-sm"
+                            >
+                                Clear All
+                            </button>
                         </div>
                     </div>
                 </div>

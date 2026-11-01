@@ -70,8 +70,8 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
     yCursor += 85;
 
     const classify = (text) => {
-        if (text.includes('input(') || text.includes('scanf(') || text.includes('cin >>') || text.includes('Scanner')) return 'input';
-        if (text.startsWith('print(') || text.startsWith('printf(') || text.includes('cout <<') || text.includes('System.out.print')) return 'output';
+        if (/\b(input|scanf|cin|Scanner|readline)\b/.test(text)) return 'input';
+        if (/\b(print|printf|cout|System\.out\.print|println)\b/.test(text)) return 'output';
         if (text.startsWith('while ') || text.startsWith('while(')) return 'while';
         if (text.startsWith('for ') || text.startsWith('for(')) return 'for';
         if (text.startsWith('if ') || text.startsWith('if(')) return 'if';
@@ -79,13 +79,18 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
     };
 
     const cleanInput = (stmt) => {
-        const m = stmt.match(/([a-zA-Z_]\w*)\s*=\s*(?:int|float|str)?\s*\(?input\(/);
+        const m = stmt.match(/([a-zA-Z_]\w*(?:\s*,\s*[a-zA-Z_]\w*)*)\s*=\s*(?:int|float|str)?\s*\(?input\(/);
         if (m) return `Input ${m[1]}`;
-        const cinMatch = stmt.match(/cin\s*>>\s*([a-zA-Z_]\w*)/);
-        if (cinMatch) return `Input ${cinMatch[1]}`;
-        const scanfMatch = stmt.match(/scanf\s*\([^,]+,\s*&?([a-zA-Z_]\w*)\)/);
-        if (scanfMatch) return `Input ${scanfMatch[1]}`;
-        return stmt.replace(/;\s*$/, '');
+        const cinMatch = stmt.match(/cin\s*>>\s*([a-zA-Z_]\w*(?:\s*>>\s*[a-zA-Z_]\w*)*)/);
+        if (cinMatch) return `Input ${cinMatch[1].replace(/>>/g, ',')}`;
+        const scanfMatch = stmt.match(/scanf\s*\([^,]+,\s*([^)]+)\)/);
+        if (scanfMatch) {
+            const vars = scanfMatch[1].split(',').map(v => v.trim().replace(/^&/, '')).join(', ');
+            return `Input ${vars}`;
+        }
+        const plainInput = stmt.match(/([a-zA-Z_]\w*)\s*=\s*input\(/);
+        if (plainInput) return `Input ${plainInput[1]}`;
+        return `Input ${stmt.replace(/;\s*$/, '').substring(0, 20)}`;
     };
 
     const cleanOutput = (stmt) => {

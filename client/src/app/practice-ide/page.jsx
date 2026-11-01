@@ -44,7 +44,8 @@ import {
     FileText,
     ChevronUp,
     X,
-    UserCheck
+    UserCheck,
+    AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -138,23 +139,22 @@ const isDatabaseLanguage = (lang) => lang === 'sql' || lang === 'plsql';
 const getLanguageMeta = (lang) => SUPPORTED_LANGUAGES.find((l) => l.id === lang) || SUPPORTED_LANGUAGES[0];
 const getMonacoLanguage = (lang) => getLanguageMeta(lang).monaco;
 
-// Default Initial Code Tab
+// Default Initial Code Tab (Empty by default for clean start)
 const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 'Student') => {
     const isDb = isDatabaseLanguage(lang);
     const dateStr = new Date().toISOString().split('T')[0];
     const meta = getLanguageMeta(lang);
-    const starter = STARTER_CODES[lang] || STARTER_CODES.python;
 
     return {
         id,
-        title: isDb ? (lang === 'plsql' ? 'PL/SQL Block' : 'Student Schema') : `${meta.label} Program`,
+        title: isDb ? (lang === 'plsql' ? 'PL/SQL Block' : 'SQL Query') : `${meta.label} Program`,
         filename: `${studentId}_${dateStr}${meta.ext}`,
         language: lang,
-        code: starter,
-        stdin: '5\n',
+        code: '',
+        stdin: '',
         metadata: {
-            title: isDb ? 'Database Schema & Query' : 'Calculation & Logic Practice',
-            description: isDb ? 'Create tables and query student records' : 'Calculate cumulative sum and factorial using iteration',
+            title: isDb ? 'Database Query' : `${meta.label} Practice`,
+            description: '',
             subject: isDb ? 'Database Management' : `${meta.label} Programming`,
             studentId,
             studentName,
@@ -162,7 +162,7 @@ const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 
         },
         documentId: null,
         output: null,
-        flowchartData: null,
+        flowchartData: { nodes: [], connectors: [] },
         isDirty: false
     };
 };
@@ -238,6 +238,13 @@ export function PracticeIDEPage() {
     // Execution state
     const [isExecuting, setIsExecuting] = useState(false);
     const [rightPanelMode, setRightPanelMode] = useState('output'); // 'output' | 'table' | 'diagram'
+
+    // Responsive Mobile Views ('editor' | 'output' | 'diagram')
+    const [mobileView, setMobileView] = useState('editor');
+
+    // UI-aligned Custom Confirmation Modals (Replacing browser alert/confirm)
+    const [tabToCloseConfirm, setTabToCloseConfirm] = useState(null);
+    const [showResetDbModal, setShowResetDbModal] = useState(false);
 
     // Themes - Light theme by default for both input and output/flowchart
     const [editorTheme, setEditorTheme] = useState('vs');
@@ -586,20 +593,25 @@ Date:          ${dateStr}
 
         const tabToClose = currentTabs.find((t) => t.id === tabIdToClose);
         if (tabToClose?.isDirty && !isAutosaveEnabled) {
-            if (!confirm(`Tab "${tabToClose.title}" has unsaved changes. Close anyway?`)) {
-                return;
-            }
+            setTabToCloseConfirm(tabToClose);
+            return;
         }
 
+        executeCloseTab(tabIdToClose);
+    };
+
+    const executeCloseTab = (tabIdToClose) => {
+        const currentTabs = tabsRef.current || tabs;
         const updatedTabs = currentTabs.filter((t) => t.id !== tabIdToClose);
         let nextActiveId = activeTabId;
         if (activeTabId === tabIdToClose) {
-            nextActiveId = updatedTabs[0].id;
+            nextActiveId = updatedTabs[0]?.id || '';
             setActiveTabId(nextActiveId);
         }
 
         setTabs(updatedTabs);
         triggerSaveWorkspace(updatedTabs, nextActiveId);
+        setTabToCloseConfirm(null);
         toast.success('Tab closed');
     };
 
@@ -754,6 +766,9 @@ Date:          ${dateStr}
 
         setIsExecuting(true);
         setRightPanelMode('output');
+        if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+            setMobileView('output');
+        }
 
         try {
             const response = await compilerAPI.execute({
@@ -951,12 +966,13 @@ Date:          ${dateStr}
         }
     };
 
-    // Reset Personal SQLite Database
-    const handleResetDatabase = async () => {
-        if (!confirm('Are you sure you want to reset your personal database? All created tables and data will be erased.')) {
-            return;
-        }
+    // Reset Personal SQLite Database (UI Dialog aligned)
+    const handleResetDatabase = () => {
+        setShowResetDbModal(true);
+    };
 
+    const executeResetDatabase = async () => {
+        setShowResetDbModal(false);
         setIsResettingDb(true);
         try {
             await compilerAPI.resetDatabase();
@@ -1299,10 +1315,72 @@ Date:          ${dateStr}
                 </div>
             )}
 
+            {/* MOBILE VIEW SWITCHER BAR (< lg screens for Android & iOS) */}
+            <div className={`lg:hidden flex items-center justify-around border-b px-2 py-1.5 flex-shrink-0 select-none ${
+                isLightMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-800'
+            }`}>
+                <button
+                    onClick={() => setMobileView('editor')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                        mobileView === 'editor'
+                            ? isLightMode
+                                ? 'bg-white text-primary-700 shadow-xs border border-slate-200'
+                                : 'bg-slate-800 text-white shadow-xs border border-slate-700'
+                            : isLightMode
+                            ? 'text-slate-600 hover:text-slate-900'
+                            : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                >
+                    <Code2 className="w-3.5 h-3.5 text-primary-500" />
+                    <span>Code Editor</span>
+                </button>
+                <button
+                    onClick={() => {
+                        setMobileView('output');
+                        if (rightPanelMode === 'diagram') setRightPanelMode('output');
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                        mobileView === 'output'
+                            ? isLightMode
+                                ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
+                                : 'bg-slate-800 text-emerald-400 shadow-xs border border-slate-700'
+                            : isLightMode
+                            ? 'text-slate-600 hover:text-slate-900'
+                            : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                >
+                    <Terminal className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Output</span>
+                    {activeTab.output && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    )}
+                </button>
+                <button
+                    onClick={() => {
+                        setMobileView('diagram');
+                        setRightPanelMode('diagram');
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                        mobileView === 'diagram'
+                            ? isLightMode
+                                ? 'bg-white text-purple-700 shadow-xs border border-slate-200'
+                                : 'bg-slate-800 text-purple-400 shadow-xs border border-slate-700'
+                            : isLightMode
+                            ? 'text-slate-600 hover:text-slate-900'
+                            : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                >
+                    <Layers className="w-3.5 h-3.5 text-purple-500" />
+                    <span>{isDatabaseLanguage(activeTab.language) ? 'ER Diagram' : 'Flowchart'}</span>
+                </button>
+            </div>
+
             {/* 4. MAIN SPLIT SCREEN: LEFT EDITOR PANE, RIGHT OUTPUT & CANVAS */}
             <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 overflow-hidden">
                 {/* LEFT PANEL: Monaco Code Editor with Ergonomic RUN CODE Button Above */}
-                <section className={`flex flex-col h-full border-r overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
+                <section className={`flex flex-col h-full border-r overflow-hidden ${
+                    mobileView !== 'editor' ? 'hidden lg:flex' : 'flex'
+                } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         {/* Left: Active filename with quick rename & Read-only preselected language indicator */}
@@ -1526,7 +1604,9 @@ Date:          ${dateStr}
                 </section>
 
                 {/* RIGHT PANEL: COORDINATED OUTPUT & VISUAL FLOWCHART CANVAS */}
-                <section className={`flex flex-col h-full overflow-hidden ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
+                <section className={`flex flex-col h-full overflow-hidden ${
+                    mobileView === 'editor' ? 'hidden lg:flex' : 'flex'
+                } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
                     {/* Tab Navigation Header */}
                     <div className={`flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         <div className="flex items-center gap-1">
@@ -1848,6 +1928,108 @@ Date:          ${dateStr}
                     )}
                 </section>
             </main>
+
+            {/* Mobile Floating Run Code Button (visible on mobile screens in editor view) */}
+            {mobileView === 'editor' && (
+                <div className="lg:hidden fixed bottom-4 right-4 z-40">
+                    <button
+                        onClick={handleExecuteCode}
+                        disabled={isExecuting}
+                        className={`flex items-center gap-2 px-4 py-3 rounded-full text-xs font-black shadow-2xl transition disabled:opacity-50 cursor-pointer active:scale-95 border ${
+                            activeTab.language === 'sql'
+                                ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-sky-500/30'
+                                : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 border-emerald-400/40 shadow-emerald-500/30'
+                        }`}
+                    >
+                        <Play className={`w-4 h-4 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
+                        <span>{isExecuting ? 'Running...' : activeTab.language === 'sql' ? 'Run SQL' : 'Run Code'}</span>
+                    </button>
+                </div>
+            )}
+
+            {/* Custom UI Modal: Close Dirty Tab Confirmation */}
+            {tabToCloseConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+                    <div className={`w-full max-w-md rounded-2xl border shadow-2xl p-6 transition-all ${
+                        isLightMode ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
+                    }`}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0">
+                                <AlertTriangle className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-base leading-tight">Unsaved Changes</h3>
+                                <p className={`text-xs mt-0.5 ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    Tab: "{tabToCloseConfirm.title}"
+                                </p>
+                            </div>
+                        </div>
+                        <p className={`text-sm mb-6 ${isLightMode ? 'text-slate-600' : 'text-slate-300'}`}>
+                            This file has unsaved changes. Closing it will discard your edits. Are you sure you want to close this tab?
+                        </p>
+                        <div className="flex items-center justify-end gap-2.5">
+                            <button
+                                onClick={() => setTabToCloseConfirm(null)}
+                                className={`px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                                }`}
+                            >
+                                Keep Open
+                            </button>
+                            <button
+                                onClick={() => executeCloseTab(tabToCloseConfirm.id)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/20 transition cursor-pointer"
+                            >
+                                Discard & Close Tab
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom UI Modal: Reset Database Confirmation */}
+            {showResetDbModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+                    <div className={`w-full max-w-md rounded-2xl border shadow-2xl p-6 transition-all ${
+                        isLightMode ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-slate-100'
+                    }`}>
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-500 shrink-0">
+                                <Trash2 className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-base leading-tight">Reset Personal Database</h3>
+                                <p className={`text-xs mt-0.5 ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                    Irreversible database wipe
+                                </p>
+                            </div>
+                        </div>
+                        <p className={`text-sm mb-6 ${isLightMode ? 'text-slate-600' : 'text-slate-300'}`}>
+                            Are you sure you want to reset your personal database? All created tables, records, and schema objects will be erased.
+                        </p>
+                        <div className="flex items-center justify-end gap-2.5">
+                            <button
+                                onClick={() => setShowResetDbModal(false)}
+                                className={`px-4 py-2 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                                        : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                                }`}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={executeResetDatabase}
+                                className="px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/20 transition cursor-pointer"
+                            >
+                                Reset Database
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Document Browser Modal */}
             <DocumentCodeBrowserModal
