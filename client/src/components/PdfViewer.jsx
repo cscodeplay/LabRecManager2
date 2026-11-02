@@ -37,7 +37,7 @@ export default function PdfViewer({
                 // 1. If documentId is provided: use `/api/documents/${documentId}/file` (guaranteed inline disposition)
                 // 2. Direct fetch of url
                 // 3. Backend stream proxy: `/api/documents/stream-proxy?url=...`
-                const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+                const apiUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : 'http://localhost:5001/api';
                 const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
                 const headers = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -109,7 +109,7 @@ export default function PdfViewer({
                 if (active) {
                     // Fall back to direct URL or stream proxy in iframe if fetch was blocked (e.g. CORS)
                     const fallbackUrl = url.startsWith('http')
-                        ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'}/documents/stream-proxy?url=${encodeURIComponent(url)}`
+                        ? `${process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : 'http://localhost:5001/api'}/documents/stream-proxy?url=${encodeURIComponent(url)}`
                         : url;
                     setBlobUrl(fallbackUrl);
                     setError(null);

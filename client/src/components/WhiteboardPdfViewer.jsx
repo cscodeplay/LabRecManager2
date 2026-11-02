@@ -30,7 +30,7 @@ async function fetchPdfData(url) {
     }
 
     // 3. Fallback to server stream proxy to bypass CORS
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api';
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL ? `${process.env.NEXT_PUBLIC_API_URL}/api` : 'http://localhost:5001/api';
     const proxyUrl = `${apiUrl}/documents/stream-proxy?url=${encodeURIComponent(url)}`;
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers = token ? { Authorization: `Bearer ${token}` } : {};

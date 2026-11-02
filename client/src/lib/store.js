@@ -84,7 +84,7 @@ export const useLanguageStore = create(
 export const useThemeStore = create(
     persist(
         (set, get) => ({
-            theme: 'light', // 'light', 'dark', 'system'
+            theme: 'light', // Universal default: 'light'
             setTheme: (theme) => {
                 set({ theme });
                 // Apply theme to document
@@ -92,25 +92,23 @@ export const useThemeStore = create(
                     const root = document.documentElement;
                     root.classList.remove('light', 'dark');
 
-                    if (theme === 'system') {
-                        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                        root.classList.add(systemDark ? 'dark' : 'light');
+                    if (theme === 'dark') {
+                        root.classList.add('dark');
                     } else {
-                        root.classList.add(theme);
+                        root.classList.add('light');
                     }
                 }
             },
             initializeTheme: () => {
-                const theme = get().theme;
+                const currentTheme = get().theme;
                 if (typeof window !== 'undefined') {
                     const root = document.documentElement;
                     root.classList.remove('light', 'dark');
 
-                    if (theme === 'system') {
-                        const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                        root.classList.add(systemDark ? 'dark' : 'light');
+                    if (currentTheme === 'dark') {
+                        root.classList.add('dark');
                     } else {
-                        root.classList.add(theme);
+                        root.classList.add('light');
                     }
                 }
             },

@@ -75,6 +75,14 @@ const Editor = dynamic(() => import('@monaco-editor/react'), {
 // Output Screen Terminal Themes
 const OUTPUT_THEMES = [
     {
+        id: 'light',
+        label: 'Clean Daylight (Paper White)',
+        containerClass: 'bg-slate-50 text-slate-900 border-slate-300 font-mono',
+        stdoutClass: 'bg-white border-slate-200 text-slate-900 shadow-xs',
+        headerClass: 'bg-slate-100 border-slate-200 text-slate-700',
+        accentText: 'text-primary-600'
+    },
+    {
         id: 'classic',
         label: 'Deep Slate (Classic)',
         containerClass: 'bg-slate-950 text-slate-200 border-slate-800',
@@ -105,14 +113,6 @@ const OUTPUT_THEMES = [
         stdoutClass: 'bg-[#140e04] border-amber-900/70 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.1)]',
         headerClass: 'bg-[#140f06] border-amber-900 text-amber-400',
         accentText: 'text-amber-400'
-    },
-    {
-        id: 'light',
-        label: 'Clean Daylight (Paper White)',
-        containerClass: 'bg-slate-50 text-slate-900 border-slate-300 font-mono',
-        stdoutClass: 'bg-white border-slate-200 text-slate-900 shadow-xs',
-        headerClass: 'bg-slate-100 border-slate-200 text-slate-700',
-        accentText: 'text-primary-600'
     }
 ];
 
@@ -139,21 +139,46 @@ const isDatabaseLanguage = (lang) => lang === 'sql' || lang === 'plsql';
 const getLanguageMeta = (lang) => SUPPORTED_LANGUAGES.find((l) => l.id === lang) || SUPPORTED_LANGUAGES[0];
 const getMonacoLanguage = (lang) => getLanguageMeta(lang).monaco;
 
-// Default Initial Code Tab (Empty by default for clean start)
-const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 'Student') => {
+// Helper to determine next free available program number (e.g. program 1, program 2, ...)
+export const getNextProgramNumber = (existingTabs = []) => {
+    const usedNumbers = new Set();
+    const regex = /^program\s*(\d+)/i;
+    for (const tab of existingTabs) {
+        const titleMatch = (tab.title || '').match(regex);
+        if (titleMatch) {
+            usedNumbers.add(parseInt(titleMatch[1], 10));
+        }
+        const fileMatch = (tab.filename || '').match(regex);
+        if (fileMatch) {
+            usedNumbers.add(parseInt(fileMatch[1], 10));
+        }
+    }
+    let n = 1;
+    while (usedNumbers.has(n)) {
+        n++;
+    }
+    return n;
+};
+
+// Default Initial Code Tab (Dynamic program n free number, no student name/date in filename)
+const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 'Student', programNumber = 1) => {
     const isDb = isDatabaseLanguage(lang);
     const dateStr = new Date().toISOString().split('T')[0];
     const meta = getLanguageMeta(lang);
+    const ext = isDb ? (lang === 'plsql' ? '.sql' : '.sql') : meta.ext;
+    const initialHeaderComment = isDb
+        ? `-- Program: program ${programNumber}\n-- Language: ${meta.label}\n\n`
+        : `# Program: program ${programNumber}\n# Language: ${meta.label}\n\n`;
 
     return {
         id,
-        title: isDb ? (lang === 'plsql' ? 'PL/SQL Block' : 'SQL Query') : `${meta.label} Program`,
-        filename: `${studentId}_${dateStr}${meta.ext}`,
+        title: `program ${programNumber}`,
+        filename: `program ${programNumber}${ext}`,
         language: lang,
-        code: '',
+        code: initialHeaderComment,
         stdin: '',
         metadata: {
-            title: isDb ? 'Database Query' : `${meta.label} Practice`,
+            title: `program ${programNumber}`,
             description: '',
             subject: isDb ? 'Database Management' : `${meta.label} Programming`,
             studentId,
@@ -182,10 +207,10 @@ export function PracticeIDEPage() {
     const studentDisplayName =
         `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'Student';
 
-    // 1. MULTI-TAB SYSTEM (Max 5 tabs) - Initial tabs default to both Python and SQL for immediate visibility
+    // 1. MULTI-TAB SYSTEM (Max 5 tabs) - Initial tabs default to both Python and SQL with program 1 and program 2
     const [tabs, setTabs] = useState(() => [
-        createDefaultTab('tab_py', 'python', studentIdentifier, studentDisplayName),
-        createDefaultTab('tab_sql', 'sql', studentIdentifier, studentDisplayName)
+        createDefaultTab('tab_py', 'python', studentIdentifier, studentDisplayName, 1),
+        createDefaultTab('tab_sql', 'sql', studentIdentifier, studentDisplayName, 2)
     ]);
     const [activeTabId, setActiveTabId] = useState(urlLang === 'sql' ? 'tab_sql' : 'tab_py');
     const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
@@ -194,6 +219,7 @@ export function PracticeIDEPage() {
     tabsRef.current = tabs;
     const activeTabIdRef = useRef(activeTabId);
     activeTabIdRef.current = activeTabId;
+    const isCommittingRenameRef = useRef(false);
 
     // Autosave Toggle & Flashing Disappearing Indicator
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
@@ -316,8 +342,16 @@ export function PracticeIDEPage() {
                 if (response.data?.success && isMounted) {
                     const ws = response.data.data;
 
-                    if (ws.editorTheme) setEditorTheme(ws.editorTheme);
-                    if (ws.outputTheme) setOutputThemeId(ws.outputTheme);
+                    if (ws.editorTheme && (ws.editorTheme === 'vs' || ws.editorTheme === 'light')) {
+                        setEditorTheme(ws.editorTheme);
+                    } else {
+                        setEditorTheme('vs');
+                    }
+                    if (ws.outputTheme && ws.outputTheme === 'light') {
+                        setOutputThemeId(ws.outputTheme);
+                    } else {
+                        setOutputThemeId('light');
+                    }
                     if (ws.existingTables) setExistingTables(ws.existingTables);
                     if (ws.isAutosaveEnabled !== undefined) setIsAutosaveEnabled(ws.isAutosaveEnabled);
                     if (ws.updatedAt) setLastAutosavedAt(ws.updatedAt);
@@ -589,15 +623,16 @@ Date:          ${dateStr}
         const newId = `tab_${Date.now()}`;
         const newLang = forcedLang || (activeTab?.language === 'sql' ? 'sql' : 'python');
         const isSql = newLang === 'sql';
-        const newTab = createDefaultTab(newId, newLang, studentIdentifier, studentDisplayName);
-        newTab.title = isSql ? `SQL Query ${currentTabs.length + 1}` : `Python ${currentTabs.length + 1}`;
-        newTab.filename = `${studentIdentifier}_${new Date().toISOString().split('T')[0]}_p${currentTabs.length + 1}.${isSql ? 'sql' : 'py'}`;
+        const nextNum = getNextProgramNumber(currentTabs);
+        const newTab = createDefaultTab(newId, newLang, studentIdentifier, studentDisplayName, nextNum);
+        newTab.title = `program ${nextNum}`;
+        newTab.filename = `program ${nextNum}.${isSql ? 'sql' : 'py'}`;
 
         const updatedTabs = [...currentTabs, newTab];
         setTabs(updatedTabs);
         setActiveTabId(newId);
         triggerSaveWorkspace(updatedTabs, newId);
-        toast.success(`Created ${isSql ? 'SQL Database' : 'Python'} Tab (${updatedTabs.length} of 5)`);
+        toast.success(`Created program ${nextNum} (${isSql ? 'SQL' : 'Python'})`);
     };
 
     const handleCloseTab = (tabIdToClose, e) => {
@@ -675,102 +710,61 @@ Date:          ${dateStr}
         toast.success(`Switched active tab to ${meta.label} (${isDb ? 'ER Diagram Designer' : 'Flowchart Designer'})`);
     };
 
-    // Inline Tab Rename: updates title, synchronized filename, auto-creates or overwrites in Documents
+    // Inline Tab Rename: updates title & synchronized filename immediately and non-blockingly
     const handleCommitTabRename = async (tabId) => {
-        const trimmed = (editingTabTitle || '').trim();
-        if (!trimmed) {
-            setEditingTabId(null);
-            return;
-        }
-
-        const currentTab = tabs.find((t) => t.id === tabId);
-        if (!currentTab) {
-            setEditingTabId(null);
-            return;
-        }
-
-        const ext = currentTab.language === 'sql' ? '.sql' : '.py';
-        let newFilename = trimmed;
-        if (!newFilename.toLowerCase().endsWith(ext)) {
-            newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
-        }
-
-        setEditingTabId(null);
-
-        const targetFolderName = currentTab.language === 'sql' ? 'SQL Practice' : 'Python Practice';
+        if (isCommittingRenameRef.current) return;
+        isCommittingRenameRef.current = true;
 
         try {
-            // 1. Resolve or Create Target Folder
-            const foldersRes = await foldersAPI.getAll();
-            const rawFolders = foldersRes.data?.data;
-            const foldersList = Array.isArray(rawFolders)
-                ? rawFolders
-                : Array.isArray(rawFolders?.folders)
-                ? rawFolders.folders
-                : [];
-            let targetFolder = foldersList.find(
-                (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
-            );
+            const trimmed = (editingTabTitle || '').trim();
+            setEditingTabId(null);
+            if (!trimmed) return;
 
-            if (!targetFolder) {
-                const createFolderRes = await foldersAPI.create({
-                    name: targetFolderName,
-                    color: currentTab.language === 'sql' ? '#0284c7' : '#f59e0b'
-                });
-                targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+            const currentTabs = tabsRef.current || tabs;
+            const currentTab = currentTabs.find((t) => t.id === tabId);
+            if (!currentTab) return;
+
+            const ext = currentTab.language === 'sql' ? '.sql' : '.py';
+            let newFilename = trimmed;
+            if (!newFilename.toLowerCase().endsWith(ext)) {
+                newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
             }
+            const cleanTitle = trimmed.replace(new RegExp(`\\${ext}$`, 'i'), '');
 
-            // 2. Upload file with overwrite and existingDocumentId
-            const fileBlob = new Blob([currentTab.code], { type: 'text/plain;charset=utf-8' });
-            const fileObj = new File([fileBlob], newFilename, { type: 'text/plain' });
-
-            const uploadRes = await documentsAPI.upload(fileObj, {
-                name: newFilename,
-                description: `${trimmed} - Practice Code Document`,
-                category: 'code',
-                folderId: targetFolder?.id,
-                overwrite: true,
-                existingDocumentId: currentTab.documentId || undefined
+            // 1. Immediately update local tabs state
+            const updatedTabs = currentTabs.map((t) => {
+                if (t.id !== tabId) return t;
+                return {
+                    ...t,
+                    title: cleanTitle,
+                    filename: newFilename,
+                    metadata: {
+                        ...(t.metadata || {}),
+                        title: cleanTitle
+                    }
+                };
             });
 
-            const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
-            const newDocId = savedDoc?.id || currentTab.documentId;
+            setTabs(updatedTabs);
+            triggerSaveWorkspace(updatedTabs);
+            toast.success(`Renamed program to ${newFilename}`);
 
-            // 3. Update tabs state with new documentId and reset isDirty
-            setTabs((prevTabs) => {
-                const nextTabs = prevTabs.map((t) => {
-                    if (t.id !== tabId) return t;
-                    return {
-                        ...t,
-                        title: trimmed,
-                        filename: newFilename,
-                        documentId: newDocId,
-                        isDirty: false
-                    };
-                });
-                triggerSaveWorkspace(nextTabs);
-                return nextTabs;
-            });
-
-            loadExistingDocs();
-            toast.success(`Saved to Documents / ${targetFolderName} / ${newFilename}`, { icon: '📁' });
-        } catch (err) {
-            console.error('Document auto-create on rename error:', err);
-            // Fallback: update tab title and filename locally
-            setTabs((prevTabs) => {
-                const nextTabs = prevTabs.map((t) => {
-                    if (t.id !== tabId) return t;
-                    return {
-                        ...t,
-                        title: trimmed,
-                        filename: newFilename,
-                        isDirty: true
-                    };
-                });
-                triggerSaveWorkspace(nextTabs);
-                return nextTabs;
-            });
-            toast.error('Could not auto-save to Documents: ' + (err.response?.data?.message || err.message));
+            // 2. If this program is already saved in Documents, sync its name in the background
+            if (currentTab.documentId) {
+                try {
+                    await documentsAPI.update(currentTab.documentId, {
+                        name: newFilename,
+                        fileName: newFilename
+                    });
+                    loadExistingDocs();
+                } catch (docErr) {
+                    console.warn('[IDE] Non-blocking document rename sync:', docErr?.message);
+                }
+            }
+        } finally {
+            setTimeout(() => {
+                isCommittingRenameRef.current = false;
+            }, 100);
         }
     };
 
@@ -905,13 +899,13 @@ Date:          ${dateStr}
 
     const handleSaveToDocuments = (openAsDialog = false) => {
         loadExistingDocs();
-        // If explicitly requested via Save As, or if the active tab has never been saved yet (no filename), or if mandatory problem title is missing:
-        if (openAsDialog || !activeTab.filename || !activeTab.metadata?.title?.trim()) {
+        // If explicitly requested via Save As or if no filename exists
+        if (openAsDialog || !activeTab.filename) {
             setShowSaveAsModal(true);
             return;
         }
 
-        // Direct quick-save with existing filename and metadata
+        // Direct quick-save with existing filename
         const ext = activeTab.language === 'sql' ? 'sql' : 'py';
         const folder = activeTab.language === 'sql' ? 'SQL' : 'Python';
         const fileName = activeTab.filename.endsWith(`.${ext}`) ? activeTab.filename : `${activeTab.filename}.${ext}`;
@@ -920,7 +914,7 @@ Date:          ${dateStr}
             fileName,
             folderName: folder,
             language: activeTab.language,
-            problemTitle: activeTab.metadata?.title?.trim() || activeTab.title,
+            problemTitle: activeTab.title || activeTab.filename,
             problemDescription: activeTab.metadata?.description || ''
         });
     };
@@ -1181,7 +1175,7 @@ Date:          ${dateStr}
                                 ) : (
                                     <div className="flex items-center gap-1 min-w-0 flex-1">
                                         <span className="truncate font-mono text-[11px] cursor-text" title={`Path: ${getTabAbsolutePath(tab)}`}>
-                                            {tab.title || `Tab ${idx + 1}`}
+                                            {tab.filename || tab.title || `program ${idx + 1}`}
                                         </span>
                                         {!inspectingStudentId && (
                                             <button
@@ -1189,7 +1183,7 @@ Date:          ${dateStr}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     setEditingTabId(tab.id);
-                                                    setEditingTabTitle(tab.title);
+                                                    setEditingTabTitle(tab.filename || tab.title);
                                                 }}
                                                 className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition ${
                                                     isLightMode
@@ -1258,79 +1252,7 @@ Date:          ${dateStr}
                         <span className="text-[10px] text-slate-400 ml-2 italic">Max 5 Tabs Open</span>
                     )}
                 </div>
-
-                {/* Right controls: Metadata Drawer toggle */}
-                <div className="flex items-center gap-2 text-xs">
-                    <button
-                        onClick={() => setShowMetadataDrawer(!showMetadataDrawer)}
-                        className={`p-1.5 rounded-lg border text-xs transition cursor-pointer ${
-                            showMetadataDrawer
-                                ? isLightMode
-                                    ? 'bg-primary-50 border-primary-300 text-primary-700'
-                                    : 'bg-primary-600/30 border-primary-500 text-primary-300'
-                                : isLightMode
-                                ? 'bg-slate-100 border-slate-300 text-slate-600 hover:text-slate-900'
-                                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                        }`}
-                        title="Toggle Problem Details & Mandatory Fields Drawer"
-                    >
-                        <FileText className="w-3.5 h-3.5" />
-                    </button>
-                </div>
             </div>
-
-            {/* 3. PROBLEM DETAILS & MANDATORY FIELDS DRAWER */}
-            {showMetadataDrawer && (
-                <div className={`border-b px-4 py-2.5 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs animate-in slide-in-from-top-1 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                    {/* Title (Mandatory) */}
-                    <div className="md:col-span-2">
-                        <label className={`text-[11px] font-bold flex items-center gap-1 mb-1 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
-                            <span>Problem Title</span>
-                            <span className="text-rose-500 font-bold">*</span>
-                            <span className="text-[10px] text-slate-400 font-normal">(Mandatory for saving)</span>
-                        </label>
-                        <input
-                            type="text"
-                            value={activeTab.metadata?.title || ''}
-                            onChange={(e) => handleUpdateMetadata('title', e.target.value)}
-                            placeholder="e.g. Factorial & Sum Calculation..."
-                            className={`w-full px-2.5 py-1 border rounded text-xs focus:outline-none focus:border-primary-500 ${isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'}`}
-                        />
-                    </div>
-
-                    {/* Subject / Course */}
-                    <div>
-                        <label className={`text-[11px] font-bold block mb-1 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
-                            Subject / Lab Course
-                        </label>
-                        <input
-                            type="text"
-                            value={activeTab.metadata?.subject || ''}
-                            onChange={(e) => handleUpdateMetadata('subject', e.target.value)}
-                            placeholder="e.g. Python Programming Lab"
-                            className={`w-full px-2.5 py-1 border rounded text-xs focus:outline-none focus:border-primary-500 ${isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-700 text-white'}`}
-                        />
-                    </div>
-
-                    {/* Student Info & Insert Docstring Action */}
-                    <div className="flex items-end justify-between gap-2">
-                        <div className="truncate">
-                            <span className="text-[10px] text-slate-400 block">Student ID / Date</span>
-                            <span className={`font-mono font-semibold text-xs ${isLightMode ? 'text-emerald-700' : 'text-emerald-400'}`}>
-                                {activeTab.metadata?.studentId} • {activeTab.metadata?.date}
-                            </span>
-                        </div>
-
-                        <button
-                            onClick={handleInsertDocstringHeader}
-                            className={`px-2.5 py-1 border rounded text-[11px] font-semibold transition cursor-pointer flex-shrink-0 ${isLightMode ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-primary-300'}`}
-                            title="Generate formatted comment/docstring block at the top of code"
-                        >
-                            Insert Header
-                        </button>
-                    </div>
-                </div>
-            )}
 
             {/* MOBILE VIEW SWITCHER BAR (< lg screens for Android & iOS) */}
             <div className={`lg:hidden flex items-center justify-around border-b px-2 py-1.5 flex-shrink-0 select-none ${
@@ -1456,31 +1378,6 @@ Date:          ${dateStr}
                                 </div>
                             )}
 
-                            {/* Read-Only Preselected Language Badge */}
-                            <div
-                                className={`px-1.5 sm:px-2 py-0.5 rounded text-xs font-bold border flex items-center gap-1 shadow-2xs ${
-                                    isDatabaseLanguage(activeTab.language)
-                                        ? isLightMode
-                                            ? 'bg-sky-50 border-sky-300 text-sky-800'
-                                            : 'bg-sky-950/60 border-sky-800 text-sky-300'
-                                        : isLightMode
-                                        ? 'bg-amber-50 border-amber-300 text-amber-800'
-                                        : 'bg-amber-950/60 border-amber-800 text-amber-300'
-                                }`}
-                                title={`Language preselected: ${getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}`}
-                            >
-                                <span>{getLanguageMeta(activeTab.language)?.icon || (isDatabaseLanguage(activeTab.language) ? '🗄️' : '🐍')}</span>
-                                <span className="hidden sm:inline">{getLanguageMeta(activeTab.language)?.label || activeTab.language.toUpperCase()}</span>
-                                <span className="sm:hidden inline font-mono text-[10px]">{activeTab.language === 'sql' ? 'SQL' : 'PY'}</span>
-                            </div>
-
-                            <span className="text-slate-400 hidden sm:inline">•</span>
-                            <span className={`text-[11px] hidden sm:inline ${isLightMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {isDatabaseLanguage(activeTab.language)
-                                    ? (activeEngine === 'mysql' ? 'Persistent MySQL 9.3 Engine' : 'Persistent SQLite 3 Engine')
-                                    : (getLanguageMeta(activeTab.language)?.desc || 'Sandbox Compiler')}
-                            </span>
-
                             {/* Flashing Autosave Transient Notice (appears on autosave, disappears after 2.5s) */}
                             <div
                                 className={`transition-all duration-500 ease-out flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${
@@ -1505,32 +1402,17 @@ Date:          ${dateStr}
                             </div>
                         </div>
 
-                        {/* Center/Right: PROMINENT RUN CODE BUTTON ABOVE EDITOR + MANUAL SAVE (WHEN AUTOSAVE OFF) */}
+                        {/* Center/Right: SINGLE UNIFIED "RUN" BUTTON AT TOP CORNER OF EDITOR SPACE */}
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={handleExecuteCode}
                                 disabled={isExecuting}
-                                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-black shadow-md transition disabled:opacity-50 cursor-pointer active:scale-95 ${
-                                    activeTab.language === 'sql'
-                                        ? 'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-sky-500/25'
-                                        : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 shadow-emerald-500/25'
-                                }`}
-                                title={activeTab.language === 'sql' ? 'Execute SQL queries against your SQLite database (Ctrl+Enter)' : 'Run active Python script (Ctrl+Enter)'}
+                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer active:scale-95"
+                                title="Run code (Ctrl+Enter)"
                             >
                                 <Play className={`w-3.5 h-3.5 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                                <span className="hidden sm:inline">
-                                    {isExecuting
-                                        ? 'Running...'
-                                        : activeTab.language === 'sql'
-                                        ? 'Run SQL Query'
-                                        : 'Run Python Code'}
-                                </span>
-                                <span className="sm:hidden inline">
-                                    {isExecuting ? 'Running...' : 'Run'}
-                                </span>
-                                <kbd className={`text-[9px] px-1 py-0.2 rounded font-mono font-normal hidden sm:inline ${
-                                    activeTab.language === 'sql' ? 'bg-sky-800/40 text-white' : 'bg-emerald-700/30 text-slate-950'
-                                }`}>
+                                <span>{isExecuting ? 'Running...' : 'Run'}</span>
+                                <kbd className="hidden sm:inline text-[9px] px-1 py-0.2 rounded font-mono font-normal bg-emerald-700/60 text-white ml-0.5">
                                     Ctrl+↵
                                 </kbd>
                             </button>
@@ -1947,25 +1829,6 @@ Date:          ${dateStr}
                     )}
                 </section>
             </main>
-
-            {/* Mobile Floating Run Code Button (visible on mobile screens in editor view) */}
-            {mobileView === 'editor' && (
-                <div className="lg:hidden fixed bottom-4 right-4 z-40">
-                    <button
-                        onClick={handleExecuteCode}
-                        disabled={isExecuting}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-full text-xs font-black shadow-2xl transition disabled:opacity-50 cursor-pointer active:scale-95 border ${
-                            activeTab.language === 'sql'
-                                ? 'bg-gradient-to-r from-sky-500 to-blue-600 text-white border-sky-400/40 shadow-sky-500/30'
-                                : 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 border-emerald-400/40 shadow-emerald-500/30'
-                        }`}
-                        title="Execute code (Ctrl+Enter)"
-                    >
-                        <Play className={`w-4 h-4 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                        <span>{isExecuting ? 'Running...' : 'Run'}</span>
-                    </button>
-                </div>
-            )}
 
             {/* Custom UI Modal: Close Dirty Tab Confirmation */}
             {tabToCloseConfirm && (

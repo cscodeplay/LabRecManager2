@@ -104,8 +104,8 @@ export default function IDEMenuBar({
         }`;
 
     const dropdownClass = isLightMode
-        ? 'absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-1 text-slate-800'
-        : 'absolute left-0 top-full mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 z-50 animate-in fade-in slide-in-from-top-1 text-slate-200';
+        ? 'absolute left-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-2xl py-1.5 z-[100] animate-in fade-in slide-in-from-top-1 text-slate-800'
+        : 'absolute left-0 top-full mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1.5 z-[100] animate-in fade-in slide-in-from-top-1 text-slate-200';
 
     const itemBtnClass = isLightMode
         ? 'w-full text-left px-3 py-1.5 hover:bg-slate-100 flex items-center justify-between text-xs cursor-pointer text-slate-700 hover:text-slate-900'
@@ -116,7 +116,7 @@ export default function IDEMenuBar({
     return (
         <div
             ref={menuRef}
-            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap overflow-x-auto no-scrollbar ${
+            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap overflow-visible ${
                 isLightMode
                     ? 'bg-white border-slate-200 text-slate-700'
                     : 'bg-slate-900 border-slate-800 text-slate-300'

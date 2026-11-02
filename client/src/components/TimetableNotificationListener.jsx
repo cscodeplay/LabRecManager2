@@ -18,7 +18,7 @@ export default function TimetableNotificationListener() {
     useEffect(() => {
         if (!_hasHydrated || !isAuthenticated || !isRelevantRole) return;
 
-        const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001');
         socketRef.current = io(socketUrl, {
             path: '/socket.io',
             transports: ['websocket', 'polling']
