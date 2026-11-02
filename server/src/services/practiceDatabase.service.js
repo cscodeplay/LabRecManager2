@@ -5,14 +5,45 @@ const { execFile } = require('child_process');
 
 const CONFIG_PATH = path.join(__dirname, '../../storage/config/practice_engine_config.json');
 
+function parseMysqlUri(uri) {
+    if (!uri || typeof uri !== 'string') return null;
+    const clean = uri.trim();
+    if (!clean.startsWith('mysql://')) return null;
+    try {
+        const u = new URL(clean);
+        return {
+            host: u.hostname,
+            port: parseInt(u.port || '3306', 10),
+            user: decodeURIComponent(u.username || 'root'),
+            password: decodeURIComponent(u.password || ''),
+            database: u.pathname ? u.pathname.replace(/^\//, '') : undefined
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function getSslOptions(conf) {
+    if (!conf) return undefined;
+    const host = conf.host || '';
+    const isRemote = host && host !== '127.0.0.1' && host !== 'localhost';
+    if (conf.ssl || isRemote) {
+        return { minVersion: 'TLSv1.2', rejectUnauthorized: true };
+    }
+    return undefined;
+}
+
+const envUri = process.env.MYSQL_URL || process.env.MYSQL_URI;
+const parsedUri = parseMysqlUri(envUri);
+
 const DEFAULT_CONFIG = {
     activeEngine: 'mysql', // 'mysql' | 'sqlite'
     fallbackToSqlite: true,
     mysql: {
-        host: process.env.MYSQL_HOST || '127.0.0.1',
-        port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-        user: process.env.MYSQL_USER || 'root',
-        password: process.env.MYSQL_PASSWORD || '',
+        host: parsedUri?.host || process.env.MYSQL_HOST || '127.0.0.1',
+        port: parsedUri?.port || parseInt(process.env.MYSQL_PORT || '3306', 10),
+        user: parsedUri?.user || process.env.MYSQL_USER || 'root',
+        password: parsedUri?.password || process.env.MYSQL_PASSWORD || '',
         databasePrefix: 'practice_stu_'
     },
     updatedAt: new Date().toISOString(),
@@ -60,11 +91,13 @@ class PracticeDatabaseService {
                 this.rootPool.end().catch(() => {});
                 this.rootPool = null;
             }
+            const ssl = getSslOptions(this.config.mysql);
             this.rootPool = mysql.createPool({
                 host: this.config.mysql.host,
                 port: this.config.mysql.port,
                 user: this.config.mysql.user,
                 password: this.config.mysql.password,
+                ssl: ssl,
                 waitForConnections: true,
                 connectionLimit: 10,
                 queueLimit: 0,
@@ -80,6 +113,7 @@ class PracticeDatabaseService {
      */
     async testMySqlConnection(overrideConfig = null) {
         const conf = overrideConfig || this.config.mysql;
+        const ssl = getSslOptions(conf);
         let testConn = null;
         try {
             testConn = await mysql.createConnection({
@@ -87,7 +121,8 @@ class PracticeDatabaseService {
                 port: conf.port || 3306,
                 user: conf.user || 'root',
                 password: conf.password || '',
-                connectTimeout: 4000
+                ssl: ssl,
+                connectTimeout: 7000
             });
             const [rows] = await testConn.query('SELECT VERSION() as version');
             const version = rows[0]?.version || 'MySQL 8+';
@@ -132,13 +167,22 @@ class PracticeDatabaseService {
      * Update active engine and credentials (Admin only)
      */
     async updateEngineConfig(updates = {}, adminUser = null) {
+        let mysqlUpdates = updates.mysql || {};
+        if (updates.uri || updates.mysqlUri || typeof updates.mysql === 'string') {
+            const rawUri = updates.uri || updates.mysqlUri || updates.mysql;
+            const parsed = parseMysqlUri(rawUri);
+            if (parsed) {
+                mysqlUpdates = { ...mysqlUpdates, ...parsed };
+            }
+        }
+
         const nextConfig = {
             ...this.config,
             activeEngine: updates.activeEngine === 'sqlite' ? 'sqlite' : 'mysql',
             fallbackToSqlite: updates.fallbackToSqlite !== undefined ? Boolean(updates.fallbackToSqlite) : this.config.fallbackToSqlite,
             mysql: {
                 ...this.config.mysql,
-                ...(updates.mysql || {})
+                ...mysqlUpdates
             },
             updatedAt: new Date().toISOString(),
             updatedBy: adminUser?.name || adminUser?.email || 'Admin'
@@ -216,14 +260,16 @@ class PracticeDatabaseService {
 
         let conn = null;
         try {
+            const ssl = getSslOptions(this.config.mysql);
             conn = await mysql.createConnection({
                 host: this.config.mysql.host,
                 port: this.config.mysql.port,
                 user: this.config.mysql.user,
                 password: this.config.mysql.password,
                 database: dbName,
+                ssl: ssl,
                 multipleStatements: true,
-                connectTimeout: 5000
+                connectTimeout: 8000
             });
 
             // Execute the SQL code
