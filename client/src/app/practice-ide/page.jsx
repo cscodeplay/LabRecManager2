@@ -247,6 +247,7 @@ function PracticeIDEPage() {
 
     // Inline Tab Rename State
     const [editingTabId, setEditingTabId] = useState(null);
+    const [editingTabLocation, setEditingTabLocation] = useState(null); // 'tab' | 'subtoolbar' | null
     const [editingTabTitle, setEditingTabTitle] = useState('');
 
     // Fetch existing documents to detect filename duplicates in same folder
@@ -718,6 +719,7 @@ Date:          ${dateStr}
         try {
             const trimmed = (editingTabTitle || '').trim();
             setEditingTabId(null);
+            setEditingTabLocation(null);
             if (!trimmed) return;
 
             const currentTabs = tabsRef.current || tabs;
@@ -730,6 +732,11 @@ Date:          ${dateStr}
                 newFilename = `${newFilename.replace(/\.[^/.]+$/, '')}${ext}`;
             }
             const cleanTitle = trimmed.replace(new RegExp(`\\${ext}$`, 'i'), '');
+
+            // Do not notify or save if name is identical
+            if (cleanTitle === currentTab.title && newFilename === currentTab.filename) {
+                return;
+            }
 
             // 1. Immediately update local tabs state
             const updatedTabs = currentTabs.map((t) => {
@@ -1128,8 +1135,9 @@ Date:          ${dateStr}
                                 onDoubleClick={(e) => {
                                     if (inspectingStudentId) return;
                                     e.stopPropagation();
+                                    setEditingTabLocation('tab');
                                     setEditingTabId(tab.id);
-                                    setEditingTabTitle(tab.title);
+                                    setEditingTabTitle(tab.title || (tab.filename ? tab.filename.replace(/\.[^/.]+$/, '') : ''));
                                 }}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-t-lg border-t-2 text-xs font-medium cursor-pointer transition max-w-[210px] group ${
                                     isActive
@@ -1152,18 +1160,23 @@ Date:          ${dateStr}
                                     {isSql ? 'SQL' : 'PY'}
                                 </span>
 
-                                {editingTabId === tab.id ? (
+                                {editingTabId === tab.id && editingTabLocation === 'tab' ? (
                                     <input
                                         autoFocus
                                         type="text"
                                         value={editingTabTitle}
                                         onFocus={(e) => e.target.select()}
                                         onClick={(e) => e.stopPropagation()}
+                                        onMouseDown={(e) => e.stopPropagation()}
                                         onPointerDown={(e) => e.stopPropagation()}
                                         onChange={(e) => setEditingTabTitle(e.target.value)}
                                         onKeyDown={(e) => {
+                                            e.stopPropagation();
                                             if (e.key === 'Enter') handleCommitTabRename(tab.id);
-                                            if (e.key === 'Escape') setEditingTabId(null);
+                                            if (e.key === 'Escape') {
+                                                setEditingTabId(null);
+                                                setEditingTabLocation(null);
+                                            }
                                         }}
                                         onBlur={() => handleCommitTabRename(tab.id)}
                                         className={`w-28 px-1 py-0.2 border rounded text-[11px] font-mono focus:outline-none ${
@@ -1182,8 +1195,9 @@ Date:          ${dateStr}
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
+                                                    setEditingTabLocation('tab');
                                                     setEditingTabId(tab.id);
-                                                    setEditingTabTitle(tab.filename || tab.title);
+                                                    setEditingTabTitle(tab.title || (tab.filename ? tab.filename.replace(/\.[^/.]+$/, '') : ''));
                                                 }}
                                                 className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition ${
                                                     isLightMode
@@ -1325,22 +1339,29 @@ Date:          ${dateStr}
                         {/* Left: Active filename with quick rename & Read-only preselected language indicator */}
                         <div className="flex items-center gap-2">
                             {/* Quick Rename Program from Sub-Toolbar */}
-                            {editingTabId === activeTab.id ? (
+                            {editingTabId === activeTab.id && editingTabLocation === 'subtoolbar' ? (
                                 <input
                                     autoFocus
                                     type="text"
                                     value={editingTabTitle}
                                     onFocus={(e) => e.target.select()}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onPointerDown={(e) => e.stopPropagation()}
                                     onChange={(e) => setEditingTabTitle(e.target.value)}
                                     onKeyDown={(e) => {
+                                        e.stopPropagation();
                                         if (e.key === 'Enter') handleCommitTabRename(activeTab.id);
-                                        if (e.key === 'Escape') setEditingTabId(null);
+                                        if (e.key === 'Escape') {
+                                            setEditingTabId(null);
+                                            setEditingTabLocation(null);
+                                        }
                                     }}
                                     onBlur={() => handleCommitTabRename(activeTab.id)}
                                     className={`w-36 px-2 py-0.5 border rounded text-xs font-mono font-bold focus:outline-none ${
                                         isLightMode
-                                            ? 'bg-white border-primary-600 text-slate-900 shadow-xs'
-                                            : 'bg-slate-900 border-primary-500 text-white shadow-xs'
+                                            ? 'bg-white border-primary-600 text-slate-900 shadow-xs ring-1 ring-primary-500'
+                                            : 'bg-slate-900 border-primary-500 text-white shadow-xs ring-1 ring-primary-400'
                                     }`}
                                 />
                             ) : (
@@ -1352,8 +1373,9 @@ Date:          ${dateStr}
                                         title={`Absolute Path: ${getTabAbsolutePath(activeTab)}\n(Click or click pencil to rename)`}
                                         onClick={() => {
                                             if (inspectingStudentId) return;
+                                            setEditingTabLocation('subtoolbar');
                                             setEditingTabId(activeTab.id);
-                                            setEditingTabTitle(activeTab.title);
+                                            setEditingTabTitle(activeTab.title || (activeTab.filename ? activeTab.filename.replace(/\.[^/.]+$/, '') : ''));
                                         }}
                                     >
                                         {activeTab.filename}
@@ -1362,8 +1384,9 @@ Date:          ${dateStr}
                                         <button
                                             type="button"
                                             onClick={() => {
+                                                setEditingTabLocation('subtoolbar');
                                                 setEditingTabId(activeTab.id);
-                                                setEditingTabTitle(activeTab.title);
+                                                setEditingTabTitle(activeTab.title || (activeTab.filename ? activeTab.filename.replace(/\.[^/.]+$/, '') : ''));
                                             }}
                                             className={`p-0.5 rounded transition opacity-70 hover:opacity-100 ${
                                                 isLightMode
