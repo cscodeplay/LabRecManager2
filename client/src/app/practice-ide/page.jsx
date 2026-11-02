@@ -140,7 +140,7 @@ const getLanguageMeta = (lang) => SUPPORTED_LANGUAGES.find((l) => l.id === lang)
 const getMonacoLanguage = (lang) => getLanguageMeta(lang).monaco;
 
 // Helper to determine next free available program number (e.g. program 1, program 2, ...)
-export const getNextProgramNumber = (existingTabs = []) => {
+const getNextProgramNumber = (existingTabs = []) => {
     const usedNumbers = new Set();
     const regex = /^program\s*(\d+)/i;
     for (const tab of existingTabs) {
@@ -192,7 +192,7 @@ const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 
     };
 };
 
-export function PracticeIDEPage() {
+function PracticeIDEPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const urlDocId = searchParams?.get('docId') || searchParams?.get('id');
