@@ -540,6 +540,23 @@ router.post('/reset-db', authenticate, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * @route   GET /api/compiler/db-schema
+ * @desc    Get student's live persistent database schema (tables, columns, types, keys, constraints) - No AI, 100% deterministic
+ * @access  Private
+ */
+router.get('/db-schema', authenticate, asyncHandler(async (req, res) => {
+    const userId = req.user?.id || 'guest';
+    const studentDbPath = getStudentDbPath(userId);
+
+    const schemaResult = await practiceDatabaseService.getDatabaseSchema(userId, studentDbPath);
+
+    return res.json({
+        success: true,
+        data: schemaResult
+    });
+}));
+
+/**
  * @route   POST /api/compiler/generate-diagram
  * @desc    Auto-generate Flowchart or ER diagram (RESTRICTED to Instructors & Admins)
  * @access  Private (Admin, Instructor, Principal only)

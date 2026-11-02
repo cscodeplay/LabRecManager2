@@ -622,3 +622,105 @@ export function generateErDiagramFromSql(sqlCode = '') {
 
     return { nodes, connectors };
 }
+
+// ============================================================================
+// 3. RELATIONAL ER DIAGRAM GENERATOR (FROM LIVE DB SCHEMA OR PARSED DDL)
+// ============================================================================
+
+/**
+ * Generates relational schema table cards with full types, PKs, FKs, constraints and relationships.
+ * 100% deterministic, offline, ZERO AI.
+ * 
+ * @param {{ tables: Array<{ name: string, columns: Array, foreignKeys: Array }> }} schema
+ * @returns {{ nodes: Array, connectors: Array }}
+ */
+export function generateRelationalErDiagram(schema) {
+    if (!schema || !schema.tables || schema.tables.length === 0) {
+        return { nodes: [], connectors: [] };
+    }
+
+    const nodes = [];
+    const connectors = [];
+    let idCounter = 1;
+
+    const makeId = (prefix) => `node_${prefix}_${idCounter++}`;
+    const makeConnId = () => `conn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+    const tables = schema.tables;
+    const tableNodesMap = new Map();
+
+    const colsPerRow = Math.max(1, Math.min(3, Math.ceil(Math.sqrt(tables.length))));
+    const cardSpacingX = 360;
+    const cardSpacingY = 260;
+
+    tables.forEach((table, idx) => {
+        const gridCol = idx % colsPerRow;
+        const gridRow = Math.floor(idx / colsPerRow);
+
+        const x = 100 + gridCol * cardSpacingX;
+        const y = 80 + gridRow * cardSpacingY;
+
+        // Build table card text lines
+        const lines = [table.name.toUpperCase()];
+        let maxLineLength = table.name.length;
+
+        (table.columns || []).forEach(col => {
+            let line = col.name;
+            if (col.type) line += ` ${col.type}`;
+            if (col.isPk) line += ' PK';
+            if (col.isFk) line += ' FK';
+            if (!col.nullable && !col.isPk) line += ' NOT NULL';
+            if (col.defaultValue !== null && col.defaultValue !== undefined) {
+                line += ` DEFAULT ${col.defaultValue}`;
+            }
+
+            lines.push(line);
+            if (line.length > maxLineLength) maxLineLength = line.length;
+        });
+
+        const cardWidth = Math.min(340, Math.max(220, maxLineLength * 9 + 40));
+        const cardHeight = Math.max(90, 36 + (table.columns ? table.columns.length : 1) * 20 + 10);
+
+        const nodeId = makeId('tbl');
+        const node = {
+            id: nodeId,
+            type: 'er_table',
+            text: lines.join('\n'),
+            x,
+            y,
+            width: cardWidth,
+            height: cardHeight,
+            color: '#f8fafc',
+            borderColor: '#475569',
+            textColor: '#0f172a'
+        };
+
+        nodes.push(node);
+        tableNodesMap.set(table.name.toLowerCase(), { id: nodeId, node, colCount: lines.length });
+    });
+
+    // Generate relationship connectors for Foreign Keys
+    tables.forEach(table => {
+        const sourceInfo = tableNodesMap.get(table.name.toLowerCase());
+        if (!sourceInfo) return;
+
+        (table.foreignKeys || []).forEach(fk => {
+            const targetTable = (fk.referencedTable || '').toLowerCase();
+            const targetInfo = tableNodesMap.get(targetTable);
+
+            if (targetInfo && targetInfo.id !== sourceInfo.id) {
+                const isLeftToRight = sourceInfo.node.x < targetInfo.node.x;
+                connectors.push({
+                    id: makeConnId(),
+                    from: sourceInfo.id,
+                    fromPort: isLeftToRight ? 'right' : 'left',
+                    to: targetInfo.id,
+                    toPort: isLeftToRight ? 'left' : 'right',
+                    label: `1 : N (${fk.column})`
+                });
+            }
+        });
+    });
+
+    return { nodes, connectors };
+}

@@ -152,10 +152,16 @@ export default function AppLayout({ children }) {
                         </div>
 
                         {/* Right side - Session, Status, Notifications, Profile */}
-                        <div className="flex items-center gap-2">
-                            <SessionSelector />
-                            <CommitInfoBadge />
-                            <DatabaseStatusBadge />
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                            <div className="hidden md:flex items-center">
+                                <SessionSelector />
+                            </div>
+                            <div className="hidden sm:flex items-center">
+                                <CommitInfoBadge />
+                            </div>
+                            <div className="hidden sm:flex items-center">
+                                <DatabaseStatusBadge />
+                            </div>
                             <NotificationBell />
                             <ProfileDropdown />
                         </div>

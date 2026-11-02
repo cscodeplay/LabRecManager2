@@ -116,7 +116,7 @@ export default function IDEMenuBar({
     return (
         <div
             ref={menuRef}
-            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap overflow-visible ${
+            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap w-full max-w-full overflow-hidden ${
                 isLightMode
                     ? 'bg-white border-slate-200 text-slate-700'
                     : 'bg-slate-900 border-slate-800 text-slate-300'
@@ -127,7 +127,7 @@ export default function IDEMenuBar({
                 {/* Brand / Logo Icon */}
                 <div className={`flex items-center gap-1.5 pr-1.5 sm:pr-2 mr-1 border-r ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
                     <span className="font-extrabold bg-gradient-to-r from-amber-500 to-sky-500 bg-clip-text text-transparent text-xs tracking-wider font-mono">
-                        <span className="hidden sm:inline">PYTHON & SQL </span>STUDIO
+                        <span className="hidden md:inline">PYTHON & SQL </span>STUDIO
                     </span>
                 </div>
 
@@ -430,12 +430,12 @@ export default function IDEMenuBar({
                             {autosaveStatus === 'saving' ? (
                                 <>
                                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                                    <span className="text-[11px] text-emerald-500 font-bold">Autosaving...</span>
+                                    <span className="hidden md:inline text-[11px] text-emerald-500 font-bold">Autosaving...</span>
                                 </>
                             ) : (
                                 <>
                                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                    <span className="hidden md:inline text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
                                         {lastAutosavedAt
                                             ? `Autosaved ${new Date(lastAutosavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
                                             : 'Autosave: ON'}
@@ -446,7 +446,7 @@ export default function IDEMenuBar({
                     ) : (
                         <>
                             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Autosave: OFF</span>
+                            <span className="hidden md:inline text-[11px] text-amber-600 dark:text-amber-400 font-medium">Autosave: OFF</span>
                         </>
                     )}
                 </div>
@@ -455,7 +455,7 @@ export default function IDEMenuBar({
                 {isInstructorOrAdmin ? (
                     <button
                         onClick={onOpenEngineModal}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
+                        className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
                             isLightMode
                                 ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
                                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
@@ -463,10 +463,10 @@ export default function IDEMenuBar({
                         title="Configure and Preselect SQL Database Engine globally (MySQL or SQLite)"
                     >
                         <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                        <span className="font-bold">
+                        <span className="font-bold hidden sm:inline">
                             {activeEngine === 'mysql' ? 'MySQL 9.3' : 'SQLite 3'}
                         </span>
-                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                        <ChevronDown className="w-3 h-3 text-slate-400 hidden sm:inline" />
                     </button>
                 ) : (
                     <div
@@ -478,8 +478,8 @@ export default function IDEMenuBar({
                         title="Active SQL engine preselected by school administrator"
                     >
                         <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                        <span className="hidden sm:inline">Engine: </span>
-                        <span>{activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
+                        <span className="hidden md:inline">Engine: </span>
+                        <span className="hidden sm:inline">{activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
                     </div>
                 )}
 
@@ -504,14 +504,14 @@ export default function IDEMenuBar({
                                 className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 transition cursor-pointer"
                                 title="Click to return to your personal workspace"
                             >
-                                <span>Inspecting Student</span>
+                                <span className="hidden md:inline">Inspecting Student</span>
                                 <X className="w-3 h-3" />
                             </button>
                         ) : null}
 
                         <button
                             onClick={onOpenInspectorStudio}
-                            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
                                 isLightMode
                                     ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-300 text-amber-900'
                                     : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/30 text-amber-300'
@@ -519,7 +519,7 @@ export default function IDEMenuBar({
                             title="Open convenient Student Coding Work Inspection Studio & AI Reviews"
                         >
                             <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                            <span>Inspect Student Work</span>
+                            <span className="hidden md:inline">Inspect Student Work</span>
                         </button>
                     </div>
                 )}

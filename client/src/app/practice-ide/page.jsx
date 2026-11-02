@@ -45,11 +45,13 @@ import {
     ChevronUp,
     X,
     UserCheck,
-    AlertTriangle
+    AlertTriangle,
+    Workflow
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { compilerAPI, documentsAPI, foldersAPI } from '@/lib/api';
+import { generateRelationalErDiagram, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
 import IDEMenuBar from '@/components/IDEMenuBar';
 import FlowchartVisualCanvas from '@/components/FlowchartVisualCanvas';
 import DocumentCodeBrowserModal from '@/components/DocumentCodeBrowserModal';
@@ -249,6 +251,26 @@ function PracticeIDEPage() {
     const [editingTabId, setEditingTabId] = useState(null);
     const [editingTabLocation, setEditingTabLocation] = useState(null); // 'tab' | 'subtoolbar' | null
     const [editingTabTitle, setEditingTabTitle] = useState('');
+
+    // Monaco Cursor Position tracking for Input Status Bar
+    const [cursorPosition, setCursorPosition] = useState({ lineNumber: 1, column: 1 });
+
+    // Intercept harmless Monaco Editor cancellation promises ('ERR Canceled: Canceled')
+    useEffect(() => {
+        const handleUnhandledRejection = (event) => {
+            const reason = event.reason;
+            if (
+                reason?.name === 'Canceled' ||
+                reason?.message === 'Canceled' ||
+                (typeof reason === 'string' && reason.includes('Canceled'))
+            ) {
+                // Harmless Monaco cancellation token abortion during typing or tab switching; prevent unhandled rejection overlay
+                event.preventDefault();
+            }
+        };
+        window.addEventListener('unhandledrejection', handleUnhandledRejection);
+        return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    }, []);
 
     // Fetch existing documents to detect filename duplicates in same folder
     const loadExistingDocs = useCallback(async () => {
@@ -1043,8 +1065,54 @@ Date:          ${dateStr}
         toast.success('Downloaded script file!');
     };
 
+    // Auto-Generate ER Diagram from Live DB Schema or parsed SQL DDL (100% Offline, Zero AI)
+    const handleAutoGenerateErDiagram = async () => {
+        try {
+            toast.loading('Inspecting database schema...', { id: 'er-gen' });
+            let result = null;
+
+            // 1. Try to fetch live database schema from server instance
+            try {
+                const res = await compilerAPI.getDbSchema();
+                if (res.data?.success && res.data?.data && res.data.data.tables && res.data.data.tables.length > 0) {
+                    result = generateRelationalErDiagram(res.data.data);
+                }
+            } catch (dbErr) {
+                console.warn('[ER Diagram] Live schema fetch failed, falling back to DDL parser:', dbErr.message);
+            }
+
+            // 2. If no tables exist in live DB, fall back to parsing current SQL tab DDL code
+            if (!result || result.nodes.length === 0) {
+                if (activeTab.code && activeTab.code.trim()) {
+                    result = generateErDiagramFromSql(activeTab.code);
+                }
+            }
+
+            if (!result || result.nodes.length === 0) {
+                toast.error('No tables found in student DB or active SQL code. Create tables or write DDL statements first.', { id: 'er-gen' });
+                return;
+            }
+
+            // 3. Update tab's flowchartData
+            setTabs((prev) =>
+                prev.map((t) => (t.id === activeTabId ? { ...t, flowchartData: result } : t))
+            );
+
+            // 4. Switch right panel & mobile view to diagram
+            setRightPanelMode('diagram');
+            setMobileView('diagram');
+
+            toast.success(`Auto-generated ER Diagram with ${result.nodes.length} component(s) (100% Offline, Zero AI)!`, {
+                id: 'er-gen',
+                icon: '⚡'
+            });
+        } catch (err) {
+            toast.error('Failed to generate ER diagram: ' + err.message, { id: 'er-gen' });
+        }
+    };
+
     return (
-        <div className={`flex flex-col h-[calc(100vh-4rem)] max-w-[100vw] overflow-hidden font-sans ${isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
+        <div className={`flex flex-col h-[calc(100vh-4rem)] w-full max-w-full overflow-x-hidden min-w-0 font-sans ${isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
             {/* 1. TOP DESKTOP-GRADE IDE MENU BAR */}
             <IDEMenuBar
                 activeTab={activeTab}
@@ -1121,7 +1189,7 @@ Date:          ${dateStr}
             )}
 
             {/* 2. DYNAMIC MULTI-TAB STRIP (MAX 5 TABS) */}
-            <div className={`flex items-center justify-between border-b px-2 overflow-x-auto select-none flex-shrink-0 ${isLightMode ? 'bg-slate-200 border-slate-300' : 'bg-slate-900/90 border-slate-800'}`}>
+            <div className={`flex items-center justify-between border-b px-2 w-full max-w-full min-w-0 overflow-x-auto select-none flex-shrink-0 ${isLightMode ? 'bg-slate-200 border-slate-300' : 'bg-slate-900/90 border-slate-800'}`}>
                 {/* Tabs List */}
                 <div className="flex items-center gap-1 py-1">
                     {tabs.map((tab, idx) => {
@@ -1329,15 +1397,15 @@ Date:          ${dateStr}
             </div>
 
             {/* 4. MAIN SPLIT SCREEN: LEFT EDITOR PANE, RIGHT OUTPUT & CANVAS */}
-            <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 overflow-hidden">
+            <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 min-w-0 w-full max-w-full overflow-hidden">
                 {/* LEFT PANEL: Monaco Code Editor with Ergonomic RUN CODE Button Above */}
-                <section className={`flex flex-col h-full border-r overflow-hidden ${
+                <section className={`flex flex-col h-full border-r min-w-0 max-w-full overflow-hidden ${
                     mobileView !== 'editor' ? 'hidden lg:flex' : 'flex'
                 } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
-                    <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                    <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full overflow-hidden ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         {/* Left: Active filename with quick rename & Read-only preselected language indicator */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
                             {/* Quick Rename Program from Sub-Toolbar */}
                             {editingTabId === activeTab.id && editingTabLocation === 'subtoolbar' ? (
                                 <input
@@ -1425,20 +1493,40 @@ Date:          ${dateStr}
                             </div>
                         </div>
 
-                        {/* Center/Right: SINGLE UNIFIED "RUN" BUTTON AT TOP CORNER OF EDITOR SPACE */}
-                        <div className="flex items-center gap-2">
+                        {/* Center/Right: SINGLE UNIFIED ROUND "PLAY" BUTTON & ER GENERATOR */}
+                        <div className="flex items-center gap-2 shrink-0">
+                            {/* Round Play Button */}
                             <button
                                 onClick={handleExecuteCode}
                                 disabled={isExecuting}
-                                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-sm shadow-emerald-600/30 transition disabled:opacity-50 cursor-pointer active:scale-95"
-                                title="Run code (Ctrl+Enter)"
+                                className={`w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer active:scale-95 group relative ${
+                                    isExecuting ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 animate-pulse' : ''
+                                }`}
+                                title="Run Program (Ctrl+↵)"
+                                aria-label="Run Program"
                             >
-                                <Play className={`w-3.5 h-3.5 fill-current ${isExecuting ? 'animate-spin' : ''}`} />
-                                <span>{isExecuting ? 'Running...' : 'Run'}</span>
-                                <kbd className="hidden sm:inline text-[9px] px-1 py-0.2 rounded font-mono font-normal bg-emerald-700/60 text-white ml-0.5">
-                                    Ctrl+↵
-                                </kbd>
+                                {isExecuting ? (
+                                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                                ) : (
+                                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                                )}
                             </button>
+
+                            {/* ER Diagram Generator from Live Database Schema (in SQL / PL-SQL mode) */}
+                            {isDatabaseLanguage(activeTab.language) && (
+                                <button
+                                    onClick={handleAutoGenerateErDiagram}
+                                    className={`w-8 h-8 rounded-full border transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative ${
+                                        isLightMode
+                                            ? 'border-sky-300 bg-sky-50 hover:bg-sky-100 text-sky-700 shadow-xs'
+                                            : 'border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-400'
+                                    }`}
+                                    title="Generate ER Diagram from DB Schema (No AI)"
+                                    aria-label="Generate ER Diagram from DB Schema"
+                                >
+                                    <Workflow className="w-4 h-4" />
+                                </button>
+                            )}
 
                             {/* Show manual Save button only when autosave is OFF */}
                             {!isAutosaveEnabled && (
@@ -1468,6 +1556,12 @@ Date:          ${dateStr}
                             onChange={handleCodeChange}
                             onMount={(editor) => {
                                 editorRef.current = editor;
+                                editor.onDidChangeCursorPosition((e) => {
+                                    setCursorPosition({
+                                        lineNumber: e.position.lineNumber,
+                                        column: e.position.column
+                                    });
+                                });
                             }}
                             options={{
                                 fontSize: fontSize,
@@ -1484,6 +1578,37 @@ Date:          ${dateStr}
                                 bracketPairColorization: { enabled: true }
                             }}
                         />
+                    </div>
+
+                    {/* INPUT STATUS BAR DIRECTLY BELOW MONACO EDITOR */}
+                    <div className={`px-3 py-1 border-t text-[11px] font-mono flex items-center justify-between select-none shrink-0 ${
+                        isLightMode ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}
+                            </span>
+                            <span className="hidden sm:inline opacity-40">•</span>
+                            <span className="hidden sm:inline">UTF-8</span>
+                            <span className="hidden sm:inline opacity-40">•</span>
+                            <span className="hidden sm:inline">Spaces: {isDatabaseLanguage(activeTab.language) ? 2 : 4}</span>
+                            <span className="hidden md:inline opacity-40">•</span>
+                            <span className="hidden md:inline font-semibold">
+                                {isDatabaseLanguage(activeTab.language)
+                                    ? (activeEngine === 'mysql' ? 'SQL (MySQL 9.3)' : 'SQL (SQLite 3)')
+                                    : getLanguageMeta(activeTab.language).label}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            <span>
+                                {(activeTab.code || '').split('\n').length} lines, {(activeTab.code || '').length} chars
+                            </span>
+                            <span className="opacity-40">•</span>
+                            <span className="flex items-center gap-1 font-semibold">
+                                <span className={`w-1.5 h-1.5 rounded-full ${isAutosaveEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                                <span className="hidden sm:inline">{isAutosaveEnabled ? 'Autosaved' : 'Draft'}</span>
+                            </span>
+                        </div>
                     </div>
 
                     {/* Collapsible Stdin Input (For Algorithmic languages: Python, C, C++, Java) */}
@@ -1528,7 +1653,7 @@ Date:          ${dateStr}
                 </section>
 
                 {/* RIGHT PANEL: COORDINATED OUTPUT & VISUAL FLOWCHART CANVAS */}
-                <section className={`flex flex-col h-full overflow-hidden ${
+                <section className={`flex flex-col h-full min-w-0 max-w-full overflow-hidden ${
                     mobileView === 'editor' ? 'hidden lg:flex' : 'flex'
                 } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
                     {/* Tab Navigation Header (Hidden on mobile < lg because top Mobile View Switcher controls views) */}
@@ -1624,7 +1749,7 @@ Date:          ${dateStr}
                     {/* CONTENT 1: COORDINATED OUTPUT SCREEN */}
                     {rightPanelMode === 'output' && (
                         <div
-                            className={`flex-1 flex flex-col p-4 overflow-y-auto transition-colors duration-200 ${currentOutputTheme.containerClass}`}
+                            className={`flex-1 flex flex-col p-4 overflow-y-auto custom-scrollbar transition-colors duration-200 ${currentOutputTheme.containerClass}`}
                         >
                             {activeTab.output ? (
                                 <div className="space-y-4">
@@ -1717,7 +1842,7 @@ Date:          ${dateStr}
                                         </span>
                                     </div>
 
-                                    <div className={`flex-1 overflow-auto rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
+                                    <div className={`flex-1 overflow-auto custom-scrollbar rounded-lg border shadow-xs ${isLightMode ? 'border-slate-200 bg-white' : 'border-slate-800 bg-slate-950 shadow-inner'}`}>
                                         <table className="w-full text-left text-xs border-collapse">
                                             <thead>
                                                 <tr className={`border-b ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
@@ -1850,6 +1975,51 @@ Date:          ${dateStr}
                             />
                         </div>
                     )}
+
+                    {/* OUTPUT STATUS BAR DIRECTLY BELOW OUTPUT / RESULTS / DIAGRAM */}
+                    <div className={`px-3 py-1 border-t text-[11px] font-mono flex items-center justify-between select-none shrink-0 ${
+                        isLightMode ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
+                    }`}>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {activeTab.output ? (
+                                <>
+                                    <span className={`font-semibold flex items-center gap-1 ${activeTab.output.exitCode === 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                        {activeTab.output.exitCode === 0 ? '✓ Exit: 0 (Success)' : `✗ Exit: ${activeTab.output.exitCode}`}
+                                    </span>
+                                    {activeTab.output.durationMs !== undefined && (
+                                        <>
+                                            <span className="opacity-40">•</span>
+                                            <span>⚡ {activeTab.output.durationMs}ms</span>
+                                        </>
+                                    )}
+                                    {activeTab.output.tables && activeTab.output.tables.length > 0 && (
+                                        <>
+                                            <span className="hidden sm:inline opacity-40">•</span>
+                                            <span className="hidden sm:inline">{activeTab.output.tables.length} rows • {Object.keys(activeTab.output.tables[0] || {}).length} cols</span>
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                <span className="opacity-70">Ready to execute</span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {isDatabaseLanguage(activeTab.language) ? (
+                                <>
+                                    <span className="flex items-center gap-1 font-semibold">
+                                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
+                                        <span className="hidden sm:inline">{activeEngine === 'mysql' ? 'MySQL 9.3' : 'SQLite 3'}</span>
+                                    </span>
+                                    <span className="hidden md:inline opacity-40">•</span>
+                                    <span className="hidden md:inline">{existingTables.length} tables in DB</span>
+                                </>
+                            ) : (
+                                <span className="hidden sm:inline opacity-70">
+                                    {getLanguageMeta(activeTab.language).desc}
+                                </span>
+                            )}
+                        </div>
+                    </div>
                 </section>
             </main>
 

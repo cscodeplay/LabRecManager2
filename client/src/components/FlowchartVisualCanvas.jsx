@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
     Shapes,
     MousePointer,
+    Hand,
     ArrowRight,
     Trash2,
     ZoomIn,
@@ -335,10 +336,6 @@ export default function FlowchartVisualCanvas({
     // Internal clipboard for cut / copy / paste
     const clipboardRef = useRef(null);
 
-    // SQL DDL Generation Modal
-    const [generatedSqlDdl, setGeneratedSqlDdl] = useState(null);
-    const [isDdlModalOpen, setIsDdlModalOpen] = useState(false);
-
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const isLocalUpdateRef = useRef(false);
@@ -608,6 +605,14 @@ export default function FlowchartVisualCanvas({
                 setIsMarqueeSelecting(false);
                 setMarqueeBox(null);
             }
+
+            if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+                if (e.key === 'h' || e.key === 'H') {
+                    setActiveTool('pan');
+                } else if (e.key === 'v' || e.key === 'V') {
+                    setActiveTool('select');
+                }
+            }
         };
 
         window.addEventListener('keydown', handleKeyDown);
@@ -834,6 +839,12 @@ export default function FlowchartVisualCanvas({
             return;
         }
 
+        if (activeTool === 'pan') {
+            setIsPanning(true);
+            setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+            return;
+        }
+
         let nextSelected = selectedNodeIds;
         if (e.shiftKey) {
             nextSelected = nextSelected.includes(node.id)
@@ -1002,7 +1013,7 @@ export default function FlowchartVisualCanvas({
             setConnectingSource(null);
             setConnectingMousePos(null);
 
-            if (e.button === 1 || e.spaceKey) {
+            if (activeTool === 'pan' || e.button === 1 || e.spaceKey) {
                 setIsPanning(true);
                 setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
             } else if (e.button === 0) {
@@ -1120,135 +1131,6 @@ export default function FlowchartVisualCanvas({
             notifyChange(result.nodes, result.connectors);
             toast.success(`Generated Flowchart with ${result.nodes.length} steps using static code analysis (No AI used)!`, { icon: '⚡' });
         }
-    };
-
-    // SQL DDL Generator from ER Canvas Entities and Attributes
-    const handleGenerateSqlDdl = () => {
-        const entityNodes = nodes.filter((n) => n.type === 'er_entity' || n.type === 'er_weak_entity');
-        const tableNodes = nodes.filter((n) => n.type === 'er_table');
-        const relationshipNodes = nodes.filter((n) => n.type === 'er_relationship' || n.type === 'er_weak_relationship');
-
-        if (entityNodes.length === 0 && tableNodes.length === 0) {
-            toast.error('No Entities or Relational Tables found on canvas to generate SQL DDL from.');
-            return;
-        }
-
-        let ddlOutput = `-- ====================================================================\n`;
-        ddlOutput += `-- Generated Relational SQL DDL from Antigravity DBMS ER Designer\n`;
-        ddlOutput += `-- Generated At: ${new Date().toLocaleString()}\n`;
-        ddlOutput += `-- Engine Compatibility: SQLite 3 / MySQL 8+\n`;
-        ddlOutput += `-- ====================================================================\n\n`;
-
-        tableNodes.forEach((tNode) => {
-            const lines = tNode.text.split('\n').map((l) => l.trim()).filter(Boolean);
-            const rawTableName = lines[0] || 'unnamed_table';
-            const tableName = rawTableName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-            const colLines = lines.slice(1);
-
-            ddlOutput += `-- Table Schema: ${tableName}\n`;
-            ddlOutput += `CREATE TABLE IF NOT EXISTS ${tableName} (\n`;
-
-            if (colLines.length === 0) {
-                ddlOutput += `    id INTEGER PRIMARY KEY AUTOINCREMENT,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n`;
-            } else {
-                colLines.forEach((col, idx) => {
-                    const isLast = idx === colLines.length - 1;
-                    const cleanCol = col.replace(/^[-*•]\s*/, '');
-                    ddlOutput += `    ${cleanCol}${isLast ? '' : ','}\n`;
-                });
-            }
-            ddlOutput += `);\n\n`;
-        });
-
-        const generatedEntities = {};
-
-        entityNodes.forEach((eNode) => {
-            const rawEntityName = eNode.text.trim();
-            const tableName = rawEntityName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-
-            const connectedConns = connectors.filter((c) => c.from === eNode.id || c.to === eNode.id);
-            const connectedAttrIds = connectedConns.map((c) => (c.from === eNode.id ? c.to : c.from));
-            const attrNodes = nodes.filter((n) => connectedAttrIds.includes(n.id) && n.type.startsWith('er_') && n.type.includes('attribute'));
-
-            const columns = [];
-            const primaryKeys = [];
-
-            attrNodes.forEach((aNode) => {
-                const rawAttrName = aNode.text.trim();
-                const colName = rawAttrName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-
-                let colType = 'VARCHAR(100)';
-                if (colName.includes('id') || colName.includes('no') || colName.includes('credits') || colName.includes('age')) {
-                    colType = 'INTEGER';
-                } else if (colName.includes('price') || colName.includes('salary') || colName.includes('amount') || colName.includes('rate')) {
-                    colType = 'DECIMAL(10, 2)';
-                } else if (colName.includes('date') || colName.includes('dob')) {
-                    colType = 'DATE';
-                }
-
-                if (aNode.type === 'er_key_attribute' || colName.endsWith('_pk') || colName === 'id') {
-                    primaryKeys.push(colName);
-                    columns.push(`    ${colName} ${colType} NOT NULL`);
-                } else if (aNode.type === 'er_derived') {
-                    columns.push(`    -- Derived attribute: ${colName} (computed at query time)`);
-                } else if (aNode.type === 'er_multivalued') {
-                    columns.push(`    -- Multivalued attribute: ${colName} (recommended as separate table)`);
-                } else {
-                    columns.push(`    ${colName} ${colType}`);
-                }
-            });
-
-            if (primaryKeys.length === 0) {
-                const defaultPk = `${tableName}_id`;
-                primaryKeys.push(defaultPk);
-                columns.unshift(`    ${defaultPk} INTEGER PRIMARY KEY AUTOINCREMENT`);
-            } else if (!columns.some((c) => c.includes('PRIMARY KEY'))) {
-                columns.push(`    PRIMARY KEY (${primaryKeys.join(', ')})`);
-            }
-
-            generatedEntities[eNode.id] = { tableName, primaryKeys };
-
-            ddlOutput += `-- Entity: ${rawEntityName} (${eNode.type === 'er_weak_entity' ? 'Weak Entity' : 'Strong Entity'})\n`;
-            ddlOutput += `CREATE TABLE IF NOT EXISTS ${tableName} (\n`;
-            ddlOutput += columns.join(',\n') + '\n';
-            ddlOutput += `);\n\n`;
-        });
-
-        relationshipNodes.forEach((rNode) => {
-            const relConns = connectors.filter((c) => c.from === rNode.id || c.to === rNode.id);
-            const connectedEntityIds = relConns.map((c) => (c.from === rNode.id ? c.to : c.from));
-            const participatingEntities = entityNodes.filter((e) => connectedEntityIds.includes(e.id));
-
-            if (participatingEntities.length >= 2) {
-                const rawRelName = rNode.text.trim();
-                const relTableName = rawRelName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-
-                const [ent1, ent2] = participatingEntities;
-                const info1 = generatedEntities[ent1.id];
-                const info2 = generatedEntities[ent2.id];
-
-                if (info1 && info2) {
-                    const fk1 = `${info1.tableName}_id`;
-                    const fk2 = `${info2.tableName}_id`;
-
-                    ddlOutput += `-- Relationship M:N Junction: ${rawRelName} (${info1.tableName} <-> ${info2.tableName})\n`;
-                    ddlOutput += `CREATE TABLE IF NOT EXISTS ${relTableName} (\n`;
-                    ddlOutput += `    ${fk1} INTEGER NOT NULL,\n`;
-                    ddlOutput += `    ${fk2} INTEGER NOT NULL,\n`;
-                    ddlOutput += `    enrolled_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n`;
-                    ddlOutput += `    PRIMARY KEY (${fk1}, ${fk2}),\n`;
-                    ddlOutput += `    FOREIGN KEY (${fk1}) REFERENCES ${info1.tableName}(${info1.primaryKeys[0] || 'id'}) ON DELETE CASCADE,\n`;
-                    ddlOutput += `    FOREIGN KEY (${fk2}) REFERENCES ${info2.tableName}(${info2.primaryKeys[0] || 'id'}) ON DELETE CASCADE\n`;
-                    ddlOutput += `);\n\n`;
-                }
-            }
-        });
-
-        ddlOutput += `-- Verification Queries\n`;
-        ddlOutput += `SELECT 'Database Schema generated successfully!' AS status;\n`;
-
-        setGeneratedSqlDdl(ddlOutput);
-        setIsDdlModalOpen(true);
     };
 
     // Export Canvas to PNG or SVG
@@ -1519,7 +1401,7 @@ export default function FlowchartVisualCanvas({
     return (
         <div
             ref={containerRef}
-            className={`w-full h-full flex flex-col relative select-none overflow-hidden ${
+            className={`w-full max-w-full h-full flex flex-col relative select-none overflow-hidden min-w-0 ${
                 isLight ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'
             }`}
             onPointerMove={handleCanvasPointerMove}
@@ -1586,6 +1468,26 @@ export default function FlowchartVisualCanvas({
                         >
                             <MousePointer className="w-3.5 h-3.5" />
                             <span className="hidden sm:inline">Select</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                setActiveTool('pan');
+                                setSelectedNodeIds([]);
+                                setSelectedConnectorId(null);
+                                setConnectingSource(null);
+                            }}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                                activeTool === 'pan'
+                                    ? 'bg-amber-600 text-white shadow-xs'
+                                    : isLight
+                                    ? 'text-slate-600 hover:text-slate-900'
+                                    : 'text-slate-400 hover:text-white'
+                            }`}
+                            title="Hand / Pan Tool (H): Click and drag canvas to navigate"
+                        >
+                            <Hand className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Hand</span>
                         </button>
 
                         <button
@@ -1689,19 +1591,6 @@ export default function FlowchartVisualCanvas({
                         <span className="sm:hidden inline">Generate</span>
                     </button>
 
-                    {/* SQL DDL Generator (in ER mode) */}
-                    {isErMode && (
-                        <button
-                            onClick={handleGenerateSqlDdl}
-                            className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
-                            title="Generate Executable SQL DDL CREATE TABLE Statements from Canvas"
-                        >
-                            <Code className="w-3.5 h-3.5 text-yellow-300 shrink-0" />
-                            <span className="hidden sm:inline">Export SQL DDL</span>
-                            <span className="sm:hidden inline">DDL</span>
-                        </button>
-                    )}
-
                     {/* Export Dropdown */}
                     <button
                         onClick={() => handleExportCanvas('png')}
@@ -1799,7 +1688,11 @@ export default function FlowchartVisualCanvas({
 
             {/* Canvas Main SVG Layer */}
             <div
-                className="flex-1 w-full h-full relative overflow-hidden cursor-default select-none"
+                className={`flex-1 w-full h-full relative overflow-hidden select-none ${
+                    activeTool === 'pan'
+                        ? isPanning ? 'cursor-grabbing' : 'cursor-grab'
+                        : 'cursor-default'
+                }`}
                 onPointerDown={handleCanvasPointerDown}
             >
                 {/* Floating Fixed Top-Right Zoom Tool */}
@@ -2398,75 +2291,6 @@ export default function FlowchartVisualCanvas({
                     {nodes.length} components • {connectors.length} connections • Mode: {isErMode ? 'ER Diagram (DBMS)' : 'Flowchart (Logic)'}
                 </span>
             </div>
-
-            {/* 5. SQL DDL PREVIEW & INSERT MODAL */}
-            {isDdlModalOpen && generatedSqlDdl && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-                    <div
-                        className={`w-full max-w-2xl rounded-2xl shadow-2xl border flex flex-col max-h-[85vh] overflow-hidden ${
-                            isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-slate-100'
-                        }`}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="px-5 py-4 border-b flex items-center justify-between flex-shrink-0 border-slate-200 dark:border-slate-800">
-                            <div className="flex items-center gap-2.5">
-                                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                                    <Sparkles className="w-5 h-5 text-emerald-500" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-sm">Generated Relational SQL DDL</h3>
-                                    <p className="text-xs text-slate-500">
-                                        Synthesized ANSI/SQLite/MySQL CREATE TABLE schema from your ER components
-                                    </p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setIsDdlModalOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg transition"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <div className="p-4 flex-1 overflow-y-auto">
-                            <pre className="p-4 rounded-xl bg-slate-950 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 leading-relaxed">
-                                {generatedSqlDdl}
-                            </pre>
-                        </div>
-
-                        <div className="px-5 py-3 border-t flex items-center justify-between border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
-                            <span className="text-xs text-slate-500 font-medium">
-                                Ready to run in Practice SQL Engine
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(generatedSqlDdl);
-                                        toast.success('SQL DDL copied to clipboard!');
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-1.5 cursor-pointer"
-                                >
-                                    <Copy className="w-3.5 h-3.5" />
-                                    <span>Copy SQL</span>
-                                </button>
-
-                                {onInsertSqlDdl && (
-                                    <button
-                                        onClick={() => {
-                                            onInsertSqlDdl(generatedSqlDdl);
-                                            setIsDdlModalOpen(false);
-                                        }}
-                                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-                                    >
-                                        <Code className="w-3.5 h-3.5" />
-                                        <span>Insert into SQL Editor Tab</span>
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Custom Right-Click Context Menu */}
             {contextMenu && (

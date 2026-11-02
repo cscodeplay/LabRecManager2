@@ -518,6 +518,185 @@ class PracticeDatabaseService {
             message: `Practice database reset (${this.config.activeEngine.toUpperCase()})`
         };
     }
+
+    /**
+     * Inspect student's live database schema and relationships (100% deterministic, NO AI)
+     * Queries information_schema for MySQL or sqlite_master / PRAGMA for SQLite
+     */
+    async getDatabaseSchema(studentId, studentSqliteDbPath) {
+        const activeEngine = this.config.activeEngine;
+        const dbName = this.getSanitizedDbName(studentId);
+
+        if (activeEngine === 'mysql') {
+            try {
+                if (!this.rootPool) this.initRootPool();
+
+                // 1. Fetch all columns and types
+                const [columns] = await this.rootPool.query(`
+                    SELECT 
+                        TABLE_NAME, 
+                        COLUMN_NAME, 
+                        DATA_TYPE, 
+                        COLUMN_TYPE, 
+                        IS_NULLABLE, 
+                        COLUMN_KEY, 
+                        COLUMN_DEFAULT,
+                        EXTRA
+                    FROM information_schema.COLUMNS 
+                    WHERE TABLE_SCHEMA = ?
+                    ORDER BY TABLE_NAME, ORDINAL_POSITION
+                `, [dbName]);
+
+                // 2. Fetch foreign key references
+                const [fkRows] = await this.rootPool.query(`
+                    SELECT 
+                        TABLE_NAME, 
+                        COLUMN_NAME, 
+                        REFERENCED_TABLE_NAME, 
+                        REFERENCED_COLUMN_NAME, 
+                        CONSTRAINT_NAME
+                    FROM information_schema.KEY_COLUMN_USAGE 
+                    WHERE TABLE_SCHEMA = ? 
+                      AND REFERENCED_TABLE_NAME IS NOT NULL
+                `, [dbName]);
+
+                const tableMap = new Map();
+
+                for (const col of columns) {
+                    const tableName = col.TABLE_NAME || col.table_name;
+                    if (!tableMap.has(tableName)) {
+                        tableMap.set(tableName, {
+                            name: tableName,
+                            columns: [],
+                            foreignKeys: []
+                        });
+                    }
+
+                    const isPk = (col.COLUMN_KEY || col.column_key) === 'PRI';
+                    const colName = col.COLUMN_NAME || col.column_name;
+                    const colType = (col.COLUMN_TYPE || col.column_type || col.DATA_TYPE || 'VARCHAR').toUpperCase();
+                    const nullable = (col.IS_NULLABLE || col.is_nullable) === 'YES';
+
+                    tableMap.get(tableName).columns.push({
+                        name: colName,
+                        type: colType,
+                        isPk,
+                        isFk: false,
+                        nullable,
+                        defaultValue: col.COLUMN_DEFAULT || col.column_default || null,
+                        extra: col.EXTRA || col.extra || ''
+                    });
+                }
+
+                for (const fk of fkRows) {
+                    const tName = fk.TABLE_NAME || fk.table_name;
+                    const cName = fk.COLUMN_NAME || fk.column_name;
+                    const refTable = fk.REFERENCED_TABLE_NAME || fk.referenced_table_name;
+                    const refCol = fk.REFERENCED_COLUMN_NAME || fk.referenced_column_name;
+
+                    if (tableMap.has(tName)) {
+                        const tableObj = tableMap.get(tName);
+                        tableObj.foreignKeys.push({
+                            column: cName,
+                            referencedTable: refTable,
+                            referencedColumn: refCol,
+                            constraintName: fk.CONSTRAINT_NAME || fk.constraint_name
+                        });
+
+                        const colObj = tableObj.columns.find(c => c.name.toLowerCase() === cName.toLowerCase());
+                        if (colObj) colObj.isFk = true;
+                    }
+                }
+
+                return {
+                    engine: 'mysql',
+                    database: dbName,
+                    tables: Array.from(tableMap.values())
+                };
+            } catch (err) {
+                console.warn('[PracticeDB] MySQL schema fetch failed, falling back to SQLite if available:', err.message);
+                if (!this.config.fallbackToSqlite) {
+                    return { engine: 'mysql', database: dbName, tables: [], error: err.message };
+                }
+            }
+        }
+
+        // SQLite Inspection
+        if (studentSqliteDbPath && fs.existsSync(studentSqliteDbPath)) {
+            return new Promise((resolve) => {
+                execFile('sqlite3', [studentSqliteDbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%" ORDER BY name;'], async (err, stdout) => {
+                    if (err || !stdout || !stdout.trim().startsWith('[')) {
+                        return resolve({ engine: 'sqlite', database: 'practice.sqlite', tables: [] });
+                    }
+
+                    try {
+                        const tableList = JSON.parse(stdout);
+                        const tables = [];
+
+                        for (const item of tableList) {
+                            const tableName = item.name;
+                            const tableInfo = await new Promise((resInfo) => {
+                                execFile('sqlite3', [studentSqliteDbPath, '-json', `PRAGMA table_info("${tableName}");`], (tErr, tStdout) => {
+                                    try {
+                                        resInfo(tStdout && tStdout.trim().startsWith('[') ? JSON.parse(tStdout) : []);
+                                    } catch (e) {
+                                        resInfo([]);
+                                    }
+                                });
+                            });
+
+                            const fkInfo = await new Promise((resFk) => {
+                                execFile('sqlite3', [studentSqliteDbPath, '-json', `PRAGMA foreign_key_list("${tableName}");`], (fErr, fStdout) => {
+                                    try {
+                                        resFk(fStdout && fStdout.trim().startsWith('[') ? JSON.parse(fStdout) : []);
+                                    } catch (e) {
+                                        resFk([]);
+                                    }
+                                });
+                            });
+
+                            const foreignKeys = (fkInfo || []).map(fk => ({
+                                column: fk.from,
+                                referencedTable: fk.table,
+                                referencedColumn: fk.to
+                            }));
+
+                            const fkColNames = new Set(foreignKeys.map(fk => (fk.column || '').toLowerCase()));
+
+                            const columns = (tableInfo || []).map(col => ({
+                                name: col.name,
+                                type: (col.type || 'TEXT').toUpperCase(),
+                                isPk: Boolean(col.pk),
+                                isFk: fkColNames.has((col.name || '').toLowerCase()),
+                                nullable: !Boolean(col.notnull),
+                                defaultValue: col.dflt_value || null
+                            }));
+
+                            tables.push({
+                                name: tableName,
+                                columns,
+                                foreignKeys
+                            });
+                        }
+
+                        return resolve({
+                            engine: 'sqlite',
+                            database: 'practice.sqlite',
+                            tables
+                        });
+                    } catch (e) {
+                        return resolve({ engine: 'sqlite', database: 'practice.sqlite', tables: [], error: e.message });
+                    }
+                });
+            });
+        }
+
+        return {
+            engine: activeEngine,
+            database: activeEngine === 'mysql' ? dbName : 'practice.sqlite',
+            tables: []
+        };
+    }
 }
 
 module.exports = new PracticeDatabaseService();

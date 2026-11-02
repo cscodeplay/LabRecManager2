@@ -287,6 +287,7 @@ export const compilerAPI = {
     getWorkspace: (params) => api.get('/compiler/workspace', { params }),
     saveWorkspace: (data) => api.post('/compiler/workspace', data),
     resetDatabase: () => api.post('/compiler/reset-db'),
+    getDbSchema: () => api.get('/compiler/db-schema'),
     getStudents: () => api.get('/compiler/students'),
     getEngineConfig: () => api.get('/compiler/engine/config'),
     updateEngineConfig: (data) => api.post('/compiler/engine/config', data),
