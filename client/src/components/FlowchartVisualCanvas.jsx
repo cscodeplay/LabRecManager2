@@ -39,7 +39,7 @@ import {
     ChevronUp
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { generateFlowchartFromCode, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
+import { generateFlowchartFromCode, generateErDiagramFromSql, generateRelationalErDiagramFromSql } from '@/lib/traditionalGenerators';
 
 // 1. Initial Starter Flowchart Nodes & Connectors (For Python / C / C++ / Java Flow)
 const DEFAULT_INITIAL_FLOWCHART_NODES = [
@@ -143,14 +143,23 @@ const DEFAULT_INITIAL_FLOWCHART_CONNECTORS = [
 const DEFAULT_INITIAL_ER_NODES = [];
 const DEFAULT_INITIAL_ER_CONNECTORS = [];
 
-// Categorized ER and Flowchart shape palettes for collapsible grouped styling
-const ER_SHAPES = [
+// Categorized Relational Database Designer Shapes (Table cards with internal properties)
+const RELATIONAL_SHAPES = [
+    {
+        category: 'Database Tables',
+        items: [
+            { id: 'er_table', label: 'Table with Columns', title: 'Add Table Card (Name, Columns, Types, PK/FK inside card)', icon: <Table className="w-3.5 h-3.5 text-primary-500" />, color: 'bg-slate-100 border-slate-300 text-slate-800' }
+        ]
+    }
+];
+
+// Categorized Conceptual ER Diagram Shapes (Chen Model: Entities, Ovals, Diamonds)
+const CHEN_ER_SHAPES = [
     {
         category: 'Entities',
         items: [
             { id: 'er_entity', label: 'Strong Entity', title: 'Add Strong Entity (Rectangle)', icon: <span className="w-3 h-2 bg-sky-500 rounded-2xs inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
-            { id: 'er_weak_entity', label: 'Weak Entity', title: 'Add Weak Entity (Double Rectangle)', icon: <span className="w-3 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />, color: 'bg-cyan-50 border-cyan-300 text-cyan-800' },
-            { id: 'er_table', label: 'Table Schema Card', title: 'Add Relational Table Schema Card', icon: <Table className="w-3 h-3 text-slate-600" />, color: 'bg-slate-100 border-slate-300 text-slate-800' }
+            { id: 'er_weak_entity', label: 'Weak Entity', title: 'Add Weak Entity (Double Rectangle)', icon: <span className="w-3 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />, color: 'bg-cyan-50 border-cyan-300 text-cyan-800' }
         ]
     },
     {
@@ -178,6 +187,7 @@ const FLOWCHART_SHAPES = [
             { id: 'terminator', label: 'Start / End', title: 'Start/End Oval Terminator', icon: <span className="w-3 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
             { id: 'io', label: 'Input / Output', title: 'Input/Output Parallelogram', icon: <span className="w-3 h-2 bg-sky-500 skew-x-12 inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
             { id: 'process', label: 'Process / Action', title: 'Calculation/Assignment Rectangle', icon: <span className="w-3 h-2 bg-slate-400 rounded-2xs inline-block" />, color: 'bg-white border-slate-300 text-slate-800' },
+            { id: 'predefined_process', label: 'Function Call', title: 'Subroutine / Function Call (Predefined Process)', icon: <span className="w-3 h-2 border-x-2 border-purple-600 bg-purple-100 rounded-2xs inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' },
             { id: 'decision', label: 'Decision (If)', title: 'Decision Condition Diamond', icon: <span className="w-2.5 h-2.5 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
             { id: 'loop', label: 'Loop (Hexagon)', title: 'Loop Iteration Hexagon', icon: <span className="w-3 h-2 bg-purple-500 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' }
         ]
@@ -202,6 +212,8 @@ export default function FlowchartVisualCanvas({
     // Python / C / C++ / Java -> Flowchart Designer
     const isErMode = language === 'sql' || language === 'plsql';
     const canvasMode = isErMode ? 'er' : 'flowchart';
+    // 'relational': Database Designer (Table Cards with Properties) | 'chen': Conceptual ERD (Chen Notation)
+    const [erSubView, setErSubView] = useState('relational');
 
     // Canvas nodes and connectors - Blank canvas by default for new files
     const [nodes, setNodes] = useState(() => {
@@ -606,6 +618,20 @@ export default function FlowchartVisualCanvas({
             color = '#dbeafe';
             borderColor = '#2563eb';
             textColor = '#1e3a8a';
+        } else if (type === 'process') {
+            defaultText = 'Process / Action';
+            width = 160;
+            height = 54;
+            color = '#ffffff';
+            borderColor = '#64748b';
+            textColor = '#0f172a';
+        } else if (type === 'predefined_process' || type === 'subroutine') {
+            defaultText = 'Call function()';
+            width = 175;
+            height = 54;
+            color = '#f5f3ff';
+            borderColor = '#7c3aed';
+            textColor = '#4c1d95';
         } else if (type === 'decision') {
             defaultText = 'Condition?';
             width = 150;
@@ -774,11 +800,22 @@ export default function FlowchartVisualCanvas({
         });
     };
 
-    // Node pointer down - Multi-selection and group drag
+    // Node pointer down - Multi-selection, group drag, and tap-to-connect on mobile
     const handleNodePointerDown = (e, node) => {
         if (readOnly) return;
         e.stopPropagation();
         if (contextMenu) setContextMenu(null);
+
+        // Tap-to-Connect on Mobile & Touch:
+        // If connectingSource is active and user taps ANY destination node, connect!
+        if (connectingSource) {
+            if (connectingSource.nodeId !== node.id) {
+                completeConnection(node.id, 'top');
+            } else {
+                completeConnection(node.id, 'left');
+            }
+            return;
+        }
 
         if (activeTool === 'connector') {
             if (!connectingSource) {
@@ -831,6 +868,13 @@ export default function FlowchartVisualCanvas({
         if (readOnly) return;
         e.stopPropagation();
         if (contextMenu) setContextMenu(null);
+
+        // If already connecting, tapping this target port completes the connection!
+        if (connectingSource) {
+            completeConnection(nodeId, port);
+            return;
+        }
+
         setConnectingSource({ nodeId, port });
         const fromNode = nodes.find((n) => n.id === nodeId);
         if (fromNode) {
@@ -936,10 +980,6 @@ export default function FlowchartVisualCanvas({
             }
             setIsMarqueeSelecting(false);
             setMarqueeBox(null);
-        }
-        if (connectingSource && activeTool !== 'connector') {
-            setConnectingSource(null);
-            setConnectingMousePos(null);
         }
     };
 
@@ -1061,16 +1101,28 @@ export default function FlowchartVisualCanvas({
         }
 
         if (isErMode) {
-            // Traditional SQL DDL parser
-            const result = generateErDiagramFromSql(activeCode);
-            if (!result.nodes || result.nodes.length === 0) {
-                toast.error('No CREATE TABLE statements found in the SQL editor. Write CREATE TABLE DDL to generate an ER diagram!');
-                return;
+            if (erSubView === 'relational') {
+                const result = generateRelationalErDiagramFromSql(activeCode);
+                if (!result.nodes || result.nodes.length === 0) {
+                    toast.error('No CREATE TABLE statements found in SQL code to generate relational tables.');
+                    return;
+                }
+                setNodes(result.nodes);
+                setConnectors(result.connectors);
+                notifyChange(result.nodes, result.connectors);
+                toast.success(`Generated Database Designer with ${result.nodes.length} relational tables (No AI)!`, { icon: '🗄️' });
+            } else {
+                // Traditional SQL DDL parser for Conceptual Chen ERD
+                const result = generateErDiagramFromSql(activeCode);
+                if (!result.nodes || result.nodes.length === 0) {
+                    toast.error('No CREATE TABLE statements found in the SQL editor. Write CREATE TABLE DDL to generate an ER diagram!');
+                    return;
+                }
+                setNodes(result.nodes);
+                setConnectors(result.connectors);
+                notifyChange(result.nodes, result.connectors);
+                toast.success(`Generated Conceptual ER Diagram with ${result.nodes.length} components (No AI)!`, { icon: '🔷' });
             }
-            setNodes(result.nodes);
-            setConnectors(result.connectors);
-            notifyChange(result.nodes, result.connectors);
-            toast.success(`Generated ER Diagram with ${result.nodes.length} components using traditional DDL parsing (No AI used)!`, { icon: '📊' });
         } else {
             // Traditional CFG code parser
             const result = generateFlowchartFromCode(activeCode, language);
@@ -1161,6 +1213,54 @@ export default function FlowchartVisualCanvas({
                     strokeWidth={strokeWidth}
                     className="drop-shadow-xs"
                 />
+            );
+        } else if (type === 'process') {
+            return (
+                <rect
+                    x={0}
+                    y={0}
+                    width={w}
+                    height={h}
+                    rx={3}
+                    ry={3}
+                    fill={color}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    className="drop-shadow-xs"
+                />
+            );
+        } else if (type === 'predefined_process' || type === 'subroutine') {
+            const barOffset = 14;
+            return (
+                <g className="drop-shadow-xs">
+                    <rect
+                        x={0}
+                        y={0}
+                        width={w}
+                        height={h}
+                        rx={3}
+                        ry={3}
+                        fill={color}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
+                    />
+                    <line
+                        x1={barOffset}
+                        y1={0}
+                        x2={barOffset}
+                        y2={h}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
+                    />
+                    <line
+                        x1={w - barOffset}
+                        y1={0}
+                        x2={w - barOffset}
+                        y2={h}
+                        stroke={strokeColor}
+                        strokeWidth={strokeWidth}
+                    />
+                </g>
             );
         } else if (type === 'decision') {
             const points = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
@@ -1467,6 +1567,50 @@ export default function FlowchartVisualCanvas({
 
                     <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
+                    {/* ER SUB-VIEW SWITCHER: Database Designer (Tables with Columns) vs Conceptual ERD (Chen Notation) */}
+                    {isErMode && (
+                        <div className={`flex items-center rounded-lg p-0.5 border text-xs font-semibold ${
+                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
+                        }`}>
+                            <button
+                                type="button"
+                                onClick={() => setErSubView('relational')}
+                                title="Database Designer: Relational table cards with columns, types & PK/FK properties inside the card"
+                                className={`flex items-center gap-1 px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
+                                    erSubView === 'relational'
+                                        ? isLight
+                                            ? 'bg-white text-primary-700 shadow-xs'
+                                            : 'bg-slate-700 text-primary-300 shadow-xs'
+                                        : isLight
+                                        ? 'text-slate-600 hover:text-slate-900'
+                                        : 'text-slate-400 hover:text-slate-200'
+                                }`}
+                            >
+                                <Table className="w-3 h-3 text-primary-500" />
+                                <span className="hidden sm:inline">Database Designer</span>
+                                <span className="sm:hidden inline">Tables</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setErSubView('chen')}
+                                title="Conceptual ERD: Chen notation with Entities (rectangles), Attributes (ovals) & Relationships (diamonds)"
+                                className={`flex items-center gap-1 px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
+                                    erSubView === 'chen'
+                                        ? isLight
+                                            ? 'bg-white text-purple-700 shadow-xs'
+                                            : 'bg-slate-700 text-purple-300 shadow-xs'
+                                        : isLight
+                                        ? 'text-slate-600 hover:text-slate-900'
+                                        : 'text-slate-400 hover:text-slate-200'
+                                }`}
+                            >
+                                <Layers className="w-3 h-3 text-purple-500" />
+                                <span className="hidden sm:inline">Conceptual ERD</span>
+                                <span className="sm:hidden inline">Chen ER</span>
+                            </button>
+                        </div>
+                    )}
+
                     {/* COLLAPSIBLE SHAPES SELECTOR (Grouped Dropdown + Expandable Ribbon) */}
                     <div className="relative" ref={shapesDropdownRef}>
                         <button
@@ -1484,7 +1628,7 @@ export default function FlowchartVisualCanvas({
                             <span>
                                 {pendingShapeType
                                     ? `Place: ${pendingShapeType.replace('er_', '').replace(/_/g, ' ').toUpperCase()}`
-                                    : (isErMode ? 'ER Shapes' : 'Flow Shapes')}
+                                    : (isErMode ? (erSubView === 'relational' ? 'Table Shapes' : 'ER Shapes') : 'Flow Shapes')}
                             </span>
                             <ChevronDown className="w-3 h-3 text-slate-400" />
                         </button>
@@ -1494,7 +1638,7 @@ export default function FlowchartVisualCanvas({
                             <div className={`absolute left-0 top-full mt-1.5 w-72 p-2 rounded-xl shadow-2xl border z-50 animate-in fade-in slide-in-from-top-1 text-xs select-none max-h-96 overflow-y-auto ${
                                 isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-200'
                             }`}>
-                                {(isErMode ? ER_SHAPES : FLOWCHART_SHAPES).map((cat, cIdx) => (
+                                {(isErMode ? (erSubView === 'relational' ? RELATIONAL_SHAPES : CHEN_ER_SHAPES) : FLOWCHART_SHAPES).map((cat, cIdx) => (
                                     <div key={cIdx} className={cIdx > 0 ? 'mt-2 pt-2 border-t border-slate-200 dark:border-slate-800' : ''}>
                                         <p className="text-[10px] uppercase font-bold text-slate-400 px-1 mb-1">
                                             {cat.category}
@@ -1680,7 +1824,7 @@ export default function FlowchartVisualCanvas({
             {/* Instruction Banner when Connector Mode or Dragging Hook is Active */}
             {(activeTool === 'connector' || Boolean(connectingSource)) && (
                 <div
-                    className={`border-b px-3 py-1 text-xs flex items-center justify-between z-10 ${
+                    className={`border-b px-3 py-1.5 text-xs flex items-center justify-between z-10 ${
                         isLight
                             ? 'bg-purple-50 border-purple-200 text-purple-900'
                             : 'bg-purple-950/80 border-purple-800 text-purple-200'
@@ -1688,23 +1832,24 @@ export default function FlowchartVisualCanvas({
                 >
                     <div className="flex items-center gap-2">
                         <ArrowRight className="w-3.5 h-3.5 text-purple-600 animate-pulse" />
-                        <span>
+                        <span className="font-semibold">
                             {connectingSource
-                                ? 'Connection started! Drag or click onto any hook on any shape to connect.'
-                                : 'Connector Mode: Click any hook dot on a shape to start directed connection.'}
+                                ? 'Tap any destination shape or port to complete connection!'
+                                : 'Connector Mode: Tap any shape or port to start linking.'}
                         </span>
                     </div>
                     <button
+                        type="button"
                         onClick={() => {
                             setActiveTool('select');
                             setConnectingSource(null);
                             setConnectingMousePos(null);
                         }}
-                        className={`text-[11px] underline cursor-pointer ${
+                        className={`text-[11px] font-bold underline cursor-pointer ${
                             isLight ? 'text-purple-700 hover:text-purple-950' : 'text-purple-300 hover:text-white'
                         }`}
                     >
-                        Cancel
+                        {connectingSource ? 'Cancel Link' : 'Exit Connector Mode'}
                     </button>
                 </div>
             )}
@@ -2139,14 +2284,20 @@ export default function FlowchartVisualCanvas({
                                                             completeConnection(node.id, port);
                                                         }
                                                     }}
+                                                    onTouchEnd={(e) => {
+                                                        e.stopPropagation();
+                                                        if (connectingSource) {
+                                                            completeConnection(node.id, port);
+                                                        }
+                                                    }}
                                                     onPointerEnter={() => setHoveredPortInfo({ nodeId: node.id, port })}
                                                     onPointerLeave={() => setHoveredPortInfo(null)}
                                                 >
-                                                    {/* Invisible large hit target circle */}
+                                                    {/* Invisible large hit target circle (20px radius for touch) */}
                                                     <circle
                                                         cx={loc.x}
                                                         cy={loc.y}
-                                                        r={14}
+                                                        r={20}
                                                         fill="transparent"
                                                         className="cursor-crosshair"
                                                     />

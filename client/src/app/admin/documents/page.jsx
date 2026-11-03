@@ -1580,7 +1580,7 @@ export default function DocumentsPage() {
                     <button
                         onClick={() => router.push('/practice-ide')}
                         className="h-9 px-3 rounded-xl flex items-center gap-2 bg-gradient-to-r from-amber-600 to-sky-600 hover:from-amber-700 hover:to-sky-700 text-white text-xs font-semibold shadow-sm transition"
-                        title="Code Practice Studio (Python 3.13 & Persistent SQLite Database Engine)"
+                        title="Code Practice Studio (Python 3.13 & MySQL / TiDB Cloud Database Engine)"
                     >
                         <Code2 className="w-4 h-4" />
                         <span>Code Studio (Py & SQL)</span>

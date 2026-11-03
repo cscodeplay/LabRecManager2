@@ -504,7 +504,7 @@ export default function IDEMenuBar({
                                     >
                                         <span className="flex items-center gap-2">
                                             <Database className="w-3.5 h-3.5" />
-                                            Reset Persistent SQLite DB
+                                            Reset Persistent MySQL Sandbox
                                         </span>
                                     </button>
                                 </>
@@ -557,36 +557,21 @@ export default function IDEMenuBar({
                 </div>
 
                 {/* SQL Engine Preselection Pill */}
-                {isInstructorOrAdmin ? (
-                    <button
-                        onClick={onOpenEngineModal}
-                        className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
-                            isLightMode
-                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-                        }`}
-                        title="Configure and Preselect SQL Database Engine globally (MySQL or SQLite)"
-                    >
-                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                        <span className="font-bold hidden sm:inline">
-                            {activeEngine === 'mysql' ? 'MySQL 9.3' : 'SQLite 3'}
-                        </span>
-                        <ChevronDown className="w-3 h-3 text-slate-400 hidden sm:inline" />
-                    </button>
-                ) : (
-                    <div
-                        className={`flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded text-[11px] font-semibold border shrink-0 ${
-                            isLightMode
-                                ? 'bg-slate-100 border-slate-200 text-slate-600'
-                                : 'bg-slate-800/80 border-slate-700 text-slate-300'
-                        }`}
-                        title="Active SQL engine preselected by school administrator"
-                    >
-                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                        <span className="hidden md:inline">Engine: </span>
-                        <span className="hidden sm:inline">{activeEngine === 'mysql' ? 'MySQL' : 'SQLite'}</span>
-                    </div>
-                )}
+                <button
+                    onClick={onOpenEngineModal}
+                    className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded text-xs font-semibold border transition cursor-pointer ${
+                        isLightMode
+                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                            : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                    }`}
+                    title="Active SQL Engine (MySQL 9.3+ / TiDB Cloud) - Click to view connection status"
+                >
+                    <span>🐬</span>
+                    <span className="font-bold hidden sm:inline">
+                        MySQL 9.3
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-slate-400 hidden sm:inline" />
+                </button>
 
                 {/* Student Feedback Badge (When review is available for current user) */}
                 {latestStudentReview && (

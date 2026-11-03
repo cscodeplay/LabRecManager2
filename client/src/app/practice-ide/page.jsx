@@ -58,7 +58,7 @@ import {
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
 import { compilerAPI, documentsAPI, foldersAPI } from '@/lib/api';
-import { generateRelationalErDiagram, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
+import { generateRelationalErDiagram, generateErDiagramFromSql, generateRelationalErDiagramFromSql } from '@/lib/traditionalGenerators';
 import IDEMenuBar from '@/components/IDEMenuBar';
 import FlowchartVisualCanvas from '@/components/FlowchartVisualCanvas';
 import DocumentCodeBrowserModal from '@/components/DocumentCodeBrowserModal';
@@ -326,8 +326,8 @@ function PracticeIDEPage() {
     const [isExecuting, setIsExecuting] = useState(false);
     const [rightPanelMode, setRightPanelMode] = useState('output'); // 'output' | 'table' | 'diagram'
 
-    // Responsive Mobile Views ('editor' | 'output' | 'diagram')
-    const [mobileView, setMobileView] = useState('editor');
+    // Responsive Mobile Views ('code_output' | 'editor' | 'diagram')
+    const [mobileView, setMobileView] = useState('code_output');
 
     // UI-aligned Custom Confirmation Modals (Replacing browser alert/confirm)
     const [tabToCloseConfirm, setTabToCloseConfirm] = useState(null);
@@ -340,7 +340,7 @@ function PracticeIDEPage() {
     const [fontSize, setFontSize] = useState(14);
     const isLightMode = outputThemeId === 'light' || editorTheme === 'vs' || editorTheme === 'light';
 
-    // Persistent student Database Engine (MySQL or SQLite)
+    // Persistent student Database Engine (MySQL / TiDB Cloud)
     const [activeEngine, setActiveEngine] = useState('mysql');
     const [showEngineModal, setShowEngineModal] = useState(false);
     const [existingTables, setExistingTables] = useState([]);
@@ -1208,7 +1208,7 @@ Date:          ${dateStr}
         }
     };
 
-    // Reset Personal SQLite Database (UI Dialog aligned)
+    // Reset Personal MySQL Sandbox Database (UI Dialog aligned)
     const handleResetDatabase = () => {
         setShowResetDbModal(true);
     };
@@ -1267,31 +1267,41 @@ Date:          ${dateStr}
         toast.success('Downloaded script file!');
     };
 
-    // Auto-Generate ER Diagram from Live DB Schema or parsed SQL DDL (100% Offline, Zero AI)
-    const handleAutoGenerateErDiagram = async () => {
+    // Auto-Generate Database Diagram (Relational Schema Designer or Conceptual Chen ERD)
+    const handleAutoGenerateErDiagram = async (mode = 'relational') => {
         try {
-            toast.loading('Inspecting database schema...', { id: 'er-gen' });
+            toast.loading(mode === 'relational' ? 'Generating Database Designer tables...' : 'Generating Conceptual ER Diagram...', { id: 'er-gen' });
             let result = null;
 
-            // 1. Try to fetch live database schema from server instance
-            try {
-                const res = await compilerAPI.getDbSchema();
-                if (res.data?.success && res.data?.data && res.data.data.tables && res.data.data.tables.length > 0) {
-                    result = generateRelationalErDiagram(res.data.data);
+            if (mode === 'relational') {
+                // 1. Try to fetch live database schema from server instance
+                try {
+                    const res = await compilerAPI.getDbSchema();
+                    if (res.data?.success && res.data?.data && res.data.data.tables && res.data.data.tables.length > 0) {
+                        result = generateRelationalErDiagram(res.data.data);
+                    }
+                } catch (dbErr) {
+                    console.warn('[ER Diagram] Live schema fetch failed, falling back to DDL parser:', dbErr.message);
                 }
-            } catch (dbErr) {
-                console.warn('[ER Diagram] Live schema fetch failed, falling back to DDL parser:', dbErr.message);
-            }
 
-            // 2. If no tables exist in live DB, fall back to parsing current SQL tab DDL code
-            if (!result || result.nodes.length === 0) {
+                // 2. If no tables exist in live DB, parse active SQL tab DDL into relational table cards
+                if (!result || result.nodes.length === 0) {
+                    if (activeTab.code && activeTab.code.trim()) {
+                        result = generateRelationalErDiagramFromSql(activeTab.code);
+                    }
+                }
+            } else {
+                // Conceptual Chen ERD (Entities, Ovals, Diamonds)
                 if (activeTab.code && activeTab.code.trim()) {
                     result = generateErDiagramFromSql(activeTab.code);
                 }
             }
 
             if (!result || result.nodes.length === 0) {
-                toast.error('No tables found in student DB or active SQL code. Create tables or write DDL statements first.', { id: 'er-gen' });
+                toast.error(mode === 'relational'
+                    ? 'No tables found in database or SQL editor. Create tables or write CREATE TABLE statements first.'
+                    : 'No CREATE TABLE statements found in SQL editor to build Chen ER diagram.',
+                    { id: 'er-gen' });
                 return;
             }
 
@@ -1304,12 +1314,14 @@ Date:          ${dateStr}
             setRightPanelMode('diagram');
             setMobileView('diagram');
 
-            toast.success(`Auto-generated ER Diagram with ${result.nodes.length} component(s) (100% Offline, Zero AI)!`, {
+            toast.success(mode === 'relational'
+                ? `Generated Database Designer with ${result.nodes.length} relational table(s) (100% Offline, Zero AI)!`
+                : `Generated Conceptual ER Diagram with ${result.nodes.length} component(s) (No AI)!`, {
                 id: 'er-gen',
                 icon: '⚡'
             });
         } catch (err) {
-            toast.error('Failed to generate ER diagram: ' + err.message, { id: 'er-gen' });
+            toast.error('Failed to generate diagram: ' + err.message, { id: 'er-gen' });
         }
     };
 
@@ -1554,9 +1566,12 @@ Date:          ${dateStr}
                 isLightMode ? 'bg-slate-100 border-slate-300' : 'bg-slate-900 border-slate-800'
             }`}>
                 <button
-                    onClick={() => setMobileView('editor')}
+                    onClick={() => {
+                        setMobileView('code_output');
+                        if (rightPanelMode === 'diagram') setRightPanelMode('output');
+                    }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                        mobileView === 'editor'
+                        mobileView === 'code_output'
                             ? isLightMode
                                 ? 'bg-white text-primary-700 shadow-xs border border-slate-200'
                                 : 'bg-slate-800 text-white shadow-xs border border-slate-700'
@@ -1566,28 +1581,25 @@ Date:          ${dateStr}
                     }`}
                 >
                     <Code2 className="w-3.5 h-3.5 text-primary-500" />
-                    <span>Code Editor</span>
+                    <span>Code & Output</span>
+                    {activeTab.output && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    )}
                 </button>
                 <button
-                    onClick={() => {
-                        setMobileView('output');
-                        if (rightPanelMode === 'diagram') setRightPanelMode('output');
-                    }}
+                    onClick={() => setMobileView('editor')}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                        mobileView === 'output'
+                        mobileView === 'editor'
                             ? isLightMode
-                                ? 'bg-white text-emerald-700 shadow-xs border border-slate-200'
-                                : 'bg-slate-800 text-emerald-400 shadow-xs border border-slate-700'
+                                ? 'bg-white text-indigo-700 shadow-xs border border-slate-200'
+                                : 'bg-slate-800 text-indigo-400 shadow-xs border border-slate-700'
                             : isLightMode
                             ? 'text-slate-600 hover:text-slate-900'
                             : 'text-slate-400 hover:text-slate-200'
                     }`}
                 >
-                    <Terminal className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Output</span>
-                    {activeTab.output && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    )}
+                    <Maximize2 className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Code Only</span>
                 </button>
                 <button
                     onClick={() => {
@@ -1605,15 +1617,23 @@ Date:          ${dateStr}
                     }`}
                 >
                     <Layers className="w-3.5 h-3.5 text-purple-500" />
-                    <span>{isDatabaseLanguage(activeTab.language) ? 'ER Diagram' : 'Flowchart'}</span>
+                    <span>{isDatabaseLanguage(activeTab.language) ? 'ER / Designer' : 'Flowchart'}</span>
                 </button>
             </div>
 
             {/* 4. MAIN SPLIT SCREEN: LEFT EDITOR PANE, RIGHT OUTPUT & CANVAS */}
-            <main className={`flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden ${isEditorMaximized ? 'flex flex-col' : 'grid grid-cols-1 lg:grid-cols-2'}`}>
+            <main className={`flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden ${
+                isEditorMaximized ? 'flex flex-col' : 'flex flex-col lg:grid lg:grid-cols-2'
+            }`}>
                 {/* LEFT PANEL: Monaco Code Editor with Ergonomic RUN CODE Button Above */}
-                <section className={`flex flex-col h-full border-r min-w-0 max-w-full overflow-hidden ${
-                    isEditorMaximized ? 'w-full flex-1' : (mobileView !== 'editor' ? 'hidden lg:flex' : 'flex')
+                <section className={`flex flex-col min-w-0 max-w-full overflow-hidden ${
+                    isEditorMaximized
+                        ? 'w-full flex-1 h-full'
+                        : mobileView === 'code_output'
+                        ? 'h-[50%] lg:h-full border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800'
+                        : mobileView === 'editor'
+                        ? 'h-full w-full'
+                        : 'hidden lg:flex lg:h-full lg:border-r'
                 } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full overflow-hidden ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
@@ -1937,7 +1957,7 @@ Date:          ${dateStr}
                             <span className="hidden md:inline opacity-40">•</span>
                             <span className="hidden md:inline font-semibold">
                                 {isDatabaseLanguage(activeTab.language)
-                                    ? (activeEngine === 'mysql' ? 'SQL (MySQL 9.3)' : 'SQL (SQLite 3)')
+                                    ? 'SQL (MySQL / TiDB Cloud)'
                                     : getLanguageMeta(activeTab.language).label}
                             </span>
                         </div>
@@ -1995,11 +2015,17 @@ Date:          ${dateStr}
                 </section>
 
                 {/* RIGHT PANEL: COORDINATED OUTPUT & VISUAL FLOWCHART CANVAS */}
-                <section className={`flex flex-col h-full min-w-0 max-w-full overflow-hidden ${
-                    isEditorMaximized ? 'hidden' : (mobileView === 'editor' ? 'hidden lg:flex' : 'flex')
+                <section className={`flex flex-col min-w-0 max-w-full overflow-hidden ${
+                    isEditorMaximized
+                        ? 'hidden'
+                        : mobileView === 'code_output'
+                        ? 'h-[50%] lg:h-full border-t lg:border-t-0'
+                        : mobileView === 'diagram'
+                        ? 'h-full w-full'
+                        : 'hidden lg:flex lg:h-full'
                 } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
-                    {/* Tab Navigation Header (Hidden on mobile < lg because top Mobile View Switcher controls views) */}
-                    <div className={`hidden lg:flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                    {/* Tab Navigation Header */}
+                    <div className={`flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         <div className="flex items-center gap-1">
                             <button
                                 onClick={() => setRightPanelMode('output')}
@@ -2139,18 +2165,63 @@ Date:          ${dateStr}
                                     ) : null}
 
                                     {/* Standard Error (stderr) */}
-                                    {activeTab.output.stderr && (
-                                        <div
-                                            style={{ fontSize: `${fontSize}px` }}
-                                            className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300 p-3 rounded-lg whitespace-pre-wrap leading-relaxed select-text font-mono"
-                                        >
-                                            <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 mb-1 text-xs">
-                                                <AlertCircle className="w-4 h-4" />
-                                                <span>Runtime / Syntax Error:</span>
+                                    {activeTab.output.stderr && (() => {
+                                        const noSuchTableMatch = activeTab.output.stderr.match(/Table\s+['`](?:[^'`. ]+\.)?([^'` ]+)['`]\s+doesn't exist/i) ||
+                                            activeTab.output.stderr.match(/no such table:\s*['`]?([^'`\s\n]+)['`]?/i);
+                                        const missingTableName = noSuchTableMatch ? noSuchTableMatch[1] : null;
+
+                                        return (
+                                            <div className="space-y-3">
+                                                <div
+                                                    style={{ fontSize: `${fontSize}px` }}
+                                                    className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300 p-3 rounded-lg whitespace-pre-wrap leading-relaxed select-text font-mono overflow-x-auto custom-scrollbar"
+                                                >
+                                                    <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 mb-1 text-xs">
+                                                        <AlertCircle className="w-4 h-4" />
+                                                        <span>Runtime / SQL Execution Error:</span>
+                                                    </div>
+                                                    {activeTab.output.stderr}
+                                                </div>
+
+                                                {/* Intelligent MySQL Error Diagnostic Card */}
+                                                {missingTableName && (
+                                                    <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 dark:border-amber-700/60 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 text-xs space-y-2.5 shadow-xs">
+                                                        <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
+                                                            <Database className="w-4 h-4 text-amber-600" />
+                                                            <span>MySQL Error 1146: Table <code className="px-1.5 py-0.5 rounded bg-amber-200/70 dark:bg-amber-900/60 font-mono text-amber-950 dark:text-amber-100">{missingTableName}</code> Does Not Exist</span>
+                                                        </div>
+
+                                                        <p className="leading-relaxed">
+                                                            Your personal practice MySQL database is an isolated sandbox and currently does not have a table named <code className="font-bold underline">{missingTableName}</code>. In SQL, any table queried with <code className="font-mono">SELECT</code> or <code className="font-mono">INSERT</code> must first be defined with a <code className="font-mono font-bold">CREATE TABLE</code> statement.
+                                                        </p>
+
+                                                        <div className="pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center justify-between gap-2">
+                                                            <div className="text-[11px] text-amber-800 dark:text-amber-300">
+                                                                <strong>Existing Tables: </strong>
+                                                                {existingTables && existingTables.length > 0 ? (
+                                                                    <span className="font-mono font-semibold">{existingTables.join(', ')}</span>
+                                                                ) : (
+                                                                    <span className="italic opacity-80">None (database is currently empty)</span>
+                                                                )}
+                                                            </div>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const ddlSnippet = `\n-- Create '${missingTableName}' Table\nCREATE TABLE ${missingTableName} (\n    id INT AUTO_INCREMENT PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n`;
+                                                                    handleInsertSnippet(ddlSnippet);
+                                                                    toast.success(`Inserted CREATE TABLE template for ${missingTableName}!`);
+                                                                }}
+                                                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                                                            >
+                                                                <span>+ Insert CREATE TABLE {missingTableName}</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                            {activeTab.output.stderr}
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-60">
@@ -2180,7 +2251,7 @@ Date:          ${dateStr}
                                             <span>Query Result Set ({activeTab.output.tables.length} rows)</span>
                                         </h3>
                                         <span className="text-[11px] text-slate-400 font-mono">
-                                            {activeEngine === 'mysql' ? 'MySQL 9.3 Engine' : 'SQLite 3 Engine'}
+                                            MySQL / TiDB Cloud Engine
                                         </span>
                                     </div>
 
@@ -2232,10 +2303,10 @@ Date:          ${dateStr}
                                         <Database className="w-6 h-6" />
                                     </div>
                                     <h3 className={`text-sm font-bold mb-1 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}>
-                                        Persistent {activeEngine === 'mysql' ? 'MySQL' : 'SQLite'} Database
+                                        Persistent MySQL Database
                                     </h3>
                                     <p className="text-xs text-slate-500 max-w-sm mb-4">
-                                        Tables created in this studio are saved permanently in your private {activeEngine === 'mysql' ? 'MySQL schema' : 'SQLite database file'}.
+                                        Tables created in this studio are saved permanently in your private MySQL schema.
                                     </p>
 
                                     {existingTables.length > 0 ? (
@@ -2348,9 +2419,9 @@ Date:          ${dateStr}
                         <div className="flex items-center gap-2 sm:gap-3">
                             {isDatabaseLanguage(activeTab.language) ? (
                                 <>
-                                    <span className="flex items-center gap-1 font-semibold">
-                                        <span>{activeEngine === 'mysql' ? '🐬' : '🗄️'}</span>
-                                        <span className="hidden sm:inline">{activeEngine === 'mysql' ? 'MySQL 9.3' : 'SQLite 3'}</span>
+                                    <span className="flex items-center gap-1 font-semibold text-sky-600 dark:text-sky-400">
+                                        <span>🐬</span>
+                                        <span className="hidden sm:inline">MySQL / TiDB</span>
                                     </span>
                                     <span className="hidden md:inline opacity-40">•</span>
                                     <span className="hidden md:inline">{existingTables.length} tables in DB</span>

@@ -259,11 +259,10 @@ router.post('/execute', authenticate, [
         }
     }
 
-    // 2. Try persistent execution for SQL (using admin-preselected engine: MySQL or SQLite3)
+    // 2. Try persistent execution for SQL (using MySQL / TiDB Cloud Engine)
     if (langNormalized === 'sql' || langNormalized === 'sqlite' || langNormalized === 'mysql' || langNormalized === 'plsql') {
         try {
-            const studentDbPath = getStudentDbPath(userId);
-            const localResult = await practiceDatabaseService.executeSql(code, userId, studentDbPath);
+            const localResult = await practiceDatabaseService.executeSql(code, userId);
             return res.json({
                 success: true,
                 data: {
@@ -274,13 +273,23 @@ router.post('/execute', authenticate, [
                     tables: localResult.tables,
                     existingTables: localResult.existingTables || [],
                     isPersistent: true,
-                    runner: localResult.runner || 'local-sql',
-                    engine: localResult.engine || practiceDatabaseService.config.activeEngine,
+                    runner: localResult.runner || 'local-mysql',
+                    engine: 'mysql',
                     databaseName: localResult.databaseName || null
                 }
             });
         } catch (localErr) {
-            console.warn('Practice SQL execution failed:', localErr.message);
+            console.warn('Practice MySQL execution failed:', localErr.message);
+            return res.json({
+                success: true,
+                data: {
+                    stdout: '',
+                    stderr: `MySQL Error: ${localErr.sqlMessage || localErr.message}`,
+                    exitCode: 1,
+                    runner: 'local-mysql',
+                    engine: 'mysql'
+                }
+            });
         }
     }
 
@@ -449,8 +458,8 @@ router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
         } catch (e) {}
     }
 
-    // Query tables created in student's persistent database under active engine (MySQL or SQLite)
-    const existingTables = await practiceDatabaseService.getExistingTables(targetUserId, studentDbPath);
+    // Query tables created in student's persistent MySQL database
+    const existingTables = await practiceDatabaseService.getExistingTables(targetUserId);
 
     // Fetch student review data
     const reviewData = studentCodeReviewService.getStudentReviewData(targetUserId);
@@ -528,13 +537,11 @@ router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/reset-db', authenticate, asyncHandler(async (req, res) => {
     const userId = req.user?.id || 'guest';
-    const studentDbPath = getStudentDbPath(userId);
-
-    const resetResult = await practiceDatabaseService.resetStudentDatabase(userId, studentDbPath);
+    const resetResult = await practiceDatabaseService.resetStudentDatabase(userId);
 
     return res.json({
         success: true,
-        message: resetResult.message || 'Persistent practice database reset successfully',
+        message: resetResult.message || 'Persistent practice MySQL database reset successfully',
         data: resetResult
     });
 }));
@@ -546,9 +553,7 @@ router.post('/reset-db', authenticate, asyncHandler(async (req, res) => {
  */
 router.get('/db-schema', authenticate, asyncHandler(async (req, res) => {
     const userId = req.user?.id || 'guest';
-    const studentDbPath = getStudentDbPath(userId);
-
-    const schemaResult = await practiceDatabaseService.getDatabaseSchema(userId, studentDbPath);
+    const schemaResult = await practiceDatabaseService.getDatabaseSchema(userId);
 
     return res.json({
         success: true,
@@ -765,7 +770,7 @@ router.get('/student-workspace/:studentId', authenticate, asyncHandler(async (re
         } catch (_) {}
     }
 
-    const existingTables = await practiceDatabaseService.getExistingTables(studentId, studentDbPath);
+    const existingTables = await practiceDatabaseService.getExistingTables(studentId);
     const reviewData = studentCodeReviewService.getStudentReviewData(studentId);
 
     const enrollment = studentRecord.classEnrollments[0];
@@ -878,7 +883,7 @@ router.post('/student-workspace/:studentId/ai-review', authenticate, asyncHandle
         } catch (_) {}
     }
 
-    const existingTables = await practiceDatabaseService.getExistingTables(studentId, studentDbPath);
+    const existingTables = await practiceDatabaseService.getExistingTables(studentId);
 
     const aiReview = await studentCodeReviewService.generateAiReview({
         studentName,

@@ -27,14 +27,12 @@ export default function DatabaseEngineModal({
     const [saving, setSaving] = useState(false);
     const [engineConfig, setEngineConfig] = useState({
         activeEngine: 'mysql',
-        fallbackToSqlite: true,
         mysql: { host: '127.0.0.1', port: 3306, user: 'root', password: '' },
         isMysqlOnline: false,
         mysqlVersion: null,
         mysqlError: null
     });
     const [selectedEngine, setSelectedEngine] = useState('mysql');
-    const [fallback, setFallback] = useState(true);
     const [mysqlParams, setMysqlParams] = useState({
         host: '127.0.0.1',
         port: 3306,
@@ -56,8 +54,7 @@ export default function DatabaseEngineModal({
             if (res.data?.success && res.data?.data) {
                 const data = res.data.data;
                 setEngineConfig(data);
-                setSelectedEngine(data.activeEngine || 'mysql');
-                setFallback(data.fallbackToSqlite !== false);
+                setSelectedEngine('mysql');
                 setMysqlParams({
                     host: data.mysql?.host || '127.0.0.1',
                     port: data.mysql?.port || 3306,
@@ -76,8 +73,7 @@ export default function DatabaseEngineModal({
         setSaving(true);
         try {
             const payload = {
-                activeEngine: selectedEngine,
-                fallbackToSqlite: fallback,
+                activeEngine: 'mysql',
                 mysql: {
                     host: mysqlParams.host,
                     port: parseInt(mysqlParams.port, 10) || 3306,
@@ -87,7 +83,7 @@ export default function DatabaseEngineModal({
             };
             const res = await compilerAPI.updateEngineConfig(payload);
             if (res.data?.success) {
-                toast.success(`Active Practice SQL Engine set to ${selectedEngine.toUpperCase()} globally!`);
+                toast.success(`Active Practice SQL Engine updated successfully!`);
                 if (onEngineChanged) onEngineChanged(res.data.data);
                 onClose();
             }
@@ -188,111 +184,95 @@ export default function DatabaseEngineModal({
                                     </div>
                                 </div>
 
-                                {/* Option 2: SQLite */}
-                                <div
-                                    onClick={() => setSelectedEngine('sqlite')}
-                                    className={`relative p-4 rounded-xl border-2 transition cursor-pointer ${
-                                        selectedEngine === 'sqlite'
-                                            ? 'border-primary-500 bg-primary-500/5 shadow-md'
-                                            : `${subCardBg} hover:border-slate-600`
-                                    }`}
-                                >
+                                {/* Dedicated Enterprise Engine: MySQL / TiDB Cloud */}
+                                <div className="p-4 rounded-xl border-2 border-primary-500 bg-primary-500/5 shadow-md">
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-2.5">
-                                            <span className="text-2xl">🗄️</span>
+                                            <span className="text-2xl">🐬</span>
                                             <div>
-                                                <h3 className="font-bold text-sm">SQLite 3</h3>
-                                                <span className="text-xs text-slate-400">Zero-Config File Engine</span>
+                                                <h3 className="font-bold text-sm flex items-center gap-2">
+                                                    MySQL 9.3 / 8.0+ / TiDB Cloud
+                                                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded font-extrabold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                                                        Primary Engine
+                                                    </span>
+                                                </h3>
+                                                <span className="text-xs text-slate-400">Multi-User Isolated Practice Schemas</span>
                                             </div>
                                         </div>
-                                        <input
-                                            type="radio"
-                                            name="engine"
-                                            checked={selectedEngine === 'sqlite'}
-                                            onChange={() => setSelectedEngine('sqlite')}
-                                            className="w-4 h-4 text-primary-600 cursor-pointer"
-                                        />
                                     </div>
                                     <p className="mt-3 text-xs text-slate-400 leading-relaxed">
-                                        Stores queries in private per-student SQLite files (<code className="text-primary-400 text-[11px]">practice.sqlite</code>). Works out of the box with zero external database daemons.
+                                        Each student operates in an auto-provisioned, private schema (<code className="text-primary-400 text-[11px]">practice_stu_id</code>). Real relational transactions, strict foreign keys, and instant performance.
                                     </p>
                                     <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-[11px]">
-                                        <span className="text-slate-400">Engine Type:</span>
-                                        <span className="font-semibold text-emerald-400">
-                                            Embedded / Always Available
-                                        </span>
+                                        <span className="text-slate-400">Connection Status:</span>
+                                        {engineConfig.isMysqlOnline ? (
+                                            <span className="flex items-center gap-1 font-semibold text-emerald-400">
+                                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                                Online ({engineConfig.mysqlVersion || '9.3.0'})
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 font-semibold text-rose-400">
+                                                <AlertCircle className="w-3.5 h-3.5" />
+                                                Offline: {engineConfig.mysqlError || 'Unable to connect'}
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
                             {/* MySQL Configuration Fields */}
-                            {selectedEngine === 'mysql' && (
-                                <div className={`p-4 rounded-xl border ${subCardBg} space-y-3`}>
-                                    <div className="flex items-center justify-between">
-                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                                            <Server className="w-3.5 h-3.5 text-primary-400" />
-                                            MySQL Server Parameters
-                                        </h4>
-                                        <span className="text-[11px] text-slate-400">Connected via MIT mysql2 driver</span>
-                                    </div>
+                            <div className={`p-4 rounded-xl border ${subCardBg} space-y-3`}>
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                                        <Server className="w-3.5 h-3.5 text-primary-400" />
+                                        MySQL Server Parameters
+                                    </h4>
+                                    <span className="text-[11px] text-slate-400">Connected via MIT mysql2 driver</span>
+                                </div>
 
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                                        <div>
-                                            <label className="block text-[11px] text-slate-400 mb-1">Host</label>
-                                            <input
-                                                type="text"
-                                                value={mysqlParams.host}
-                                                onChange={(e) => setMysqlParams({ ...mysqlParams, host: e.target.value })}
-                                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
-                                                placeholder="127.0.0.1"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[11px] text-slate-400 mb-1">Port</label>
-                                            <input
-                                                type="number"
-                                                value={mysqlParams.port}
-                                                onChange={(e) => setMysqlParams({ ...mysqlParams, port: e.target.value })}
-                                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
-                                                placeholder="3306"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[11px] text-slate-400 mb-1">Root User</label>
-                                            <input
-                                                type="text"
-                                                value={mysqlParams.user}
-                                                onChange={(e) => setMysqlParams({ ...mysqlParams, user: e.target.value })}
-                                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
-                                                placeholder="root"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-[11px] text-slate-400 mb-1">Password</label>
-                                            <input
-                                                type="password"
-                                                value={mysqlParams.password}
-                                                onChange={(e) => setMysqlParams({ ...mysqlParams, password: e.target.value })}
-                                                className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
-                                                placeholder="(blank if none)"
-                                            />
-                                        </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                    <div>
+                                        <label className="block text-[11px] text-slate-400 mb-1">Host</label>
+                                        <input
+                                            type="text"
+                                            value={mysqlParams.host}
+                                            onChange={(e) => setMysqlParams({ ...mysqlParams, host: e.target.value })}
+                                            className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
+                                            placeholder="127.0.0.1"
+                                        />
                                     </div>
-
-                                    {/* Automatic Fallback Toggle */}
-                                    <div className="pt-2 flex items-center justify-between">
-                                        <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={fallback}
-                                                onChange={(e) => setFallback(e.target.checked)}
-                                                className="rounded text-primary-600 cursor-pointer"
-                                            />
-                                            <span>Seamless SQLite fallback if MySQL is offline or restarting</span>
-                                        </label>
+                                    <div>
+                                        <label className="block text-[11px] text-slate-400 mb-1">Port</label>
+                                        <input
+                                            type="number"
+                                            value={mysqlParams.port}
+                                            onChange={(e) => setMysqlParams({ ...mysqlParams, port: e.target.value })}
+                                            className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
+                                            placeholder="3306"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] text-slate-400 mb-1">Root User</label>
+                                        <input
+                                            type="text"
+                                            value={mysqlParams.user}
+                                            onChange={(e) => setMysqlParams({ ...mysqlParams, user: e.target.value })}
+                                            className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
+                                            placeholder="root"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[11px] text-slate-400 mb-1">Password</label>
+                                        <input
+                                            type="password"
+                                            value={mysqlParams.password}
+                                            onChange={(e) => setMysqlParams({ ...mysqlParams, password: e.target.value })}
+                                            className={`w-full px-2.5 py-1.5 rounded-lg border text-xs ${inputBg}`}
+                                            placeholder="(blank if none)"
+                                        />
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
                             {/* Licensing & Commercial SaaS Notice */}
                             <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-200/90 leading-relaxed space-y-1">

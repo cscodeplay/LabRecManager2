@@ -1,7 +1,6 @@
 const mysql = require('mysql2/promise');
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
 
 const CONFIG_PATH = path.join(__dirname, '../../storage/config/practice_engine_config.json');
 
@@ -37,8 +36,7 @@ const envUri = process.env.MYSQL_URL || process.env.MYSQL_URI;
 const parsedUri = parseMysqlUri(envUri);
 
 const DEFAULT_CONFIG = {
-    activeEngine: 'mysql', // 'mysql' | 'sqlite'
-    fallbackToSqlite: true,
+    activeEngine: 'mysql',
     mysql: {
         host: parsedUri?.host || process.env.MYSQL_HOST || '127.0.0.1',
         port: parsedUri?.port || parseInt(process.env.MYSQL_PORT || '3306', 10),
@@ -146,9 +144,8 @@ class PracticeDatabaseService {
     async getEngineConfig() {
         const testRes = await this.testMySqlConnection();
         return {
-            activeEngine: this.config.activeEngine,
-            availableEngines: ['mysql', 'sqlite'],
-            fallbackToSqlite: this.config.fallbackToSqlite,
+            activeEngine: 'mysql',
+            availableEngines: ['mysql'],
             mysql: {
                 host: this.config.mysql.host,
                 port: this.config.mysql.port,
@@ -178,8 +175,7 @@ class PracticeDatabaseService {
 
         const nextConfig = {
             ...this.config,
-            activeEngine: updates.activeEngine === 'sqlite' ? 'sqlite' : 'mysql',
-            fallbackToSqlite: updates.fallbackToSqlite !== undefined ? Boolean(updates.fallbackToSqlite) : this.config.fallbackToSqlite,
+            activeEngine: 'mysql',
             mysql: {
                 ...this.config.mysql,
                 ...mysqlUpdates
@@ -188,13 +184,9 @@ class PracticeDatabaseService {
             updatedBy: adminUser?.name || adminUser?.email || 'Admin'
         };
 
-        if (nextConfig.activeEngine === 'mysql') {
-            const testResult = await this.testMySqlConnection(nextConfig.mysql);
-            if (!testResult.success) {
-                if (!nextConfig.fallbackToSqlite) {
-                    throw new Error(`Cannot set MySQL as primary engine: ${testResult.error}`);
-                }
-            }
+        const testResult = await this.testMySqlConnection(nextConfig.mysql);
+        if (!testResult.success) {
+            throw new Error(`MySQL connection test failed: ${testResult.error}`);
         }
 
         this.saveConfig(nextConfig);
@@ -256,10 +248,10 @@ class PracticeDatabaseService {
      */
     async executeMySql(code, studentId) {
         const startTime = Date.now();
-        const dbName = await this.ensureStudentMySqlDb(studentId);
-
+        let dbName = null;
         let conn = null;
         try {
+            dbName = await this.ensureStudentMySqlDb(studentId);
             const ssl = getSslOptions(this.config.mysql);
             conn = await mysql.createConnection({
                 host: this.config.mysql.host,
@@ -354,348 +346,143 @@ class PracticeDatabaseService {
     }
 
     /**
-     * Execute SQL query via SQLite3 CLI
+     * Unified SQL execution method - dedicated MySQL / TiDB Cloud Engine
      */
-    executeSqlite(code, dbPath) {
-        return new Promise((resolve) => {
-            const start = Date.now();
-
-            const child = execFile('sqlite3', [dbPath, '-header', '-column'], { timeout: 8000, maxBuffer: 1024 * 1024 * 4 }, (err, stdout, stderr) => {
-                const duration = Date.now() - start;
-
-                // Query existing database tables
-                execFile('sqlite3', [dbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (tErr, tStdout) => {
-                    let existingTables = [];
-                    try {
-                        if (tStdout && tStdout.trim().startsWith('[')) {
-                            const parsed = JSON.parse(tStdout);
-                            existingTables = parsed.map(p => p.name);
-                        }
-                    } catch (e) {}
-
-                    if (err) {
-                        return resolve({
-                            stdout: stdout || '',
-                            stderr: stderr || err.message,
-                            exitCode: 1,
-                            durationMs: duration,
-                            isLocal: true,
-                            tables: [],
-                            existingTables,
-                            runner: 'local-sqlite3',
-                            engine: 'sqlite'
-                        });
-                    }
-
-                    // Extract structured JSON table data
-                    execFile('sqlite3', [dbPath, '-json'], { timeout: 5000, maxBuffer: 1024 * 1024 * 4 }, (jErr, jStdout) => {
-                        let jsonData = null;
-                        try {
-                            if (jStdout && jStdout.trim().startsWith('[')) {
-                                jsonData = JSON.parse(jStdout);
-                            }
-                        } catch (e) {}
-
-                        resolve({
-                            stdout: stdout || '',
-                            stderr: stderr || '',
-                            exitCode: 0,
-                            durationMs: duration,
-                            isLocal: true,
-                            tables: jsonData && Array.isArray(jsonData) && jsonData.length > 0 ? jsonData : null,
-                            existingTables,
-                            runner: 'local-sqlite3',
-                            engine: 'sqlite'
-                        });
-                    }).stdin.end(code);
-                });
-            });
-
-            child.stdin.write(code);
-            child.stdin.end();
-        });
+    async executeSql(code, studentId) {
+        return await this.executeMySql(code, studentId);
     }
 
     /**
-     * Unified SQL execution method honoring admin preselected engine
+     * Query existing tables for student under active MySQL engine
      */
-    async executeSql(code, studentId, studentSqliteDbPath) {
-        if (this.config.activeEngine === 'mysql') {
-            try {
-                const res = await this.executeMySql(code, studentId);
-                // If it succeeded or returned a standard SQL syntax error, return it
-                if (!res.stderr || !res.stderr.includes('ECONNREFUSED')) {
-                    return res;
-                }
-                // If MySQL connection was refused and fallback is enabled, fallback to SQLite
-                if (this.config.fallbackToSqlite) {
-                    console.warn('[PracticeDB] MySQL connection refused, falling back to SQLite3');
-                    const fallbackRes = await this.executeSqlite(code, studentSqliteDbPath);
-                    return {
-                        ...fallbackRes,
-                        stdout: `[Notice: MySQL was offline, executed in SQLite3 fallback engine]\n\n${fallbackRes.stdout}`,
-                        runner: 'local-sqlite3 (fallback)'
-                    };
-                }
-                return res;
-            } catch (err) {
-                if (this.config.fallbackToSqlite) {
-                    console.warn('[PracticeDB] MySQL error, falling back to SQLite:', err.message);
-                    const fallbackRes = await this.executeSqlite(code, studentSqliteDbPath);
-                    return {
-                        ...fallbackRes,
-                        stdout: `[Notice: Executed in SQLite3 fallback engine]\n\n${fallbackRes.stdout}`,
-                        runner: 'local-sqlite3 (fallback)'
-                    };
-                }
-                throw err;
-            }
+    async getExistingTables(studentId) {
+        try {
+            const dbName = this.getSanitizedDbName(studentId);
+            if (!this.rootPool) this.initRootPool();
+            const [rows] = await this.rootPool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema = ?`, [dbName]);
+            return rows.map(r => r.table_name || r.TABLE_NAME);
+        } catch (e) {
+            return [];
         }
-
-        // SQLite active engine
-        return await this.executeSqlite(code, studentSqliteDbPath);
     }
 
     /**
-     * Query existing tables for student under active engine
+     * Reset student's isolated MySQL database
      */
-    async getExistingTables(studentId, studentSqliteDbPath) {
-        if (this.config.activeEngine === 'mysql') {
-            try {
-                const dbName = this.getSanitizedDbName(studentId);
-                if (!this.rootPool) this.initRootPool();
-                const [rows] = await this.rootPool.query(`SELECT table_name FROM information_schema.tables WHERE table_schema = ?`, [dbName]);
-                return rows.map(r => r.table_name || r.TABLE_NAME);
-            } catch (e) {
-                // Return empty if MySQL is offline or DB not yet created
-            }
-        }
-
-        if (fs.existsSync(studentSqliteDbPath)) {
-            return new Promise((resolve) => {
-                execFile('sqlite3', [studentSqliteDbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%";'], (err, stdout) => {
-                    if (!err && stdout && stdout.trim().startsWith('[')) {
-                        try {
-                            const parsed = JSON.parse(stdout);
-                            return resolve(parsed.map(p => p.name));
-                        } catch (e) {}
-                    }
-                    resolve([]);
-                });
-            });
-        }
-        return [];
-    }
-
-    /**
-     * Reset student's isolated database
-     */
-    async resetStudentDatabase(studentId, studentSqliteDbPath) {
-        let results = [];
-
-        if (this.config.activeEngine === 'mysql') {
-            try {
-                const dbName = this.getSanitizedDbName(studentId);
-                if (!this.rootPool) this.initRootPool();
-                await this.rootPool.query(`DROP DATABASE IF EXISTS \`${dbName}\`;`);
-                await this.rootPool.query(`CREATE DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
-                results.push(`Reset MySQL database '${dbName}'`);
-            } catch (e) {
-                console.error('[PracticeDB] Error dropping MySQL database:', e.message);
-            }
-        }
-
-        if (fs.existsSync(studentSqliteDbPath)) {
-            try {
-                fs.unlinkSync(studentSqliteDbPath);
-                results.push(`Reset SQLite file`);
-            } catch (e) {}
+    async resetStudentDatabase(studentId) {
+        const dbName = this.getSanitizedDbName(studentId);
+        try {
+            if (!this.rootPool) this.initRootPool();
+            await this.rootPool.query(`DROP DATABASE IF EXISTS \`${dbName}\`;`);
+            await this.rootPool.query(`CREATE DATABASE \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
+        } catch (e) {
+            console.error('[PracticeDB] Error dropping MySQL database:', e.message);
         }
 
         return {
             success: true,
-            activeEngine: this.config.activeEngine,
-            message: `Practice database reset (${this.config.activeEngine.toUpperCase()})`
+            activeEngine: 'mysql',
+            database: dbName,
+            message: `Practice MySQL database '${dbName}' reset successfully.`
         };
     }
 
     /**
      * Inspect student's live database schema and relationships (100% deterministic, NO AI)
-     * Queries information_schema for MySQL or sqlite_master / PRAGMA for SQLite
+     * Queries information_schema for MySQL
      */
-    async getDatabaseSchema(studentId, studentSqliteDbPath) {
-        const activeEngine = this.config.activeEngine;
+    async getDatabaseSchema(studentId) {
         const dbName = this.getSanitizedDbName(studentId);
 
-        if (activeEngine === 'mysql') {
-            try {
-                if (!this.rootPool) this.initRootPool();
+        try {
+            if (!this.rootPool) this.initRootPool();
 
-                // 1. Fetch all columns and types
-                const [columns] = await this.rootPool.query(`
-                    SELECT 
-                        TABLE_NAME, 
-                        COLUMN_NAME, 
-                        DATA_TYPE, 
-                        COLUMN_TYPE, 
-                        IS_NULLABLE, 
-                        COLUMN_KEY, 
-                        COLUMN_DEFAULT,
-                        EXTRA
-                    FROM information_schema.COLUMNS 
-                    WHERE TABLE_SCHEMA = ?
-                    ORDER BY TABLE_NAME, ORDINAL_POSITION
-                `, [dbName]);
+            // 1. Fetch all columns and types
+            const [columns] = await this.rootPool.query(`
+                SELECT 
+                    TABLE_NAME, 
+                    COLUMN_NAME, 
+                    DATA_TYPE, 
+                    COLUMN_TYPE, 
+                    IS_NULLABLE, 
+                    COLUMN_KEY, 
+                    COLUMN_DEFAULT,
+                    EXTRA
+                FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = ?
+                ORDER BY TABLE_NAME, ORDINAL_POSITION
+            `, [dbName]);
 
-                // 2. Fetch foreign key references
-                const [fkRows] = await this.rootPool.query(`
-                    SELECT 
-                        TABLE_NAME, 
-                        COLUMN_NAME, 
-                        REFERENCED_TABLE_NAME, 
-                        REFERENCED_COLUMN_NAME, 
-                        CONSTRAINT_NAME
-                    FROM information_schema.KEY_COLUMN_USAGE 
-                    WHERE TABLE_SCHEMA = ? 
-                      AND REFERENCED_TABLE_NAME IS NOT NULL
-                `, [dbName]);
+            // 2. Fetch foreign key references
+            const [fkRows] = await this.rootPool.query(`
+                SELECT 
+                    TABLE_NAME, 
+                    COLUMN_NAME, 
+                    REFERENCED_TABLE_NAME, 
+                    REFERENCED_COLUMN_NAME, 
+                    CONSTRAINT_NAME
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = ? 
+                  AND REFERENCED_TABLE_NAME IS NOT NULL
+            `, [dbName]);
 
-                const tableMap = new Map();
+            const tableMap = new Map();
 
-                for (const col of columns) {
-                    const tableName = col.TABLE_NAME || col.table_name;
-                    if (!tableMap.has(tableName)) {
-                        tableMap.set(tableName, {
-                            name: tableName,
-                            columns: [],
-                            foreignKeys: []
-                        });
-                    }
-
-                    const isPk = (col.COLUMN_KEY || col.column_key) === 'PRI';
-                    const colName = col.COLUMN_NAME || col.column_name;
-                    const colType = (col.COLUMN_TYPE || col.column_type || col.DATA_TYPE || 'VARCHAR').toUpperCase();
-                    const nullable = (col.IS_NULLABLE || col.is_nullable) === 'YES';
-
-                    tableMap.get(tableName).columns.push({
-                        name: colName,
-                        type: colType,
-                        isPk,
-                        isFk: false,
-                        nullable,
-                        defaultValue: col.COLUMN_DEFAULT || col.column_default || null,
-                        extra: col.EXTRA || col.extra || ''
+            for (const col of columns) {
+                const tableName = col.TABLE_NAME || col.table_name;
+                if (!tableMap.has(tableName)) {
+                    tableMap.set(tableName, {
+                        name: tableName,
+                        columns: [],
+                        foreignKeys: []
                     });
                 }
 
-                for (const fk of fkRows) {
-                    const tName = fk.TABLE_NAME || fk.table_name;
-                    const cName = fk.COLUMN_NAME || fk.column_name;
-                    const refTable = fk.REFERENCED_TABLE_NAME || fk.referenced_table_name;
-                    const refCol = fk.REFERENCED_COLUMN_NAME || fk.referenced_column_name;
+                const isPk = (col.COLUMN_KEY || col.column_key) === 'PRI';
+                const colName = col.COLUMN_NAME || col.column_name;
+                const colType = (col.COLUMN_TYPE || col.column_type || col.DATA_TYPE || 'VARCHAR').toUpperCase();
+                const nullable = (col.IS_NULLABLE || col.is_nullable) === 'YES';
 
-                    if (tableMap.has(tName)) {
-                        const tableObj = tableMap.get(tName);
-                        tableObj.foreignKeys.push({
-                            column: cName,
-                            referencedTable: refTable,
-                            referencedColumn: refCol,
-                            constraintName: fk.CONSTRAINT_NAME || fk.constraint_name
-                        });
+                tableMap.get(tableName).columns.push({
+                    name: colName,
+                    type: colType,
+                    isPk,
+                    isFk: false,
+                    nullable,
+                    defaultValue: col.COLUMN_DEFAULT || col.column_default || null,
+                    extra: col.EXTRA || col.extra || ''
+                });
+            }
 
-                        const colObj = tableObj.columns.find(c => c.name.toLowerCase() === cName.toLowerCase());
-                        if (colObj) colObj.isFk = true;
-                    }
-                }
+            for (const fk of fkRows) {
+                const tName = fk.TABLE_NAME || fk.table_name;
+                const cName = fk.COLUMN_NAME || fk.column_name;
+                const refTable = fk.REFERENCED_TABLE_NAME || fk.referenced_table_name;
+                const refCol = fk.REFERENCED_COLUMN_NAME || fk.referenced_column_name;
 
-                return {
-                    engine: 'mysql',
-                    database: dbName,
-                    tables: Array.from(tableMap.values())
-                };
-            } catch (err) {
-                console.warn('[PracticeDB] MySQL schema fetch failed, falling back to SQLite if available:', err.message);
-                if (!this.config.fallbackToSqlite) {
-                    return { engine: 'mysql', database: dbName, tables: [], error: err.message };
+                if (tableMap.has(tName)) {
+                    const tableObj = tableMap.get(tName);
+                    tableObj.foreignKeys.push({
+                        column: cName,
+                        referencedTable: refTable,
+                        referencedColumn: refCol,
+                        constraintName: fk.CONSTRAINT_NAME || fk.constraint_name
+                    });
+
+                    const colObj = tableObj.columns.find(c => c.name.toLowerCase() === cName.toLowerCase());
+                    if (colObj) colObj.isFk = true;
                 }
             }
+
+            return {
+                engine: 'mysql',
+                database: dbName,
+                tables: Array.from(tableMap.values())
+            };
+        } catch (err) {
+            console.error('[PracticeDB] MySQL schema fetch failed:', err.message);
+            return { engine: 'mysql', database: dbName, tables: [], error: err.message };
         }
-
-        // SQLite Inspection
-        if (studentSqliteDbPath && fs.existsSync(studentSqliteDbPath)) {
-            return new Promise((resolve) => {
-                execFile('sqlite3', [studentSqliteDbPath, '-json', 'SELECT name FROM sqlite_master WHERE type="table" AND name NOT LIKE "sqlite_%" ORDER BY name;'], async (err, stdout) => {
-                    if (err || !stdout || !stdout.trim().startsWith('[')) {
-                        return resolve({ engine: 'sqlite', database: 'practice.sqlite', tables: [] });
-                    }
-
-                    try {
-                        const tableList = JSON.parse(stdout);
-                        const tables = [];
-
-                        for (const item of tableList) {
-                            const tableName = item.name;
-                            const tableInfo = await new Promise((resInfo) => {
-                                execFile('sqlite3', [studentSqliteDbPath, '-json', `PRAGMA table_info("${tableName}");`], (tErr, tStdout) => {
-                                    try {
-                                        resInfo(tStdout && tStdout.trim().startsWith('[') ? JSON.parse(tStdout) : []);
-                                    } catch (e) {
-                                        resInfo([]);
-                                    }
-                                });
-                            });
-
-                            const fkInfo = await new Promise((resFk) => {
-                                execFile('sqlite3', [studentSqliteDbPath, '-json', `PRAGMA foreign_key_list("${tableName}");`], (fErr, fStdout) => {
-                                    try {
-                                        resFk(fStdout && fStdout.trim().startsWith('[') ? JSON.parse(fStdout) : []);
-                                    } catch (e) {
-                                        resFk([]);
-                                    }
-                                });
-                            });
-
-                            const foreignKeys = (fkInfo || []).map(fk => ({
-                                column: fk.from,
-                                referencedTable: fk.table,
-                                referencedColumn: fk.to
-                            }));
-
-                            const fkColNames = new Set(foreignKeys.map(fk => (fk.column || '').toLowerCase()));
-
-                            const columns = (tableInfo || []).map(col => ({
-                                name: col.name,
-                                type: (col.type || 'TEXT').toUpperCase(),
-                                isPk: Boolean(col.pk),
-                                isFk: fkColNames.has((col.name || '').toLowerCase()),
-                                nullable: !Boolean(col.notnull),
-                                defaultValue: col.dflt_value || null
-                            }));
-
-                            tables.push({
-                                name: tableName,
-                                columns,
-                                foreignKeys
-                            });
-                        }
-
-                        return resolve({
-                            engine: 'sqlite',
-                            database: 'practice.sqlite',
-                            tables
-                        });
-                    } catch (e) {
-                        return resolve({ engine: 'sqlite', database: 'practice.sqlite', tables: [], error: e.message });
-                    }
-                });
-            });
-        }
-
-        return {
-            engine: activeEngine,
-            database: activeEngine === 'mysql' ? dbName : 'practice.sqlite',
-            tables: []
-        };
     }
 }
 

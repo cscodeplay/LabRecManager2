@@ -24,16 +24,31 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         return { nodes: [], connectors: [] };
     }
 
-    const rawLines = code.split('\n');
+    // 1. Strip multi-line docstrings ("""...""" or '''...''') and block comments (/*...*/)
+    let sanitizedCode = code
+        .replace(/"""[\s\S]*?"""/g, '')
+        .replace(/'''[\s\S]*?'''/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+
+    const rawLines = sanitizedCode.split('\n');
     const statements = [];
 
     for (let raw of rawLines) {
         if (!raw.trim()) continue;
-        const trimmed = raw.trim();
-        // Skip comments, include directives, braces, function wrappers
-        if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) continue;
+        // Strip inline comments (# comment or // comment)
+        let line = raw.replace(/\s*#.*$/, '').replace(/\s*\/\/.*$/, '');
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Skip headers, comments, decorative lines, imports, and function wrappers
+        if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('--')) continue;
+        if (/^[=\-\*#~]{3,}/.test(trimmed)) continue; // Decorative separator lines (e.g. === or ---)
+        if (/^['"][^'"]*['"]$/.test(trimmed)) continue; // Standalone string literal (e.g. 'Program Header')
+        if (trimmed.startsWith('@')) continue; // Python decorators
         if (trimmed.startsWith('#include') || trimmed.startsWith('import ') || trimmed.startsWith('from ') || trimmed.startsWith('package ') || trimmed.startsWith('using namespace')) continue;
         if (trimmed === '{' || trimmed === '}' || trimmed === 'def main():' || trimmed.includes('int main(') || trimmed.includes('public static void main')) continue;
+        if (/^def\s+[a-zA-Z_]\w*\s*\(.*?\)\s*:/.test(trimmed)) continue; // Function definition header (e.g. def foo(x):)
+        if (/^(?:void|int|float|double|char|bool|public|private|protected|static)\s+[a-zA-Z_]\w*\s*\(.*?\)\s*\{?$/.test(trimmed)) continue; // C/Java function headers
 
         const indent = raw.match(/^\s*/)[0].replace(/\t/g, '    ').length;
         statements.push({ text: trimmed, indent });
@@ -69,12 +84,27 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
     let prevNodeId = startId;
     yCursor += 85;
 
+    const isFunctionCall = (text) => {
+        const clean = text.replace(/^(?:let|var|const|auto|int|float|double|char)\s+/, '').trim();
+        const callMatch = clean.match(/^(?:([a-zA-Z_]\w*)\s*=\s*)?([a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*)\s*\((.*?)\)\s*;?$/);
+        if (!callMatch) return null;
+        const fnName = callMatch[2];
+        const builtins = ['print', 'printf', 'cout', 'input', 'scanf', 'cin', 'int', 'float', 'str', 'bool', 'range', 'len', 'list', 'dict', 'set', 'tuple', 'append', 'pop', 'sort'];
+        if (builtins.includes(fnName)) return null;
+        return {
+            assignedVar: callMatch[1] || null,
+            fnName: fnName,
+            args: callMatch[3] || ''
+        };
+    };
+
     const classify = (text) => {
         if (/\b(input|scanf|cin|Scanner|readline)\b/.test(text)) return 'input';
         if (/\b(print|printf|cout|System\.out\.print|println)\b/.test(text)) return 'output';
         if (text.startsWith('while ') || text.startsWith('while(')) return 'while';
         if (text.startsWith('for ') || text.startsWith('for(')) return 'for';
         if (text.startsWith('if ') || text.startsWith('if(')) return 'if';
+        if (isFunctionCall(text)) return 'call';
         return 'assign';
     };
 
@@ -156,6 +186,38 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 color: '#dbeafe',
                 borderColor: '#2563eb',
                 textColor: '#1e3a8a'
+            });
+
+            if (pendingFalseSource) {
+                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
+                pendingFalseSource = null;
+            } else if (prevNodeId) {
+                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
+            }
+            prevNodeId = nodeId;
+            yCursor += height + 35;
+            idx++;
+        } else if (kind === 'call') {
+            // Function Call (ISO 5807 Predefined Process / Subroutine)
+            const callInfo = isFunctionCall(item.text);
+            const callText = callInfo?.assignedVar
+                ? `${callInfo.assignedVar} = Call ${callInfo.fnName}(${callInfo.args.trim()})`
+                : `Call ${callInfo?.fnName || item.text}(${callInfo?.args?.trim() || ''})`;
+
+            const width = 190;
+            const height = 54;
+            const nodeId = makeId('call');
+            nodes.push({
+                id: nodeId,
+                type: 'predefined_process',
+                text: callText,
+                x: xCenter - width / 2,
+                y: yCursor,
+                width,
+                height,
+                color: '#f5f3ff',
+                borderColor: '#7c3aed',
+                textColor: '#4c1d95'
             });
 
             if (pendingFalseSource) {
@@ -723,4 +785,106 @@ export function generateRelationalErDiagram(schema) {
     });
 
     return { nodes, connectors };
+}
+
+/**
+ * Parses SQL DDL string into structured schema definition for Database Designer.
+ */
+export function parseSqlDdlToSchema(sqlCode = '') {
+    if (!sqlCode || !sqlCode.trim()) return { tables: [] };
+    const tableRegex = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([`"\[]?\w+[`"\]]?)\s*\(([\s\S]*?)\)(?:\s*;|\s*$)/gi;
+    const tables = [];
+    let match;
+
+    while ((match = tableRegex.exec(sqlCode)) !== null) {
+        const rawTableName = match[1].replace(/[`"\[\]]/g, '').trim();
+        const body = match[2];
+
+        const lines = [];
+        let cur = '';
+        let depth = 0;
+        for (let i = 0; i < body.length; i++) {
+            const char = body[i];
+            if (char === '(') depth++;
+            else if (char === ')') depth--;
+            if (char === ',' && depth === 0) {
+                if (cur.trim()) lines.push(cur.trim());
+                cur = '';
+            } else {
+                cur += char;
+            }
+        }
+        if (cur.trim()) lines.push(cur.trim());
+
+        const columns = [];
+        const primaryKeys = [];
+        const foreignKeys = [];
+
+        lines.forEach((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+
+            const pkMatch = trimmed.match(/^PRIMARY\s+KEY\s*\(([^)]+)\)/i);
+            if (pkMatch) {
+                const cols = pkMatch[1].split(',').map((c) => c.replace(/[`"\[\]]/g, '').trim());
+                primaryKeys.push(...cols);
+                return;
+            }
+
+            const fkMatch = trimmed.match(/^FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s*([`"\[]?\w+[`"\]]?)\s*\(([^)]+)\)/i);
+            if (fkMatch) {
+                const fromCol = fkMatch[1].replace(/[`"\[\]]/g, '').trim();
+                const targetTable = fkMatch[2].replace(/[`"\[\]]/g, '').trim();
+                const targetCol = fkMatch[3].replace(/[`"\[\]]/g, '').trim();
+                foreignKeys.push({ column: fromCol, referencedTable: targetTable, referencedColumn: targetCol });
+                return;
+            }
+
+            if (/^(?:CONSTRAINT|CHECK|UNIQUE)\b/i.test(trimmed)) return;
+
+            const colTokens = trimmed.split(/\s+/);
+            const colName = colTokens[0].replace(/[`"\[\]]/g, '');
+            const colType = colTokens[1] || 'TEXT';
+
+            let isPk = /PRIMARY\s+KEY/i.test(trimmed);
+            if (isPk) primaryKeys.push(colName);
+
+            const inlineRef = trimmed.match(/REFERENCES\s+([`"\[]?\w+[`"\]]?)\s*\(([^)]+)\)/i);
+            if (inlineRef) {
+                foreignKeys.push({
+                    column: colName,
+                    referencedTable: inlineRef[1].replace(/[`"\[\]]/g, ''),
+                    referencedColumn: inlineRef[2].replace(/[`"\[\]]/g, '')
+                });
+            }
+
+            columns.push({
+                name: colName,
+                type: colType.toUpperCase(),
+                isPk,
+                nullable: !/NOT\s+NULL/i.test(trimmed)
+            });
+        });
+
+        columns.forEach((c) => {
+            if (primaryKeys.includes(c.name)) c.isPk = true;
+            if (foreignKeys.some(fk => fk.column === c.name)) c.isFk = true;
+        });
+
+        tables.push({
+            name: rawTableName,
+            columns,
+            foreignKeys
+        });
+    }
+
+    return { tables };
+}
+
+/**
+ * Generates Database Designer relational tables with properties inside them directly from SQL DDL.
+ */
+export function generateRelationalErDiagramFromSql(sqlCode = '') {
+    const schema = parseSqlDdlToSchema(sqlCode);
+    return generateRelationalErDiagram(schema);
 }
