@@ -20,7 +20,7 @@ const { generate10BackupCodes, hashBackupCode, normalizeBackupCode } = require('
  */
 router.post('/:id/generate-pin', authenticate, authorize('admin', 'principal', 'instructor'), asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { expiresInHours = 24 } = req.body;
+    const { expiresInHours = 8760 } = req.body; // Default valid for 1 year (8760 hours)
 
     // Find the user
     const user = await prisma.user.findUnique({
@@ -50,16 +50,17 @@ router.post('/:id/generate-pin', authenticate, authorize('admin', 'principal', '
     const salt = await bcrypt.genSalt(10);
     const hashedPin = await bcrypt.hash(pin, salt);
 
-    // Calculate expiry
+    // Calculate expiry (1 year default)
     const pinExpiresAt = new Date();
     pinExpiresAt.setHours(pinExpiresAt.getHours() + expiresInHours);
 
-    // Store hashed PIN
+    // Store hashed PIN and mark mustChangePassword
     await prisma.user.update({
         where: { id },
         data: {
             resetPin: hashedPin,
-            pinExpiresAt
+            pinExpiresAt,
+            mustChangePassword: true
         }
     });
 
@@ -109,41 +110,75 @@ router.post('/reset-with-pin', asyncHandler(async (req, res) => {
         });
     }
 
-    // Find user by email
-    const user = await prisma.user.findUnique({
-        where: { email },
-        select: { id: true, resetPin: true, pinExpiresAt: true, firstName: true }
+    const cleanInput = email.trim();
+    const cleanEmail = cleanInput.toLowerCase();
+
+    // Find user by email, studentId, or admissionNumber
+    const user = await prisma.user.findFirst({
+        where: {
+            OR: [
+                { email: cleanEmail },
+                { studentId: cleanInput },
+                { admissionNumber: cleanInput }
+            ]
+        },
+        select: { id: true, resetPin: true, pinExpiresAt: true, firstName: true, schoolId: true }
     });
 
     if (!user) {
         return res.status(400).json({
             success: false,
-            message: 'Invalid email or PIN'
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid email/ID or PIN'
         });
     }
 
-    // Check if PIN exists
-    if (!user.resetPin || !user.pinExpiresAt) {
-        return res.status(400).json({
-            success: false,
-            message: 'No PIN has been generated for this account. Contact your administrator.'
-        });
+    let isPinValid = false;
+    let usedBackupTurn = null;
+    const cleanPin = pin.trim().replace(/[-\s]/g, '');
+
+    // 1. Check if PIN matches active 6-digit PIN
+    if (user.resetPin && user.pinExpiresAt && new Date() <= new Date(user.pinExpiresAt)) {
+        isPinValid = await bcrypt.compare(cleanPin, user.resetPin);
     }
 
-    // Check if PIN has expired
-    if (new Date() > user.pinExpiresAt) {
-        return res.status(400).json({
-            success: false,
-            message: 'PIN has expired. Please request a new PIN from your administrator.'
-        });
-    }
-
-    // Verify PIN
-    const isPinValid = await bcrypt.compare(pin, user.resetPin);
+    // 2. If not matched, check if user provided an 8-character backup code from their slip
     if (!isPinValid) {
+        const inputHash = hashBackupCode(pin);
+        const backupCodes = await prisma.backupCode.findMany({
+            where: { userId: user.id }
+        });
+        const unusedMatch = backupCodes.find(c => !c.isUsed && c.codeHash === inputHash);
+        const usedMatch = backupCodes.find(c => c.isUsed && c.codeHash === inputHash);
+
+        if (usedMatch) {
+            const formattedDate = usedMatch.usedAt
+                ? new Date(usedMatch.usedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+                : 'a previous session';
+            return res.status(400).json({
+                success: false,
+                code: 'BACKUP_CODE_ALREADY_USED',
+                message: `This backup code (Turn #${usedMatch.turnIndex}) was already used on ${formattedDate}. Please use an unused turn from your paper slip.`
+            });
+        }
+
+        if (unusedMatch) {
+            isPinValid = true;
+            usedBackupTurn = unusedMatch;
+        }
+    }
+
+    if (!isPinValid) {
+        if (!user.resetPin && !usedBackupTurn) {
+            return res.status(400).json({
+                success: false,
+                message: 'No active PIN or backup code found for this account. Contact your administrator.'
+            });
+        }
         return res.status(400).json({
             success: false,
-            message: 'Invalid PIN'
+            code: 'INVALID_CODE',
+            message: 'Invalid PIN or backup code. Please check your paper slip and try again.'
         });
     }
 
@@ -151,21 +186,46 @@ router.post('/reset-with-pin', asyncHandler(async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
 
-    // Update password and clear PIN
-    await prisma.user.update({
-        where: { id: user.id },
-        data: {
-            passwordHash,
-            resetPin: null,
-            pinExpiresAt: null,
-            mustChangePassword: false
+    // Update password, burn backup turn if used, and clear PIN in transaction
+    await prisma.$transaction(async (tx) => {
+        if (usedBackupTurn) {
+            await tx.backupCode.update({
+                where: { id: usedBackupTurn.id },
+                data: { isUsed: true, usedAt: new Date() }
+            });
         }
+
+        await tx.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetPin: null,
+                pinExpiresAt: null,
+                mustChangePassword: false
+            }
+        });
+
+        await tx.activityLog.create({
+            data: {
+                userId: user.id,
+                schoolId: user.schoolId,
+                actionType: 'other',
+                entityType: 'user',
+                entityId: user.id,
+                description: usedBackupTurn
+                    ? `Password reset using Backup Code (Turn #${usedBackupTurn.turnIndex})`
+                    : 'Password reset using PIN'
+            }
+        });
     });
 
     res.json({
         success: true,
         message: 'Password reset successfully. You can now login with your new password.',
-        messageHindi: 'पासवर्ड सफलतापूर्वक रीसेट किया गया। अब आप अपने नए पासवर्ड से लॉगिन कर सकते हैं।'
+        messageHindi: 'पासवर्ड सफलतापूर्वक रीसेट किया गया। अब आप अपने नए पासवर्ड से लॉगिन कर सकते हैं।',
+        data: {
+            usedTurn: usedBackupTurn ? usedBackupTurn.turnIndex : null
+        }
     });
 }));
 
@@ -518,19 +578,68 @@ router.post('/reset-with-backup-code', asyncHandler(async (req, res) => {
         });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanInput = email.trim();
+    const cleanEmail = cleanInput.toLowerCase();
 
-    // Find user
-    const user = await prisma.user.findUnique({
-        where: { email: cleanEmail },
-        select: { id: true, firstName: true, lastName: true, schoolId: true }
+    // Find user by email, studentId, or admissionNumber
+    const user = await prisma.user.findFirst({
+        where: {
+            OR: [
+                { email: cleanEmail },
+                { studentId: cleanInput },
+                { admissionNumber: cleanInput }
+            ]
+        },
+        select: { id: true, firstName: true, lastName: true, schoolId: true, resetPin: true, pinExpiresAt: true }
     });
 
     if (!user) {
         return res.status(400).json({
             success: false,
             code: 'INVALID_CREDENTIALS',
-            message: 'Invalid email or code.'
+            message: 'Invalid email/ID or code.'
+        });
+    }
+
+    const cleanCode = backupCode.trim().replace(/[-\s]/g, '');
+    let isMatchedViaPin = false;
+
+    // Check if user entered their active 6-digit PIN on this form
+    if (user.resetPin && user.pinExpiresAt && new Date() <= new Date(user.pinExpiresAt)) {
+        isMatchedViaPin = await bcrypt.compare(cleanCode, user.resetPin);
+    }
+
+    if (isMatchedViaPin) {
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    passwordHash,
+                    resetPin: null,
+                    pinExpiresAt: null,
+                    mustChangePassword: false
+                }
+            });
+
+            await tx.activityLog.create({
+                data: {
+                    userId: user.id,
+                    schoolId: user.schoolId,
+                    actionType: 'other',
+                    entityType: 'user',
+                    entityId: user.id,
+                    description: 'Password reset using 1st-Time PIN on slip'
+                }
+            });
+        });
+
+        return res.json({
+            success: true,
+            message: 'Password reset successfully using your 1st-time PIN! You can now login with your new password.',
+            messageHindi: 'पासवर्ड सफलतापूर्वक रीसेट किया गया! अब आप अपने नए पासवर्ड से लॉगिन कर सकते हैं।'
         });
     }
 
@@ -544,7 +653,7 @@ router.post('/reset-with-backup-code', asyncHandler(async (req, res) => {
         return res.status(400).json({
             success: false,
             code: 'NO_CODES_GENERATED',
-            message: 'No backup codes have been generated for this account. Please request a paper chip from your lab instructor or administrator.'
+            message: 'No backup codes have been generated for this account. Please request a paper chip from your lab instructor or enter your 6-digit PIN.'
         });
     }
 
@@ -579,7 +688,7 @@ router.post('/reset-with-backup-code', asyncHandler(async (req, res) => {
         return res.status(400).json({
             success: false,
             code: 'INVALID_CODE',
-            message: 'Invalid code. Please check your paper slip and try again.',
+            message: 'Invalid code. Please check your paper slip (PIN or 10-turn backup code) and try again.',
             messageHindi: 'अमान्य कोड। कृपया अपनी पेपर पर्ची जांचें और पुनः प्रयास करें।'
         });
     }
@@ -650,10 +759,17 @@ router.post('/login-with-backup-code', asyncHandler(async (req, res) => {
         });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanInput = email.trim();
+    const cleanEmail = cleanInput.toLowerCase();
 
-    const user = await prisma.user.findUnique({
-        where: { email: cleanEmail },
+    const user = await prisma.user.findFirst({
+        where: {
+            OR: [
+                { email: cleanEmail },
+                { studentId: cleanInput },
+                { admissionNumber: cleanInput }
+            ]
+        },
         include: {
             school: {
                 select: { id: true, name: true, nameHindi: true, primaryLanguage: true }
@@ -665,7 +781,7 @@ router.post('/login-with-backup-code', asyncHandler(async (req, res) => {
         return res.status(401).json({
             success: false,
             code: 'INVALID_CREDENTIALS',
-            message: 'Invalid email or backup code.'
+            message: 'Invalid email/ID or backup code.'
         });
     }
 
@@ -673,6 +789,94 @@ router.post('/login-with-backup-code', asyncHandler(async (req, res) => {
         return res.status(401).json({
             success: false,
             message: 'Account is deactivated. Contact administrator.'
+        });
+    }
+
+    const cleanCode = backupCode.trim().replace(/[-\s]/g, '');
+    let isMatchedViaPin = false;
+
+    // Check if the user entered their 6-digit PIN instead of backup code
+    if (user.resetPin && user.pinExpiresAt && new Date() <= new Date(user.pinExpiresAt)) {
+        isMatchedViaPin = await bcrypt.compare(cleanCode, user.resetPin);
+    }
+
+    if (isMatchedViaPin) {
+        if (!newPassword) {
+            return res.json({
+                success: true,
+                requiresPasswordSetup: true,
+                message: '1st-Time PIN verified! Please set your personal password to continue.',
+                data: {
+                    email: user.email,
+                    firstName: user.firstName,
+                    turnIndex: null,
+                    remainingTurns: 10
+                }
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: 'Password must be at least 6 characters long.'
+            });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        await prisma.$transaction(async (tx) => {
+            await tx.user.update({
+                where: { id: user.id },
+                data: {
+                    passwordHash,
+                    resetPin: null,
+                    pinExpiresAt: null,
+                    mustChangePassword: false,
+                    lastLogin: new Date()
+                }
+            });
+
+            await tx.activityLog.create({
+                data: {
+                    userId: user.id,
+                    schoolId: user.schoolId,
+                    actionType: 'other',
+                    entityType: 'user',
+                    entityId: user.id,
+                    description: 'First-time login completed using 1st-Time PIN on slip'
+                }
+            });
+        });
+
+        const accessToken = jwt.sign(
+            { userId: user.id, role: user.role },
+            jwtConfig.secret,
+            { expiresIn: jwtConfig.expiresIn }
+        );
+        const refreshToken = jwt.sign(
+            { userId: user.id, type: 'refresh' },
+            jwtConfig.secret,
+            { expiresIn: jwtConfig.refreshExpiresIn }
+        );
+
+        return res.json({
+            success: true,
+            message: `Password set successfully! Welcome, ${user.firstName}.`,
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    firstName: user.firstName,
+                    lastName: user.lastName,
+                    schoolId: user.schoolId,
+                    school: user.school
+                },
+                accessToken,
+                refreshToken,
+                remainingTurns: 10
+            }
         });
     }
 
@@ -711,7 +915,7 @@ router.post('/login-with-backup-code', asyncHandler(async (req, res) => {
         return res.status(400).json({
             success: false,
             code: 'INVALID_CODE',
-            message: 'Invalid code. Please check your paper slip and try again.'
+            message: 'Invalid code. Please check your paper slip (PIN or 10-turn backup code) and try again.'
         });
     }
 

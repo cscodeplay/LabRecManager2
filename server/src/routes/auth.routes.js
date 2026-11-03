@@ -92,9 +92,20 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
         });
     }
 
-    // Verify password
-    const isMatch = await bcrypt.compare(password, user.passwordHash);
-    console.log('Password match result:', isMatch);
+    // Verify password or active default/reset PIN
+    let isMatch = await bcrypt.compare(password, user.passwordHash);
+    let matchedViaPin = false;
+
+    // Check if user authenticated using their active 6-digit default PIN
+    if (!isMatch && user.resetPin && user.pinExpiresAt && new Date() <= new Date(user.pinExpiresAt)) {
+        const pinMatch = await bcrypt.compare(password, user.resetPin);
+        if (pinMatch) {
+            isMatch = true;
+            matchedViaPin = true;
+        }
+    }
+
+    console.log('Login attempt for:', email, 'isMatch:', isMatch, 'matchedViaPin:', matchedViaPin);
 
     if (!isMatch) {
         return res.status(401).json({
@@ -107,15 +118,25 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
     // Check if user must set a new password before accessing the application
     // Admins and Principals are strictly exempt from mandatory first-time password setup locks
     const isExemptFromPasswordSetup = ['admin', 'principal'].includes(user.role);
-    if (user.mustChangePassword && !isExemptFromPasswordSetup) {
+    const requiresReset = !isExemptFromPasswordSetup && (
+        user.mustChangePassword ||
+        matchedViaPin ||
+        (user.role === 'student' && user.resetPin)
+    );
+
+    if (requiresReset) {
         return res.status(403).json({
             success: false,
             requiresPasswordSetup: true,
-            message: 'You must set a new password before using the application. Please use your first-time login code.',
+            matchedViaPin,
+            message: matchedViaPin
+                ? 'PIN verified! Please set your personal password before accessing the application.'
+                : 'You must set a new password before using the application. Please use your first-time login code.',
             messageHindi: 'एप्लिकेशन का उपयोग करने से पहले आपको एक नया पासवर्ड सेट करना होगा।',
             data: {
                 email: user.email,
-                firstName: user.firstName
+                firstName: user.firstName,
+                verifiedPin: matchedViaPin ? password : null
             }
         });
     }
@@ -672,13 +693,22 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
     if (!email || !pin) {
         return res.status(400).json({
             success: false,
-            message: 'Email and PIN are required'
+            message: 'Email and code are required'
         });
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-        where: { email },
+    const cleanInput = email.trim();
+    const cleanEmail = cleanInput.toLowerCase();
+
+    // Find user by email, studentId, or admissionNumber
+    const user = await prisma.user.findFirst({
+        where: {
+            OR: [
+                { email: cleanEmail },
+                { studentId: cleanInput },
+                { admissionNumber: cleanInput }
+            ]
+        },
         include: {
             school: {
                 select: { id: true, name: true, nameHindi: true, primaryLanguage: true }
@@ -689,33 +719,51 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
     if (!user) {
         return res.status(401).json({
             success: false,
-            message: 'Invalid email or PIN'
+            message: 'Invalid email/ID or code'
         });
     }
 
-    // Check if PIN exists
-    if (!user.resetPin || !user.pinExpiresAt) {
-        return res.status(400).json({
-            success: false,
-            message: 'No PIN set for this account. Use password to login.',
-            requiresPassword: true
-        });
+    let isCodeValid = false;
+    let usedBackupTurn = null;
+    const cleanPin = pin.trim().replace(/[-\s]/g, '');
+
+    // 1. Check if it matches active 6-digit PIN
+    if (user.resetPin && user.pinExpiresAt && new Date() <= new Date(user.pinExpiresAt)) {
+        isCodeValid = await bcrypt.compare(cleanPin, user.resetPin);
     }
 
-    // Check if PIN expired
-    if (new Date() > user.pinExpiresAt) {
-        return res.status(400).json({
-            success: false,
-            message: 'PIN has expired. Contact administrator for a new PIN.'
+    // 2. If not matched, check if it matches an emergency 10-turn backup code
+    if (!isCodeValid) {
+        const { hashBackupCode } = require('../utils/backupCodeHelper');
+        const inputHash = hashBackupCode(pin);
+        const backupCodes = await prisma.backupCode.findMany({
+            where: { userId: user.id }
         });
+        const unusedMatch = backupCodes.find(c => !c.isUsed && c.codeHash === inputHash);
+        const usedMatch = backupCodes.find(c => c.isUsed && c.codeHash === inputHash);
+
+        if (usedMatch) {
+            const formattedDate = usedMatch.usedAt
+                ? new Date(usedMatch.usedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+                : 'a previous session';
+            return res.status(400).json({
+                success: false,
+                code: 'BACKUP_CODE_ALREADY_USED',
+                message: `This backup code (Turn #${usedMatch.turnIndex}) was already used on ${formattedDate}. Please use an unused turn from your paper slip.`
+            });
+        }
+
+        if (unusedMatch) {
+            isCodeValid = true;
+            usedBackupTurn = unusedMatch;
+        }
     }
 
-    // Verify PIN
-    const isPinValid = await bcrypt.compare(pin, user.resetPin);
-    if (!isPinValid) {
+    if (!isCodeValid) {
         return res.status(401).json({
             success: false,
-            message: 'Invalid PIN'
+            code: 'INVALID_CODE',
+            message: 'Invalid PIN or backup code. Please check your paper slip and try again.'
         });
     }
 
@@ -724,10 +772,13 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
         return res.json({
             success: true,
             requiresPasswordSetup: true,
-            message: 'PIN verified. Please set your password.',
+            message: usedBackupTurn
+                ? `Backup code verified (Turn #${usedBackupTurn.turnIndex}). Please set your password.`
+                : 'PIN verified. Please set your password.',
             data: {
                 email: user.email,
-                firstName: user.firstName
+                firstName: user.firstName,
+                turnIndex: usedBackupTurn ? usedBackupTurn.turnIndex : null
             }
         });
     }
@@ -740,46 +791,41 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
         });
     }
 
-    // Set new password and clear PIN
+    // Set new password, burn backup turn if used, and clear PIN
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(newPassword, salt);
 
-    await prisma.user.update({
-        where: { id: user.id },
-        data: {
-            passwordHash,
-            resetPin: null,
-            pinExpiresAt: null,
-            mustChangePassword: false,
-            lastLogin: new Date()
+    await prisma.$transaction(async (tx) => {
+        if (usedBackupTurn) {
+            await tx.backupCode.update({
+                where: { id: usedBackupTurn.id },
+                data: { isUsed: true, usedAt: new Date() }
+            });
         }
-    });
 
-    // Generate tokens
-    const accessToken = jwt.sign(
-        { userId: user.id, role: user.role },
-        jwtConfig.secret,
-        { expiresIn: jwtConfig.expiresIn }
-    );
+        await tx.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetPin: null,
+                pinExpiresAt: null,
+                mustChangePassword: false,
+                lastLogin: new Date()
+            }
+        });
 
-    const refreshToken = jwt.sign(
-        { userId: user.id, type: 'refresh' },
-        jwtConfig.secret,
-        { expiresIn: jwtConfig.refreshExpiresIn }
-    );
-
-    // Log activity
-    try {
-        await prisma.activityLog.create({
+        await tx.activityLog.create({
             data: {
                 userId: user.id,
                 schoolId: user.schoolId,
                 actionType: 'login',
-                description: 'First-time login with PIN',
+                description: usedBackupTurn
+                    ? `First-time login completed using Backup Code (Turn #${usedBackupTurn.turnIndex})`
+                    : 'First-time login with PIN',
                 ipAddress: req.ip
             }
         });
-    } catch (e) { }
+    });
 
     res.json({
         success: true,

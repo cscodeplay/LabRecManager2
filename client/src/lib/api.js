@@ -34,7 +34,10 @@ api.interceptors.request.use((config) => {
         url.includes('/auth/register') ||
         url.includes('/auth/login-with-pin') ||
         url.includes('/auth/reset-admin-password') ||
-        url.includes('/auth/refresh');
+        url.includes('/auth/refresh') ||
+        url.includes('/pin/reset-') ||
+        url.includes('/pin/login-') ||
+        url.includes('/pin/security-questions/lookup');
 
     if (accessToken && !isPublicAuthEndpoint) {
         config.headers.Authorization = `Bearer ${accessToken}`;
@@ -58,14 +61,17 @@ api.interceptors.response.use(
 
         const url = originalRequest.url || '';
 
-        // NEVER attempt token refresh on auth endpoints (login, register, pin-login, refresh itself, logout)
+        // NEVER attempt token refresh on auth endpoints (login, register, pin-login, refresh itself, logout, pin reset)
         const isAuthEndpoint =
             url.includes('/auth/login') ||
             url.includes('/auth/refresh') ||
             url.includes('/auth/register') ||
             url.includes('/auth/login-with-pin') ||
             url.includes('/auth/reset-admin-password') ||
-            url.includes('/auth/logout');
+            url.includes('/auth/logout') ||
+            url.includes('/pin/reset-') ||
+            url.includes('/pin/login-') ||
+            url.includes('/pin/security-questions/lookup');
 
         if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;

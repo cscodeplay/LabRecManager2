@@ -407,11 +407,11 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
         const pinSalt = await bcrypt.genSalt(10);
         const hashedPin = await bcrypt.hash(generatedPin, pinSalt);
         const pinExpiresAt = new Date();
-        pinExpiresAt.setHours(pinExpiresAt.getHours() + 48); // 48 hour expiry for new students
+        pinExpiresAt.setFullYear(pinExpiresAt.getFullYear() + 1); // Valid for 1 year for lab access
 
         await prisma.user.update({
             where: { id: user.id },
-            data: { resetPin: hashedPin, pinExpiresAt }
+            data: { resetPin: hashedPin, pinExpiresAt, mustChangePassword: true }
         });
     }
 
@@ -434,7 +434,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
         messageHindi: 'उपयोगकर्ता सफलतापूर्वक बनाया गया',
         data: {
             user,
-            ...(generatedPin && { loginPin: generatedPin, pinExpiresIn: '48 hours' })
+            ...(generatedPin && { loginPin: generatedPin, pinExpiresIn: '1 year' })
         }
     });
 }));
@@ -522,7 +522,8 @@ router.post('/bulk', authenticate, authorize('admin', 'principal'), asyncHandler
                     studentId: userData.studentId || userData.admissionNumber,
                     employeeId: userData.employeeId,
                     gender: userData.gender || 'male',
-                    preferredLanguage: userData.preferredLanguage || 'en'
+                    preferredLanguage: userData.preferredLanguage || 'en',
+                    mustChangePassword: (userData.role || 'student') === 'student'
                 },
                 select: {
                     id: true,

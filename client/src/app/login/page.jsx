@@ -269,9 +269,20 @@ export default function LoginPage() {
                 return;
             }
             if (error.response?.data?.requiresPasswordSetup) {
-                toast.error(error.response.data.message || 'You must set a new password before accessing the application.');
+                const resData = error.response.data;
+                toast.error(resData.message || 'You must set a new password before accessing the application.');
                 setLoginMode('pin');
                 if (data.email) setPinEmail(data.email);
+                const enteredPass = data.password ? data.password.trim() : '';
+                const verifiedPin = resData.data?.verifiedPin;
+                if (resData.matchedViaPin || verifiedPin) {
+                    setPinValue(verifiedPin || enteredPass);
+                    setPinVerified(true);
+                    setFirstName(resData.data?.firstName || 'Student');
+                    toast.success('Default PIN verified! Please set your personal password.');
+                } else if (/^\d{6}$/.test(enteredPass)) {
+                    setPinValue(enteredPass);
+                }
                 return;
             }
             toast.error(error.response?.data?.message || 'Login failed');

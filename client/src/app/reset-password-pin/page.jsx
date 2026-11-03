@@ -114,10 +114,11 @@ export default function ResetPasswordPinPage() {
             }
         }
 
-        // --- METHOD 2: Teacher PIN ---
+        // --- METHOD 2: Teacher / 1st-Time PIN ---
         else if (resetMode === 'pin') {
-            if (formData.pin.length !== 6) {
-                toast.error('PIN must be 6 digits');
+            const cleanPin = formData.pin.trim().replace(/[-\s]/g, '');
+            if (cleanPin.length < 6) {
+                toast.error('Please enter a valid 6-digit PIN or backup code');
                 return;
             }
 
@@ -129,12 +130,20 @@ export default function ResetPasswordPinPage() {
                     newPassword: formData.newPassword
                 });
 
+                setResultData(response.data);
                 toast.success(response.data.message || 'Password reset successfully!');
                 setTimeout(() => {
                     router.push('/login');
                 }, 2000);
             } catch (error) {
-                toast.error(error.response?.data?.message || 'Failed to reset password with PIN');
+                const errData = error.response?.data;
+                if (errData?.code === 'BACKUP_CODE_ALREADY_USED') {
+                    setUsedCodeAlert(errData);
+                } else if (errData?.code === 'INVALID_CODE') {
+                    setInvalidCodeAlert(errData.message || 'Invalid code. Please check your paper slip and try again.');
+                } else {
+                    toast.error(errData?.message || 'Failed to reset password with PIN');
+                }
             } finally {
                 setLoading(false);
             }
