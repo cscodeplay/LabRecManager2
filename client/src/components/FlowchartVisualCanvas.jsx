@@ -34,7 +34,9 @@ import {
     Cpu,
     FileCode2,
     X,
-    AlertTriangle
+    AlertTriangle,
+    ChevronDown,
+    ChevronUp
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { generateFlowchartFromCode, generateErDiagramFromSql } from '@/lib/traditionalGenerators';
@@ -137,127 +139,49 @@ const DEFAULT_INITIAL_FLOWCHART_CONNECTORS = [
     { id: 'conn_7', from: 'node_output', fromPort: 'bottom', to: 'node_end', toPort: 'top', label: '' }
 ];
 
-// 2. Initial Starter ER Diagram Nodes & Connectors (For SQL / PL/SQL Schema Design)
-const DEFAULT_INITIAL_ER_NODES = [
+// 2. Initial Starter ER Diagram Nodes & Connectors - Removed to start completely clean (Zero Templates for ER)
+const DEFAULT_INITIAL_ER_NODES = [];
+const DEFAULT_INITIAL_ER_CONNECTORS = [];
+
+// Categorized ER and Flowchart shape palettes for collapsible grouped styling
+const ER_SHAPES = [
     {
-        id: 'node_er_student',
-        type: 'er_entity',
-        text: 'STUDENT',
-        x: 120,
-        y: 150,
-        width: 140,
-        height: 54,
-        color: '#e0f2fe',
-        borderColor: '#0284c7',
-        textColor: '#0369a1'
+        category: 'Entities',
+        items: [
+            { id: 'er_entity', label: 'Strong Entity', title: 'Add Strong Entity (Rectangle)', icon: <span className="w-3 h-2 bg-sky-500 rounded-2xs inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
+            { id: 'er_weak_entity', label: 'Weak Entity', title: 'Add Weak Entity (Double Rectangle)', icon: <span className="w-3 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />, color: 'bg-cyan-50 border-cyan-300 text-cyan-800' },
+            { id: 'er_table', label: 'Table Schema Card', title: 'Add Relational Table Schema Card', icon: <Table className="w-3 h-3 text-slate-600" />, color: 'bg-slate-100 border-slate-300 text-slate-800' }
+        ]
     },
     {
-        id: 'node_er_roll',
-        type: 'er_key_attribute',
-        text: 'roll_no',
-        x: 35,
-        y: 40,
-        width: 110,
-        height: 44,
-        color: '#fef3c7',
-        borderColor: '#d97706',
-        textColor: '#78350f'
+        category: 'Relationships',
+        items: [
+            { id: 'er_relationship', label: 'Relationship', title: 'Add Relationship (Diamond)', icon: <span className="w-2.5 h-2.5 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
+            { id: 'er_weak_relationship', label: 'Identifying Rel.', title: 'Add Identifying Relationship (Double Diamond)', icon: <span className="w-2.5 h-2.5 border border-orange-600 bg-orange-300 rotate-45 inline-block" />, color: 'bg-orange-50 border-orange-300 text-orange-800' }
+        ]
     },
     {
-        id: 'node_er_name',
-        type: 'er_attribute',
-        text: 'name',
-        x: 180,
-        y: 40,
-        width: 110,
-        height: 44,
-        color: '#f0fdf4',
-        borderColor: '#16a34a',
-        textColor: '#15803d'
-    },
-    {
-        id: 'node_er_email',
-        type: 'er_attribute',
-        text: 'email',
-        x: 35,
-        y: 260,
-        width: 110,
-        height: 44,
-        color: '#f0fdf4',
-        borderColor: '#16a34a',
-        textColor: '#15803d'
-    },
-    {
-        id: 'node_er_enrolls',
-        type: 'er_relationship',
-        text: 'ENROLLS',
-        x: 330,
-        y: 145,
-        width: 130,
-        height: 64,
-        color: '#fef9c3',
-        borderColor: '#ca8a04',
-        textColor: '#854d0e'
-    },
-    {
-        id: 'node_er_course',
-        type: 'er_entity',
-        text: 'COURSE',
-        x: 530,
-        y: 150,
-        width: 140,
-        height: 54,
-        color: '#e0f2fe',
-        borderColor: '#0284c7',
-        textColor: '#0369a1'
-    },
-    {
-        id: 'node_er_cid',
-        type: 'er_key_attribute',
-        text: 'course_id',
-        x: 485,
-        y: 40,
-        width: 115,
-        height: 44,
-        color: '#fef3c7',
-        borderColor: '#d97706',
-        textColor: '#78350f'
-    },
-    {
-        id: 'node_er_cname',
-        type: 'er_attribute',
-        text: 'title',
-        x: 630,
-        y: 40,
-        width: 110,
-        height: 44,
-        color: '#f0fdf4',
-        borderColor: '#16a34a',
-        textColor: '#15803d'
-    },
-    {
-        id: 'node_er_credits',
-        type: 'er_attribute',
-        text: 'credits',
-        x: 570,
-        y: 260,
-        width: 110,
-        height: 44,
-        color: '#f0fdf4',
-        borderColor: '#16a34a',
-        textColor: '#15803d'
+        category: 'Attributes',
+        items: [
+            { id: 'er_attribute', label: 'Attribute', title: 'Add Regular Attribute (Oval)', icon: <span className="w-3 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
+            { id: 'er_key_attribute', label: 'Key (PK)', title: 'Add Primary Key Attribute (Underlined + 🔑 Key)', icon: <Key className="w-3 h-3 text-amber-600" />, color: 'bg-yellow-50 border-yellow-400 text-yellow-900' },
+            { id: 'er_multivalued', label: 'Multivalued', title: 'Add Multivalued Attribute (Double Oval)', icon: <span className="w-3 h-1.5 rounded-full border border-purple-600 bg-purple-200 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' },
+            { id: 'er_derived', label: 'Derived', title: 'Add Derived Attribute (Dashed Oval)', icon: <span className="w-3 h-1.5 rounded-full border border-dashed border-fuchsia-600 inline-block" />, color: 'bg-fuchsia-50 border-fuchsia-300 text-fuchsia-800' }
+        ]
     }
 ];
 
-const DEFAULT_INITIAL_ER_CONNECTORS = [
-    { id: 'er_conn_1', from: 'node_er_student', fromPort: 'top', to: 'node_er_roll', toPort: 'bottom', label: '' },
-    { id: 'er_conn_2', from: 'node_er_student', fromPort: 'top', to: 'node_er_name', toPort: 'bottom', label: '' },
-    { id: 'er_conn_3', from: 'node_er_student', fromPort: 'bottom', to: 'node_er_email', toPort: 'top', label: '' },
-    { id: 'er_conn_4', from: 'node_er_student', fromPort: 'right', to: 'node_er_enrolls', toPort: 'left', label: 'M' },
-    { id: 'er_conn_5', from: 'node_er_enrolls', fromPort: 'right', to: 'node_er_course', toPort: 'left', label: 'N' },
-    { id: 'er_conn_6', from: 'node_er_course', fromPort: 'top', to: 'node_er_cid', toPort: 'bottom', label: '' },
-    { id: 'er_conn_7', from: 'node_er_course', fromPort: 'top', to: 'node_er_cname', toPort: 'bottom', label: '' },
-    { id: 'er_conn_8', from: 'node_er_course', fromPort: 'bottom', to: 'node_er_credits', toPort: 'top', label: '' }
+const FLOWCHART_SHAPES = [
+    {
+        category: 'Flowchart Shapes',
+        items: [
+            { id: 'terminator', label: 'Start / End', title: 'Start/End Oval Terminator', icon: <span className="w-3 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
+            { id: 'io', label: 'Input / Output', title: 'Input/Output Parallelogram', icon: <span className="w-3 h-2 bg-sky-500 skew-x-12 inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
+            { id: 'process', label: 'Process / Action', title: 'Calculation/Assignment Rectangle', icon: <span className="w-3 h-2 bg-slate-400 rounded-2xs inline-block" />, color: 'bg-white border-slate-300 text-slate-800' },
+            { id: 'decision', label: 'Decision (If)', title: 'Decision Condition Diamond', icon: <span className="w-2.5 h-2.5 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
+            { id: 'loop', label: 'Loop (Hexagon)', title: 'Loop Iteration Hexagon', icon: <span className="w-3 h-2 bg-purple-500 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' }
+        ]
+    }
 ];
 
 const PORTS = ['top', 'right', 'bottom', 'left'];
@@ -339,6 +263,34 @@ export default function FlowchartVisualCanvas({
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const isLocalUpdateRef = useRef(false);
+
+    // Fullscreen Overlay Mode & Collapsible Shapes Palette
+    const [isFullScreen, setIsFullScreen] = useState(false);
+    const [showShapesDropdown, setShowShapesDropdown] = useState(false);
+    const [isShapesExpanded, setIsShapesExpanded] = useState(false);
+    const shapesDropdownRef = useRef(null);
+
+    // Escape key listener for exiting Fullscreen
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && isFullScreen) {
+                setIsFullScreen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isFullScreen]);
+
+    // Outside click listener for closing Shapes Dropdown
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (shapesDropdownRef.current && !shapesDropdownRef.current.contains(e.target)) {
+                setShowShapesDropdown(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const isLight = theme === 'light';
 
@@ -1086,17 +1038,17 @@ export default function FlowchartVisualCanvas({
         toast.success('Canvas cleared');
     };
 
-    // Reset to Starter Templates
+    // Reset to Starter Templates (Flowchart only; ER designer has zero templates)
     const handleResetToTemplate = () => {
-        if (readOnly) return;
-        const starterNodes = isErMode ? DEFAULT_INITIAL_ER_NODES : DEFAULT_INITIAL_FLOWCHART_NODES;
-        const starterConns = isErMode ? DEFAULT_INITIAL_ER_CONNECTORS : DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
+        if (readOnly || isErMode) return;
+        const starterNodes = DEFAULT_INITIAL_FLOWCHART_NODES;
+        const starterConns = DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
         setNodes(starterNodes);
         setConnectors(starterConns);
         setSelectedNodeId(null);
         setSelectedConnectorId(null);
         notifyChange(starterNodes, starterConns);
-        toast.success(`Reset to standard ${isErMode ? 'ER model' : 'flowchart'} template`);
+        toast.success('Reset to standard flowchart template');
     };
 
     // ========================================================================
@@ -1401,15 +1353,17 @@ export default function FlowchartVisualCanvas({
     return (
         <div
             ref={containerRef}
-            className={`w-full max-w-full h-full flex flex-col relative select-none overflow-hidden min-w-0 ${
-                isLight ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'
+            className={`select-none transition-all duration-200 ${
+                isFullScreen
+                    ? `fixed inset-0 z-50 w-screen h-screen flex flex-col overflow-hidden shadow-2xl ${isLight ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'}`
+                    : `w-full max-w-full h-full flex flex-col relative overflow-hidden min-w-0 ${isLight ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'}`
             }`}
             onPointerMove={handleCanvasPointerMove}
             onPointerUp={handleCanvasPointerUp}
         >
-            {/* Top Interactive Toolbar (Single-row scrollable on mobile) */}
+            {/* Top Interactive Toolbar (Collapsible & Grouped Style) */}
             <div
-                className={`px-2 sm:px-3 py-1.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 z-10 flex-shrink-0 overflow-x-auto no-scrollbar whitespace-nowrap ${
+                className={`px-2 sm:px-3 py-1.5 border-b flex items-center justify-between gap-1.5 sm:gap-2 z-30 flex-shrink-0 overflow-visible whitespace-nowrap ${
                     isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
                 }`}
             >
@@ -1443,7 +1397,7 @@ export default function FlowchartVisualCanvas({
                         )}
                     </div>
 
-                    {/* Pointer / Connector Selectors */}
+                    {/* Pointer / Navigation Tools (Segmented Control) */}
                     <div
                         className={`flex items-center rounded-lg p-0.5 border shrink-0 ${
                             isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
@@ -1467,7 +1421,7 @@ export default function FlowchartVisualCanvas({
                             title="Pointer / Select Tool (V)"
                         >
                             <MousePointer className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Select</span>
+                            <span className="hidden md:inline">Select</span>
                         </button>
 
                         <button
@@ -1487,7 +1441,7 @@ export default function FlowchartVisualCanvas({
                             title="Hand / Pan Tool (H): Click and drag canvas to navigate"
                         >
                             <Hand className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Hand</span>
+                            <span className="hidden md:inline">Hand</span>
                         </button>
 
                         <button
@@ -1506,57 +1460,94 @@ export default function FlowchartVisualCanvas({
                             title="Connector Tool: Click shape hooks to link with directed arrows"
                         >
                             <ArrowRight className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Connector</span>
-                            <span className="sm:hidden inline">Link</span>
+                            <span className="hidden md:inline">Connector</span>
+                            <span className="md:hidden inline">Link</span>
                         </button>
                     </div>
 
-                    <div className={`h-4 w-px mx-0.5 hidden sm:block ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
+                    <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                    {/* ER DIAGRAM SHAPE PALETTE (Active when in SQL / PL-SQL) */}
-                    {isErMode && (
-                        <div className="flex flex-wrap items-center gap-1">
-                            {[
-                                { id: 'er_entity', label: 'Entity', title: 'Add Strong Entity (Rectangle)', icon: <span className="w-2.5 h-2 bg-sky-500 rounded-2xs inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
-                                { id: 'er_weak_entity', label: 'Weak Ent.', title: 'Add Weak Entity (Double Rectangle)', icon: <span className="w-2.5 h-2 border-2 border-cyan-600 bg-cyan-200 rounded-2xs inline-block" />, color: 'bg-cyan-50 border-cyan-300 text-cyan-800' },
-                                { id: 'er_relationship', label: 'Relationship', title: 'Add Relationship (Diamond)', icon: <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
-                                { id: 'er_weak_relationship', label: 'Ident. Rel.', title: 'Add Identifying Relationship (Double Diamond)', icon: <span className="w-2 h-2 border border-orange-600 bg-orange-300 rotate-45 inline-block" />, color: 'bg-orange-50 border-orange-300 text-orange-800' },
-                                { id: 'er_attribute', label: 'Attribute', title: 'Add Regular Attribute (Oval)', icon: <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
-                                { id: 'er_key_attribute', label: 'Key (PK)', title: 'Add Primary Key Attribute (Underlined + 🔑 Key)', icon: <Key className="w-3 h-3 text-amber-600" />, color: 'bg-yellow-50 border-yellow-400 text-yellow-900' },
-                                { id: 'er_multivalued', label: 'Multivalued', title: 'Add Multivalued Attribute (Double Oval)', icon: <span className="w-2.5 h-1.5 rounded-full border border-purple-600 bg-purple-200 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' },
-                                { id: 'er_derived', label: 'Derived', title: 'Add Derived Attribute (Dashed Oval)', icon: <span className="w-2.5 h-1.5 rounded-full border border-dashed border-fuchsia-600 inline-block" />, color: 'bg-fuchsia-50 border-fuchsia-300 text-fuchsia-800' },
-                                { id: 'er_table', label: 'Table Card', title: 'Add Relational Table Schema Card', icon: <Table className="w-3 h-3 text-slate-600" />, color: 'bg-slate-100 border-slate-300 text-slate-800' }
-                            ].map((s) => {
-                                const isShapeActive = pendingShapeType === s.id;
-                                return (
+                    {/* COLLAPSIBLE SHAPES SELECTOR (Grouped Dropdown + Expandable Ribbon) */}
+                    <div className="relative" ref={shapesDropdownRef}>
+                        <button
+                            onClick={() => setShowShapesDropdown(!showShapesDropdown)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-xs ${
+                                pendingShapeType
+                                    ? 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-400/40'
+                                    : showShapesDropdown
+                                    ? isLight ? 'bg-slate-200 border-slate-400 text-slate-900' : 'bg-slate-800 border-slate-600 text-white'
+                                    : isLight ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                            }`}
+                            title="Choose Shape from Palette (Click to open collapsible shape picker)"
+                        >
+                            <Shapes className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>
+                                {pendingShapeType
+                                    ? `Place: ${pendingShapeType.replace('er_', '').replace(/_/g, ' ').toUpperCase()}`
+                                    : (isErMode ? 'ER Shapes' : 'Flow Shapes')}
+                            </span>
+                            <ChevronDown className="w-3 h-3 text-slate-400" />
+                        </button>
+
+                        {/* Collapsible Dropdown Palette */}
+                        {showShapesDropdown && (
+                            <div className={`absolute left-0 top-full mt-1.5 w-72 p-2 rounded-xl shadow-2xl border z-50 animate-in fade-in slide-in-from-top-1 text-xs select-none max-h-96 overflow-y-auto ${
+                                isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-200'
+                            }`}>
+                                {(isErMode ? ER_SHAPES : FLOWCHART_SHAPES).map((cat, cIdx) => (
+                                    <div key={cIdx} className={cIdx > 0 ? 'mt-2 pt-2 border-t border-slate-200 dark:border-slate-800' : ''}>
+                                        <p className="text-[10px] uppercase font-bold text-slate-400 px-1 mb-1">
+                                            {cat.category}
+                                        </p>
+                                        <div className="grid grid-cols-1 gap-1">
+                                            {cat.items.map((s) => {
+                                                const isShapeActive = pendingShapeType === s.id;
+                                                return (
+                                                    <button
+                                                        key={s.id}
+                                                        onClick={() => {
+                                                            handleSelectShapeToPlace(s.id);
+                                                            setShowShapesDropdown(false);
+                                                        }}
+                                                        className={`w-full text-left px-2 py-1.5 rounded-lg border text-xs font-semibold transition cursor-pointer flex items-center justify-between shadow-2xs ${
+                                                            isShapeActive
+                                                                ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900 border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200'
+                                                                : `${s.color} hover:opacity-90`
+                                                        }`}
+                                                        title={`${s.title} (Select then click canvas)`}
+                                                    >
+                                                        <span className="flex items-center gap-2">
+                                                            {s.icon}
+                                                            <span>{s.label}</span>
+                                                        </span>
+                                                        {isShapeActive && <Check className="w-3 h-3 text-indigo-600" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400 px-1">
+                                    <span>Tip: Click canvas to place</span>
                                     <button
-                                        key={s.id}
-                                        onClick={() => handleSelectShapeToPlace(s.id)}
-                                        className={`px-2 py-1 rounded border text-xs font-semibold transition cursor-pointer flex items-center gap-1 shadow-xs ${
-                                            isShapeActive
-                                                ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900 border-indigo-400 dark:bg-indigo-950 dark:text-indigo-200'
-                                                : `${s.color} hover:opacity-90`
-                                        }`}
-                                        title={`${s.title} (Click then click canvas)`}
+                                        onClick={() => {
+                                            setIsShapesExpanded(!isShapesExpanded);
+                                            setShowShapesDropdown(false);
+                                        }}
+                                        className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold"
                                     >
-                                        {s.icon}
-                                        <span>{s.label}</span>
+                                        {isShapesExpanded ? 'Collapse Ribbon' : 'Expand Ribbon'}
                                     </button>
-                                );
-                            })}
-                        </div>
-                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
-                    {/* FLOWCHART SHAPE PALETTE (Active when in Python / C / C++ / Java) */}
-                    {!isErMode && (
-                        <div className="flex flex-wrap items-center gap-1">
-                            {[
-                                { id: 'terminator', label: 'Oval', title: 'Start/End Oval Terminator', icon: <span className="w-2.5 h-1.5 rounded-full bg-emerald-500 inline-block" />, color: 'bg-emerald-50 border-emerald-300 text-emerald-800' },
-                                { id: 'io', label: 'Parallelogram', title: 'Input/Output Parallelogram', icon: <span className="w-2.5 h-2 bg-sky-500 skew-x-12 inline-block" />, color: 'bg-sky-50 border-sky-300 text-sky-800' },
-                                { id: 'process', label: 'Rectangle', title: 'Calculation/Assignment Rectangle', icon: <span className="w-2.5 h-2 bg-slate-400 rounded-2xs inline-block" />, color: 'bg-white border-slate-300 text-slate-800' },
-                                { id: 'decision', label: 'Diamond', title: 'Decision Condition Diamond', icon: <span className="w-2 h-2 bg-amber-500 rotate-45 inline-block" />, color: 'bg-amber-50 border-amber-300 text-amber-800' },
-                                { id: 'loop', label: 'Hexagon', title: 'Loop Iteration Hexagon', icon: <span className="w-2.5 h-2 bg-purple-500 inline-block" />, color: 'bg-purple-50 border-purple-300 text-purple-800' }
-                            ].map((s) => {
+                    {/* Optional Expanded Shapes Ribbon (When user toggles Expand Ribbon) */}
+                    {isShapesExpanded && (
+                        <div className="hidden lg:flex items-center gap-1 pl-1">
+                            {(isErMode ? ER_SHAPES.flatMap(c => c.items) : FLOWCHART_SHAPES.flatMap(c => c.items)).map((s) => {
                                 const isShapeActive = pendingShapeType === s.id;
                                 return (
                                     <button
@@ -1578,7 +1569,7 @@ export default function FlowchartVisualCanvas({
                     )}
                 </div>
 
-                {/* Right: Traditional Generator, DDL, Export & Clear */}
+                {/* Right: Actions, Fullscreen & Controls */}
                 <div className="flex items-center gap-1 sm:gap-1.5 text-xs shrink-0">
                     {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) */}
                     <button
@@ -1587,31 +1578,35 @@ export default function FlowchartVisualCanvas({
                         title={`Generate ${isErMode ? 'ER Diagram' : 'Flowchart'} automatically from editor code using static parser (Traditional rule-based, 100% offline, 0 AI calls)`}
                     >
                         <Cpu className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                        <span className="hidden sm:inline">Generate from Code (No AI)</span>
-                        <span className="sm:hidden inline">Generate</span>
+                        <span className="hidden md:inline">Generate from Code (No AI)</span>
+                        <span className="md:hidden inline">Generate</span>
                     </button>
 
-                    {/* Export Dropdown */}
+                    {/* Export PNG */}
                     <button
                         onClick={() => handleExportCanvas('png')}
                         className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
                         title="Download as PNG Image"
                     >
                         <Download className="w-3.5 h-3.5 shrink-0" />
-                        <span className="hidden sm:inline">Export PNG</span>
-                        <span className="sm:hidden inline">PNG</span>
+                        <span className="hidden md:inline">Export PNG</span>
+                        <span className="md:hidden inline">PNG</span>
                     </button>
 
-                    <button
-                        onClick={handleResetToTemplate}
-                        className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
-                            isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-100' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
-                        }`}
-                        title="Load Starter Template Example"
-                    >
-                        <Layers className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Starter Template - ONLY for Flowchart mode (ZERO templates for ER mode) */}
+                    {!isErMode && (
+                        <button
+                            onClick={handleResetToTemplate}
+                            className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
+                                isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-100' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
+                            }`}
+                            title="Load Starter Flowchart Example"
+                        >
+                            <Layers className="w-3.5 h-3.5" />
+                        </button>
+                    )}
 
+                    {/* Clear Canvas */}
                     <button
                         onClick={handleClearCanvas}
                         className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
@@ -1620,6 +1615,34 @@ export default function FlowchartVisualCanvas({
                         title="Clear Canvas"
                     >
                         <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
+
+                    {/* FULLSCREEN OVERLAY TOGGLE BUTTON */}
+                    <button
+                        onClick={() => setIsFullScreen(!isFullScreen)}
+                        className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                            isFullScreen
+                                ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400/40'
+                                : isLight
+                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
+                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
+                        }`}
+                        title={isFullScreen ? 'Exit Fullscreen Overlay (Esc)' : 'Expand Designer to Fullscreen Overlay'}
+                        aria-label="Toggle Fullscreen"
+                    >
+                        {isFullScreen ? (
+                            <>
+                                <Minimize2 className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Exit Fullscreen</span>
+                            </>
+                        ) : (
+                            <>
+                                <Maximize2 className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Fullscreen</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
@@ -1733,6 +1756,13 @@ export default function FlowchartVisualCanvas({
                         title="Reset Canvas View (Recenter)"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={() => setIsFullScreen(!isFullScreen)}
+                        className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-800 transition border-l border-slate-200 dark:border-slate-700 cursor-pointer"
+                        title={isFullScreen ? 'Exit Fullscreen Overlay (Esc)' : 'Expand Designer to Fullscreen Overlay'}
+                    >
+                        {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-indigo-500" /> : <Maximize2 className="w-3.5 h-3.5" />}
                     </button>
                 </div>
 

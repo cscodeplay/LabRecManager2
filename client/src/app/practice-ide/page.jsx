@@ -46,7 +46,14 @@ import {
     X,
     UserCheck,
     AlertTriangle,
-    Workflow
+    Workflow,
+    Undo2,
+    Redo2,
+    Search,
+    Maximize2,
+    Minimize2,
+    WrapText,
+    ListOrdered
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/lib/store';
@@ -135,6 +142,27 @@ const STARTER_CODES = {
     java: `// Java Practice Program\nimport java.util.Scanner;\n\npublic class Solution {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        System.out.print("Enter positive number N: ");\n        if (!sc.hasNextInt()) return;\n        int n = sc.nextInt();\n\n        int totalSum = 0;\n        long factorial = 1;\n\n        for (int i = 1; i <= n; i++) {\n            totalSum += i;\n            factorial *= i;\n        }\n\n        System.out.println("Sum of 1 to " + n + " is: " + totalSum);\n        System.out.println("Factorial of " + n + " is: " + factorial);\n    }\n}\n`,
     sql: `-- SQL Practice Script\n-- Tables created here are stored permanently in your personal database!\n\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    department TEXT\n);\n\nINSERT OR IGNORE INTO students VALUES \n(101, 'Aarav Sharma', 'Computer Science'),\n(102, 'Priya Patel', 'Data Science');\n\nSELECT * FROM students;\n`,
     plsql: `-- PL/SQL Procedural Script\n-- Declare, Begin, and Exception handling block\n\nDECLARE\n    v_student_count INTEGER;\nBEGIN\n    SELECT COUNT(*) INTO v_student_count FROM students;\n    DBMS_OUTPUT.PUT_LINE('Total enrolled students: ' || v_student_count);\nEND;\n/`
+};
+
+const CODE_SNIPPETS = {
+    python: [
+        { label: 'For Loop (Range)', code: 'for i in range(1, 11):\n    print(f"Number: {i}")' },
+        { label: 'While Loop', code: 'count = 0\nwhile count < 5:\n    print("Iteration:", count)\n    count += 1' },
+        { label: 'If - Elif - Else', code: 'score = 85\nif score >= 90:\n    print("Grade A")\nelif score >= 75:\n    print("Grade B")\nelse:\n    print("Grade C")' },
+        { label: 'Function Definition', code: 'def calculate_area(length, width):\n    """Calculates rectangular area"""\n    return length * width' },
+        { label: 'Try - Except Handling', code: 'try:\n    val = int(input("Enter number: "))\n    print("Result:", 100 / val)\nexcept ZeroDivisionError:\n    print("Cannot divide by zero")\nexcept ValueError:\n    print("Invalid numeric input")' },
+        { label: 'File Context (with open)', code: 'with open("output.txt", "w") as f:\n    f.write("Lab Practice Entry\\n")' },
+        { label: 'List Comprehension', code: 'even_squares = [x**2 for x in range(1, 11) if x % 2 == 0]\nprint(even_squares)' }
+    ],
+    sql: [
+        { label: 'SELECT with WHERE', code: 'SELECT id, name, department\nFROM students\nWHERE department = \'Computer Science\'\nORDER BY name ASC;' },
+        { label: 'CREATE TABLE (PK & Constraints)', code: 'CREATE TABLE students (\n    id INTEGER PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    email VARCHAR(100) UNIQUE,\n    marks DECIMAL(5, 2) DEFAULT 0.0\n);' },
+        { label: 'INSERT INTO', code: 'INSERT INTO students (id, name, email, marks)\nVALUES (101, \'Aarav Sharma\', \'aarav@school.edu\', 88.5);' },
+        { label: 'INNER JOIN Query', code: 'SELECT s.id, s.name, e.course_name, e.grade\nFROM students s\nINNER JOIN enrollments e ON s.id = e.student_id;' },
+        { label: 'GROUP BY & HAVING', code: 'SELECT department, COUNT(*) AS student_count, AVG(marks) AS avg_marks\nFROM students\nGROUP BY department\nHAVING COUNT(*) >= 2;' },
+        { label: 'UPDATE Records', code: 'UPDATE students\nSET marks = marks + 5\nWHERE department = \'Computer Science\';' },
+        { label: 'DELETE Records', code: 'DELETE FROM students\nWHERE marks < 35.0;' }
+    ]
 };
 
 const isDatabaseLanguage = (lang) => lang === 'sql' || lang === 'plsql';
@@ -328,6 +356,25 @@ function PracticeIDEPage() {
     const [showFeedbackDrawer, setShowFeedbackDrawer] = useState(false);
     const [latestStudentReview, setLatestStudentReview] = useState(null);
 
+    // Major Code Editor Features
+    const [isWordWrapOn, setIsWordWrapOn] = useState(true);
+    const [isLineNumbersOn, setIsLineNumbersOn] = useState(true);
+    const [isMinimapOn, setIsMinimapOn] = useState(false);
+    const [isEditorMaximized, setIsEditorMaximized] = useState(false);
+    const [showSnippetsMenu, setShowSnippetsMenu] = useState(false);
+    const snippetsMenuRef = useRef(null);
+
+    // Close snippets menu on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (snippetsMenuRef.current && !snippetsMenuRef.current.contains(e.target)) {
+                setShowSnippetsMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     const editorRef = useRef(null);
 
     // Fetch initial SQL engine configuration
@@ -496,6 +543,82 @@ function PracticeIDEPage() {
         return () => { isMounted = false; };
     }, [urlDocId]);
 
+    // Auto-save Program to Appropriate Documents Folder (Documents / Python or Documents / SQL)
+    const saveProgramToAppropriateFolder = useCallback(
+        async (tabToSave) => {
+            if (!tabToSave || inspectingStudentId) return null;
+            const isSql = isDatabaseLanguage(tabToSave.language);
+            const targetFolderName = isSql ? 'SQL' : 'Python';
+            const ext = isSql ? '.sql' : '.py';
+            let fileName = tabToSave.filename || `program 1${ext}`;
+            if (!fileName.toLowerCase().endsWith(ext)) {
+                fileName = `${fileName}${ext}`;
+            }
+
+            try {
+                // 1. Resolve or Create Folder in Documents
+                const foldersRes = await foldersAPI.getAll();
+                const rawFolders = foldersRes.data?.data;
+                const foldersList = Array.isArray(rawFolders)
+                    ? rawFolders
+                    : Array.isArray(rawFolders?.folders)
+                    ? rawFolders.folders
+                    : [];
+                let targetFolder = foldersList.find(
+                    (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
+                );
+
+                if (!targetFolder) {
+                    const createFolderRes = await foldersAPI.create({
+                        name: targetFolderName,
+                        color: isSql ? '#0284c7' : '#f59e0b'
+                    });
+                    targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+                }
+
+                // 2. Upload file to Documents
+                const fileBlob = new Blob([tabToSave.code || ''], { type: 'text/plain;charset=utf-8' });
+                const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
+
+                const uploadRes = await documentsAPI.upload(fileObj, {
+                    name: fileName,
+                    description: `${tabToSave.title || fileName} - Auto-saved program`.trim(),
+                    category: 'code',
+                    folderId: targetFolder?.id,
+                    overwrite: true,
+                    existingDocumentId: tabToSave.documentId || undefined
+                });
+
+                const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
+                const newDocId = savedDoc?.id || tabToSave.documentId;
+
+                // 3. Update tab with documentId in tabs state and storage
+                if (newDocId) {
+                    setTabs((prevTabs) => {
+                        const nextTabs = prevTabs.map((t) =>
+                            t.id === tabToSave.id
+                                ? {
+                                      ...t,
+                                      filename: fileName,
+                                      documentId: newDocId,
+                                      isDirty: false
+                                  }
+                                : t
+                        );
+                        return nextTabs;
+                    });
+                }
+
+                loadExistingDocs();
+                return newDocId;
+            } catch (err) {
+                console.warn('[IDE] Auto-save program to folder warning:', err?.message);
+                return null;
+            }
+        },
+        [inspectingStudentId, loadExistingDocs]
+    );
+
     // 3. Debounced Autosave (saves tabs, active tab, and output to server and local)
     const triggerSaveWorkspace = useCallback(
         async (updatedTabs, updatedActiveId, autosaveState) => {
@@ -537,6 +660,9 @@ function PracticeIDEPage() {
                     } catch (docSyncErr) {
                         console.warn('[Autosave] Document sync notice:', docSyncErr.message);
                     }
+                } else if (currentActiveTab && !currentActiveTab.documentId && currentActiveTab.code?.trim()) {
+                    // Automatically save new program to folder if it has no linked document
+                    saveProgramToAppropriateFolder(currentActiveTab);
                 }
 
                 setLastAutosavedAt(nowIso);
@@ -551,7 +677,7 @@ function PracticeIDEPage() {
                 setAutosaveFlash({ visible: false, status: 'saved', text: '' });
             }
         },
-        [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs]
+        [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs, saveProgramToAppropriateFolder]
     );
 
     // Code change handler
@@ -645,7 +771,7 @@ Date:          ${dateStr}
 
         const newId = `tab_${Date.now()}`;
         const newLang = forcedLang || (activeTab?.language === 'sql' ? 'sql' : 'python');
-        const isSql = newLang === 'sql';
+        const isSql = isDatabaseLanguage(newLang);
         const nextNum = getNextProgramNumber(currentTabs);
         const newTab = createDefaultTab(newId, newLang, studentIdentifier, studentDisplayName, nextNum);
         newTab.title = `program ${nextNum}`;
@@ -656,6 +782,82 @@ Date:          ${dateStr}
         setActiveTabId(newId);
         triggerSaveWorkspace(updatedTabs, newId);
         toast.success(`Created program ${nextNum} (${isSql ? 'SQL' : 'Python'})`);
+
+        // Automatically save new program directly to appropriate folder (Documents / Python or Documents / SQL)
+        const targetFolderName = isSql ? 'SQL' : 'Python';
+        saveProgramToAppropriateFolder(newTab).then((docId) => {
+            if (docId) {
+                toast.success(`Auto-saved "${newTab.filename}" to Documents / ${targetFolderName}`, {
+                    id: `autosave-${newId}`,
+                    icon: '📁'
+                });
+            }
+        });
+    };
+
+    // Major Editor Action Handlers
+    const handleFormatCode = async () => {
+        if (!editorRef.current) return;
+        try {
+            const formatAction = editorRef.current.getAction('editor.action.formatDocument');
+            if (formatAction) {
+                await formatAction.run();
+                toast.success('Document formatted cleanly!', { icon: '✨' });
+            } else {
+                toast('Auto-format not available for this mode');
+            }
+        } catch (err) {
+            console.warn('Format warning:', err);
+        }
+    };
+
+    const handleUndo = () => {
+        if (editorRef.current) {
+            editorRef.current.trigger('keyboard', 'undo', null);
+        }
+    };
+
+    const handleRedo = () => {
+        if (editorRef.current) {
+            editorRef.current.trigger('keyboard', 'redo', null);
+        }
+    };
+
+    const handleFind = () => {
+        if (editorRef.current) {
+            editorRef.current.getAction('actions.find')?.run();
+        }
+    };
+
+    const handleCopyCode = async () => {
+        if (!activeTab?.code) {
+            toast.error('No code in active editor to copy');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(activeTab.code);
+            toast.success(`Copied ${activeTab.filename || 'code'} to clipboard!`, { icon: '📋' });
+        } catch {
+            toast.error('Could not copy code');
+        }
+    };
+
+    const handleInsertSnippet = (snippetCode) => {
+        setShowSnippetsMenu(false);
+        if (!editorRef.current) return;
+        const editor = editorRef.current;
+        const selection = editor.getSelection();
+        if (selection) {
+            editor.executeEdits('snippet', [
+                {
+                    range: selection,
+                    text: snippetCode,
+                    forceMoveMarkers: true
+                }
+            ]);
+            editor.focus();
+            toast.success('Inserted code snippet!');
+        }
     };
 
     const handleCloseTab = (tabIdToClose, e) => {
@@ -1129,9 +1331,20 @@ Date:          ${dateStr}
                     );
                 }}
                 onResetDatabase={handleResetDatabase}
-                onFormatCode={() => toast.success('Document formatted')}
+                onFormatCode={handleFormatCode}
                 onInsertDocstringHeader={handleInsertDocstringHeader}
                 onClearCode={() => handleCodeChange('')}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onFind={handleFind}
+                isWordWrapOn={isWordWrapOn}
+                onToggleWordWrap={() => setIsWordWrapOn((prev) => !prev)}
+                isLineNumbersOn={isLineNumbersOn}
+                onToggleLineNumbers={() => setIsLineNumbersOn((prev) => !prev)}
+                isMinimapOn={isMinimapOn}
+                onToggleMinimap={() => setIsMinimapOn((prev) => !prev)}
+                isEditorMaximized={isEditorMaximized}
+                onToggleEditorMaximize={() => setIsEditorMaximized((prev) => !prev)}
                 isAutosaveEnabled={isAutosaveEnabled}
                 onToggleAutosave={() => {
                     const next = !isAutosaveEnabled;
@@ -1397,10 +1610,10 @@ Date:          ${dateStr}
             </div>
 
             {/* 4. MAIN SPLIT SCREEN: LEFT EDITOR PANE, RIGHT OUTPUT & CANVAS */}
-            <main className="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0 min-w-0 w-full max-w-full overflow-hidden">
+            <main className={`flex-1 min-h-0 min-w-0 w-full max-w-full overflow-hidden ${isEditorMaximized ? 'flex flex-col' : 'grid grid-cols-1 lg:grid-cols-2'}`}>
                 {/* LEFT PANEL: Monaco Code Editor with Ergonomic RUN CODE Button Above */}
                 <section className={`flex flex-col h-full border-r min-w-0 max-w-full overflow-hidden ${
-                    mobileView !== 'editor' ? 'hidden lg:flex' : 'flex'
+                    isEditorMaximized ? 'w-full flex-1' : (mobileView !== 'editor' ? 'hidden lg:flex' : 'flex')
                 } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full overflow-hidden ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
@@ -1493,8 +1706,136 @@ Date:          ${dateStr}
                             </div>
                         </div>
 
-                        {/* Center/Right: SINGLE UNIFIED ROUND "PLAY" BUTTON & ER GENERATOR */}
-                        <div className="flex items-center gap-2 shrink-0">
+                        {/* Center/Right: Quick Actions, Snippets, Play, ER Gen */}
+                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                            {/* Undo Button */}
+                            <button
+                                onClick={handleUndo}
+                                className={`p-1.5 rounded-md transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title="Undo (Ctrl+Z)"
+                                aria-label="Undo"
+                            >
+                                <Undo2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Redo Button */}
+                            <button
+                                onClick={handleRedo}
+                                className={`p-1.5 rounded-md transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title="Redo (Ctrl+Y)"
+                                aria-label="Redo"
+                            >
+                                <Redo2 className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Find & Replace */}
+                            <button
+                                onClick={handleFind}
+                                className={`p-1.5 rounded-md transition cursor-pointer hidden sm:flex items-center ${
+                                    isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title="Find and Replace (Ctrl+F)"
+                                aria-label="Find and Replace"
+                            >
+                                <Search className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Format Document */}
+                            <button
+                                onClick={handleFormatCode}
+                                className={`p-1.5 rounded-md transition cursor-pointer hidden sm:flex items-center ${
+                                    isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title="Format Code (Shift+Alt+F)"
+                                aria-label="Format Code"
+                            >
+                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            </button>
+
+                            {/* Copy Entire Code */}
+                            <button
+                                onClick={handleCopyCode}
+                                className={`p-1.5 rounded-md transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title="Copy All Code"
+                                aria-label="Copy All Code"
+                            >
+                                <Copy className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Code Snippets Dropdown */}
+                            <div className="relative" ref={snippetsMenuRef}>
+                                <button
+                                    onClick={() => setShowSnippetsMenu(!showSnippetsMenu)}
+                                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition cursor-pointer border ${
+                                        showSnippetsMenu
+                                            ? 'bg-primary-600 text-white border-primary-600 shadow-xs'
+                                            : isLightMode
+                                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
+                                            : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+                                    }`}
+                                    title="Insert Code Snippet"
+                                >
+                                    <Code2 className="w-3.5 h-3.5 text-primary-500" />
+                                    <span className="hidden md:inline">Snippets</span>
+                                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                                </button>
+
+                                {showSnippetsMenu && (
+                                    <div className={`absolute right-0 top-full mt-1.5 w-60 py-1.5 rounded-xl shadow-2xl border z-[90] animate-in fade-in slide-in-from-top-1 text-xs select-none ${
+                                        isLightMode ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-200'
+                                    }`}>
+                                        <p className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">
+                                            {isDatabaseLanguage(activeTab.language) ? 'SQL Snippets' : 'Python Snippets'}
+                                        </p>
+                                        {(CODE_SNIPPETS[isDatabaseLanguage(activeTab.language) ? 'sql' : 'python'] || []).map((snip, sIdx) => (
+                                            <button
+                                                key={sIdx}
+                                                onClick={() => handleInsertSnippet(snip.code)}
+                                                className={`w-full text-left px-3 py-1.5 flex items-center justify-between text-xs cursor-pointer ${
+                                                    isLightMode ? 'hover:bg-slate-100 text-slate-700 hover:text-slate-900' : 'hover:bg-slate-800 text-slate-200 hover:text-white'
+                                                }`}
+                                            >
+                                                <span>{snip.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Maximize / Restore Editor Button */}
+                            <button
+                                onClick={() => setIsEditorMaximized(!isEditorMaximized)}
+                                className={`p-1.5 rounded-md transition cursor-pointer hidden md:flex items-center ${
+                                    isEditorMaximized
+                                        ? 'bg-primary-100 text-primary-700 border border-primary-300 dark:bg-primary-950 dark:text-primary-300'
+                                        : isLightMode
+                                        ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                                }`}
+                                title={isEditorMaximized ? 'Restore Split Screen' : 'Maximize Code Editor (Full Width)'}
+                                aria-label="Maximize Code Editor"
+                            >
+                                {isEditorMaximized ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                            </button>
+
+                            <div className={`h-4 w-px mx-0.5 ${isLightMode ? 'bg-slate-300' : 'bg-slate-700'}`} />
+
                             {/* Round Play Button */}
                             <button
                                 onClick={handleExecuteCode}
@@ -1566,16 +1907,17 @@ Date:          ${dateStr}
                             options={{
                                 fontSize: fontSize,
                                 fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-                                minimap: { enabled: false },
+                                minimap: { enabled: isMinimapOn },
                                 scrollBeyondLastLine: false,
                                 automaticLayout: true,
                                 tabSize: isDatabaseLanguage(activeTab.language) ? 2 : 4,
                                 insertSpaces: true,
-                                wordWrap: 'on',
+                                wordWrap: isWordWrapOn ? 'on' : 'off',
                                 padding: { top: 12, bottom: 12 },
-                                lineNumbers: 'on',
+                                lineNumbers: isLineNumbersOn ? 'on' : 'off',
                                 renderLineHighlight: 'all',
-                                bracketPairColorization: { enabled: true }
+                                bracketPairColorization: { enabled: true },
+                                contextmenu: true
                             }}
                         />
                     </div>
@@ -1654,7 +1996,7 @@ Date:          ${dateStr}
 
                 {/* RIGHT PANEL: COORDINATED OUTPUT & VISUAL FLOWCHART CANVAS */}
                 <section className={`flex flex-col h-full min-w-0 max-w-full overflow-hidden ${
-                    mobileView === 'editor' ? 'hidden lg:flex' : 'flex'
+                    isEditorMaximized ? 'hidden' : (mobileView === 'editor' ? 'hidden lg:flex' : 'flex')
                 } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
                     {/* Tab Navigation Header (Hidden on mobile < lg because top Mobile View Switcher controls views) */}
                     <div className={`hidden lg:flex items-center justify-between px-3 border-b flex-shrink-0 ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'}`}>

@@ -24,7 +24,14 @@ import {
     HelpCircle,
     Info,
     Shapes,
-    Star
+    Star,
+    Undo2,
+    Redo2,
+    Search,
+    Maximize2,
+    Minimize2,
+    WrapText,
+    ListOrdered
 } from 'lucide-react';
 
 /**
@@ -65,7 +72,18 @@ export default function IDEMenuBar({
     latestStudentReview,
     onOpenFeedbackDrawer,
     lastAutosavedAt = null,
-    autosaveStatus = 'saved'
+    autosaveStatus = 'saved',
+    onUndo,
+    onRedo,
+    onFind,
+    isWordWrapOn = true,
+    onToggleWordWrap,
+    isLineNumbersOn = true,
+    onToggleLineNumbers,
+    isMinimapOn = false,
+    onToggleMinimap,
+    isEditorMaximized = false,
+    onToggleEditorMaximize
 }) {
     const [openMenu, setOpenMenu] = useState(null); // 'file' | 'edit' | 'view' | 'run' | 'inspect' | null
     const menuRef = useRef(null);
@@ -116,7 +134,7 @@ export default function IDEMenuBar({
     return (
         <div
             ref={menuRef}
-            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap w-full max-w-full overflow-hidden ${
+            className={`flex items-center justify-between px-2 sm:px-3 py-1 border-b text-xs select-none z-40 relative flex-nowrap w-full max-w-full overflow-visible ${
                 isLightMode
                     ? 'bg-white border-slate-200 text-slate-700'
                     : 'bg-slate-900 border-slate-800 text-slate-300'
@@ -251,15 +269,40 @@ export default function IDEMenuBar({
                         Edit
                     </button>
                     {openMenu === 'edit' && (
-                        <div className={`w-56 ${dropdownClass}`}>
+                        <div className={`w-60 ${dropdownClass}`}>
                             <button
-                                onClick={() => handleAction(onInsertDocstringHeader)}
+                                onClick={() => handleAction(onUndo)}
                                 className={itemBtnClass}
                             >
                                 <span className="flex items-center gap-2">
-                                    <FileText className="w-3.5 h-3.5 text-indigo-500" />
-                                    Insert Metadata Header
+                                    <Undo2 className="w-3.5 h-3.5 text-amber-500" />
+                                    Undo
                                 </span>
+                                <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Z</kbd>
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onRedo)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Redo2 className="w-3.5 h-3.5 text-amber-500" />
+                                    Redo
+                                </span>
+                                <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Y</kbd>
+                            </button>
+
+                            <div className={dividerClass} />
+
+                            <button
+                                onClick={() => handleAction(onFind)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Search className="w-3.5 h-3.5 text-sky-500" />
+                                    Find & Replace
+                                </span>
+                                <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+F</kbd>
                             </button>
 
                             <button
@@ -267,8 +310,19 @@ export default function IDEMenuBar({
                                 className={itemBtnClass}
                             >
                                 <span className="flex items-center gap-2">
-                                    <Edit3 className="w-3.5 h-3.5 text-sky-500" />
+                                    <Edit3 className="w-3.5 h-3.5 text-indigo-500" />
                                     Format Document
+                                </span>
+                                <kbd className="text-[10px] text-slate-400 font-mono">Shift+Alt+F</kbd>
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onInsertDocstringHeader)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <FileText className="w-3.5 h-3.5 text-purple-500" />
+                                    Insert Metadata Header
                                 </span>
                             </button>
 
@@ -293,7 +347,58 @@ export default function IDEMenuBar({
                         View
                     </button>
                     {openMenu === 'view' && (
-                        <div className={`w-60 p-1 ${dropdownClass}`}>
+                        <div className={`w-64 p-1 ${dropdownClass}`}>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">Editor Layout</p>
+                            <button
+                                onClick={() => handleAction(onToggleEditorMaximize)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    {isEditorMaximized ? (
+                                        <Minimize2 className="w-3.5 h-3.5 text-primary-500" />
+                                    ) : (
+                                        <Maximize2 className="w-3.5 h-3.5 text-primary-500" />
+                                    )}
+                                    {isEditorMaximized ? 'Restore Split Screen' : 'Maximize Code Editor'}
+                                </span>
+                                {isEditorMaximized && <Check className="w-3.5 h-3.5 text-primary-500" />}
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onToggleWordWrap)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <WrapText className="w-3.5 h-3.5 text-sky-500" />
+                                    Word Wrap
+                                </span>
+                                {isWordWrapOn && <Check className="w-3.5 h-3.5 text-sky-500" />}
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onToggleLineNumbers)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <ListOrdered className="w-3.5 h-3.5 text-indigo-500" />
+                                    Line Numbers
+                                </span>
+                                {isLineNumbersOn && <Check className="w-3.5 h-3.5 text-indigo-500" />}
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onToggleMinimap)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Shapes className="w-3.5 h-3.5 text-purple-500" />
+                                    Code Minimap
+                                </span>
+                                {isMinimapOn && <Check className="w-3.5 h-3.5 text-purple-500" />}
+                            </button>
+
+                            <div className={dividerClass} />
+
                             <p className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">Editor Theme</p>
                             {[
                                 { id: 'vs', label: 'Clean Light (Default)' },
