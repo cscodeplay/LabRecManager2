@@ -167,6 +167,35 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
     let idx = 0;
     let pendingFalseSource = null;
 
+    const connectIncoming = (targetNodeId, targetPort = 'top') => {
+        if (pendingFalseSource) {
+            const sourceId = typeof pendingFalseSource === 'object' ? pendingFalseSource.nodeId : pendingFalseSource;
+            const sourcePort = typeof pendingFalseSource === 'object' ? (pendingFalseSource.port || 'right') : 'right';
+            const sourceLabel = typeof pendingFalseSource === 'object' ? (pendingFalseSource.label !== undefined ? pendingFalseSource.label : 'No') : 'No';
+
+            connectors.push({
+                id: makeConnId(),
+                from: sourceId,
+                fromPort: sourcePort,
+                to: targetNodeId,
+                toPort: targetPort,
+                label: sourceLabel
+            });
+            pendingFalseSource = null;
+        }
+        if (prevNodeId) {
+            connectors.push({
+                id: makeConnId(),
+                from: prevNodeId,
+                fromPort: 'bottom',
+                to: targetNodeId,
+                toPort: targetPort,
+                label: ''
+            });
+            prevNodeId = null;
+        }
+    };
+
     while (idx < statements.length) {
         const item = statements[idx];
         const kind = classify(item.text);
@@ -188,12 +217,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 textColor: '#1e3a8a'
             });
 
-            if (pendingFalseSource) {
-                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
-                pendingFalseSource = null;
-            } else if (prevNodeId) {
-                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
-            }
+            connectIncoming(nodeId);
             prevNodeId = nodeId;
             yCursor += height + 35;
             idx++;
@@ -220,12 +244,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 textColor: '#4c1d95'
             });
 
-            if (pendingFalseSource) {
-                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
-                pendingFalseSource = null;
-            } else if (prevNodeId) {
-                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
-            }
+            connectIncoming(nodeId);
             prevNodeId = nodeId;
             yCursor += height + 35;
             idx++;
@@ -257,14 +276,154 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 textColor: '#0f172a'
             });
 
-            if (pendingFalseSource) {
-                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
-                pendingFalseSource = null;
-            } else if (prevNodeId) {
-                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
-            }
+            connectIncoming(nodeId);
             prevNodeId = nodeId;
             yCursor += height + 35;
+        } else if (kind === 'if') {
+            const ifIndent = item.indent;
+            const ifNodeId = makeId('decision');
+            const ifWidth = 160;
+            const ifHeight = 72;
+            const condText = cleanCondition(item.text, 'if');
+
+            nodes.push({
+                id: ifNodeId,
+                type: 'decision',
+                text: condText,
+                x: xCenter - ifWidth / 2,
+                y: yCursor,
+                width: ifWidth,
+                height: ifHeight,
+                color: '#fef3c7',
+                borderColor: '#d97706',
+                textColor: '#78350f'
+            });
+
+            connectIncoming(ifNodeId);
+
+            idx++;
+            yCursor += ifHeight + 40;
+
+            // Collect statements in True (if) branch
+            const trueStmts = [];
+            while (
+                idx < statements.length &&
+                statements[idx].indent > ifIndent &&
+                !/^(else\s*:|else\s*\{|elif\b)/.test(statements[idx].text)
+            ) {
+                trueStmts.push(statements[idx]);
+                idx++;
+            }
+
+            // Check if there is an Else (or Elif) branch
+            let elseStmts = [];
+            if (
+                idx < statements.length &&
+                /^(else\s*:|else\s*\{|elif\b)/.test(statements[idx].text) &&
+                statements[idx].indent === ifIndent
+            ) {
+                idx++; // consume 'else:'
+                while (idx < statements.length && statements[idx].indent > ifIndent) {
+                    elseStmts.push(statements[idx]);
+                    idx++;
+                }
+            }
+
+            // Build node for True Branch
+            let trueNodeId = null;
+            if (trueStmts.length > 0) {
+                const firstKind = classify(trueStmts[0].text);
+                trueNodeId = makeId(firstKind === 'output' ? 'io' : 'process');
+                const trueTexts = trueStmts.map((s) => {
+                    const k = classify(s.text);
+                    if (k === 'output') return `Display ${cleanOutput(s.text)}`;
+                    if (k === 'input') return cleanInput(s.text);
+                    return s.text.replace(/;\s*$/, '');
+                });
+
+                const tWidth = 175;
+                const tHeight = Math.max(54, 30 + trueTexts.length * 16);
+                const isTrueOutput = firstKind === 'output';
+
+                nodes.push({
+                    id: trueNodeId,
+                    type: isTrueOutput ? 'io' : 'process',
+                    text: trueTexts.join('\n'),
+                    x: elseStmts.length > 0 ? xCenter - tWidth - 25 : xCenter - tWidth / 2,
+                    y: yCursor,
+                    width: tWidth,
+                    height: tHeight,
+                    color: isTrueOutput ? '#dbeafe' : '#ffffff',
+                    borderColor: isTrueOutput ? '#2563eb' : '#64748b',
+                    textColor: isTrueOutput ? '#1e3a8a' : '#0f172a'
+                });
+
+                connectors.push({
+                    id: makeConnId(),
+                    from: ifNodeId,
+                    fromPort: 'bottom',
+                    to: trueNodeId,
+                    toPort: 'top',
+                    label: 'Yes'
+                });
+            }
+
+            // Build node for False / Else Branch if present
+            let elseNodeId = null;
+            if (elseStmts.length > 0) {
+                const firstKind = classify(elseStmts[0].text);
+                elseNodeId = makeId(firstKind === 'output' ? 'io' : 'process');
+                const elseTexts = elseStmts.map((s) => {
+                    const k = classify(s.text);
+                    if (k === 'output') return `Display ${cleanOutput(s.text)}`;
+                    if (k === 'input') return cleanInput(s.text);
+                    return s.text.replace(/;\s*$/, '');
+                });
+
+                const eWidth = 175;
+                const eHeight = Math.max(54, 30 + elseTexts.length * 16);
+                const isElseOutput = firstKind === 'output';
+
+                nodes.push({
+                    id: elseNodeId,
+                    type: isElseOutput ? 'io' : 'process',
+                    text: elseTexts.join('\n'),
+                    x: xCenter + 25,
+                    y: yCursor,
+                    width: eWidth,
+                    height: eHeight,
+                    color: isElseOutput ? '#dbeafe' : '#ffffff',
+                    borderColor: isElseOutput ? '#2563eb' : '#64748b',
+                    textColor: isElseOutput ? '#1e3a8a' : '#0f172a'
+                });
+
+                connectors.push({
+                    id: makeConnId(),
+                    from: ifNodeId,
+                    fromPort: 'right',
+                    to: elseNodeId,
+                    toPort: 'top',
+                    label: 'No'
+                });
+            }
+
+            // Convergence & cursor advancement
+            if (trueNodeId && elseNodeId) {
+                yCursor += Math.max(54, trueStmts.length * 16, elseStmts.length * 16) + 45;
+                prevNodeId = trueNodeId;
+                pendingFalseSource = { nodeId: elseNodeId, port: 'bottom', label: '' };
+            } else if (trueNodeId) {
+                yCursor += Math.max(54, trueStmts.length * 16) + 40;
+                prevNodeId = trueNodeId;
+                pendingFalseSource = { nodeId: ifNodeId, port: 'right', label: 'No' };
+            } else if (elseNodeId) {
+                yCursor += Math.max(54, elseStmts.length * 16) + 40;
+                prevNodeId = ifNodeId;
+                pendingFalseSource = { nodeId: elseNodeId, port: 'bottom', label: '' };
+            } else {
+                prevNodeId = ifNodeId;
+                pendingFalseSource = null;
+            }
         } else if (kind === 'while' || kind === 'for') {
             const loopIndent = item.indent;
             const loopNodeId = makeId('decision');
@@ -285,12 +444,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 textColor: '#78350f'
             });
 
-            if (pendingFalseSource) {
-                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: loopNodeId, toPort: 'top', label: 'No' });
-                pendingFalseSource = null;
-            } else if (prevNodeId) {
-                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: loopNodeId, toPort: 'top', label: '' });
-            }
+            connectIncoming(loopNodeId);
 
             idx++;
             yCursor += loopHeight + 40;
@@ -348,7 +502,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
 
             // The loop decision's False branch connects to the subsequent statement outside loop
             prevNodeId = null;
-            pendingFalseSource = loopNodeId;
+            pendingFalseSource = { nodeId: loopNodeId, port: 'right', label: 'No' };
         } else if (kind === 'output') {
             // Group consecutive print/output statements into ONE combined display node
             const outputs = [];
@@ -374,13 +528,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 textColor: '#1e3a8a'
             });
 
-            if (pendingFalseSource) {
-                // False condition connector from loop decision!
-                connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: nodeId, toPort: 'top', label: 'No' });
-                pendingFalseSource = null;
-            } else if (prevNodeId) {
-                connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: nodeId, toPort: 'top', label: '' });
-            }
+            connectIncoming(nodeId);
 
             prevNodeId = nodeId;
             yCursor += height + 35;
@@ -404,11 +552,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         textColor: '#14532d'
     });
 
-    if (pendingFalseSource) {
-        connectors.push({ id: makeConnId(), from: pendingFalseSource, fromPort: 'right', to: endId, toPort: 'top', label: 'No' });
-    } else if (prevNodeId) {
-        connectors.push({ id: makeConnId(), from: prevNodeId, fromPort: 'bottom', to: endId, toPort: 'top', label: '' });
-    }
+    connectIncoming(endId);
 
     return { nodes, connectors };
 }

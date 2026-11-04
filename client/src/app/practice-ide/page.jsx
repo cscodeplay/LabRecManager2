@@ -306,7 +306,12 @@ function PracticeIDEPage() {
     const loadExistingDocs = useCallback(async () => {
         try {
             const res = await documentsAPI.getAll({ category: 'code' });
-            const list = res.data?.documents || res.data || [];
+            const rawDocs = res.data?.data;
+            const list = Array.isArray(rawDocs)
+                ? rawDocs
+                : Array.isArray(rawDocs?.documents)
+                ? rawDocs.documents
+                : res.data?.documents || res.data || [];
             setExistingDocs(Array.isArray(list) ? list : []);
         } catch (err) {
             console.warn('Failed to load documents list:', err.message);
@@ -533,19 +538,30 @@ function PracticeIDEPage() {
             try {
                 const docRes = await documentsAPI.getById(urlDocId);
                 const docData = docRes.data?.data?.document || docRes.data?.data || docRes.data;
-                const fileRes = await documentsAPI.getFileContent(urlDocId);
-                const codeText = typeof fileRes.data === 'string' ? fileRes.data : String(fileRes.data || '');
+                let codeText = '';
+                try {
+                    const fileRes = await documentsAPI.getFileContent(urlDocId);
+                    codeText = typeof fileRes.data === 'string' ? fileRes.data : String(fileRes.data || '');
+                } catch (fetchErr) {
+                    if (docData?.url) {
+                        try {
+                            const directUrl = docData.url.startsWith('http') || docData.url.startsWith('/') ? docData.url : `/${docData.url}`;
+                            const directRes = await fetch(directUrl);
+                            if (directRes.ok) codeText = await directRes.text();
+                        } catch (_) {}
+                    }
+                }
                 const fileName = docData?.fileName || docData?.name || 'practice.py';
                 const isSql = fileName.endsWith('.sql') || docData?.category === 'sql';
                 const lang = isSql ? 'sql' : 'python';
 
                 const docUpdatedAt = docData?.updatedAt || docData?.createdAt;
 
-                if (isMounted && codeText) {
+                if (isMounted) {
                     if (docUpdatedAt) setLastAutosavedAt(docUpdatedAt);
                     handleOpenDocumentContent({
                         name: fileName,
-                        code: codeText,
+                        code: codeText || (isSql ? '-- SQL script\n' : '# Python script\n'),
                         language: lang,
                         documentId: urlDocId,
                         updatedAt: docUpdatedAt,
@@ -1099,7 +1115,11 @@ Date:          ${dateStr}
 
     // Python Tutor style interactive in-console stdin input handler
     const handleSendConsoleInput = (inputVal) => {
-        const inputDomVal = typeof document !== 'undefined' ? document.querySelector('input[placeholder*="Type program input"]')?.value : '';
+        const inputDomVal = typeof document !== 'undefined'
+            ? document.querySelector('input[data-console-stdin="true"]')?.value ||
+              document.querySelector('input[placeholder*="stdin"]')?.value ||
+              document.querySelector('input[placeholder*="Type program input"]')?.value || ''
+            : '';
         const val = inputVal !== undefined ? inputVal : (consoleInputText || inputDomVal || '');
         const currentActiveId = activeTabIdRef.current || activeTabId;
         const currentTab = (tabsRef.current || tabs).find((t) => t.id === currentActiveId) || activeTab;
@@ -2191,6 +2211,55 @@ Date:          ${dateStr}
                                                 className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono ${currentOutputTheme.stdoutClass}`}
                                             >
                                                 {activeTab.output.stdout}
+
+                                                {/* Inline Console Stdin Input (Directly within stdout stream) */}
+                                                {!isDatabaseLanguage(activeTab.language) && (
+                                                    <div className="mt-2.5 pt-2 border-t border-dashed border-slate-400/30 font-mono">
+                                                        {activeTab.stdin?.trim() && (
+                                                            <div className="mb-1 text-[11px] opacity-75 flex items-center justify-between">
+                                                                <span>stdin: <strong className="text-emerald-400">"{activeTab.stdin.replace(/\n/g, '\\n')}"</strong></span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleStdinChange('')}
+                                                                    className="text-[10px] text-rose-400 hover:underline cursor-pointer font-sans"
+                                                                >
+                                                                    Clear stdin
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                        <form
+                                                            onSubmit={(e) => {
+                                                                e.preventDefault();
+                                                                handleSendConsoleInput();
+                                                            }}
+                                                            className="flex items-center gap-1.5 text-xs"
+                                                        >
+                                                            <span className="text-emerald-500 font-bold select-none">&gt;</span>
+                                                            <input
+                                                                type="text"
+                                                                data-console-stdin="true"
+                                                                value={consoleInputText}
+                                                                onChange={(e) => setConsoleInputText(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Tab') {
+                                                                        e.preventDefault();
+                                                                        setConsoleInputText((prev) => prev + '\t');
+                                                                    }
+                                                                }}
+                                                                placeholder="type input & press Enter ↵ (supports space/tab)..."
+                                                                className="flex-1 bg-transparent border-0 border-b border-dashed border-slate-400/40 focus:border-emerald-500 focus:outline-none text-inherit text-xs font-mono py-0.5 px-1 transition-colors"
+                                                            />
+                                                            <button
+                                                                type="submit"
+                                                                disabled={isExecuting}
+                                                                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-mono transition cursor-pointer shadow-xs"
+                                                                title="Send input into program (Enter)"
+                                                            >
+                                                                Enter ↵
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                )}
                                             </div>
                                         ) : !activeTab.output.stderr ? (
                                             <p className="opacity-60 italic text-xs">
@@ -2215,6 +2284,47 @@ Date:          ${dateStr}
                                                             <span>Runtime / SQL Execution Error:</span>
                                                         </div>
                                                         {activeTab.output.stderr}
+
+                                                        {/* Inline Stdin Input on EOFError when stdout was empty */}
+                                                        {!isDatabaseLanguage(activeTab.language) && !activeTab.output.stdout && (
+                                                            <div className="mt-3 pt-2 border-t border-dashed border-rose-300/40 dark:border-rose-800/50">
+                                                                <div className="mb-2 text-[11px] text-amber-600 dark:text-amber-400 font-sans font-medium flex items-center gap-1">
+                                                                    <Terminal className="w-3.5 h-3.5" />
+                                                                    <span><strong>Input needed:</strong> Program reached <code className="font-mono font-bold">input()</code>. Enter your value inline below:</span>
+                                                                </div>
+                                                                <form
+                                                                    onSubmit={(e) => {
+                                                                        e.preventDefault();
+                                                                        handleSendConsoleInput();
+                                                                    }}
+                                                                    className="flex items-center gap-1.5 text-xs font-mono"
+                                                                >
+                                                                    <span className="text-amber-500 font-bold select-none">&gt;</span>
+                                                                    <input
+                                                                        type="text"
+                                                                        data-console-stdin="true"
+                                                                        value={consoleInputText}
+                                                                        onChange={(e) => setConsoleInputText(e.target.value)}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Tab') {
+                                                                                e.preventDefault();
+                                                                                setConsoleInputText((prev) => prev + '\t');
+                                                                            }
+                                                                        }}
+                                                                        placeholder="type input & press Enter ↵..."
+                                                                        className="flex-1 bg-white/70 dark:bg-slate-900/80 border border-rose-300 dark:border-rose-700 focus:border-amber-500 rounded px-2 py-1 text-xs font-mono focus:outline-none"
+                                                                        autoFocus
+                                                                    />
+                                                                    <button
+                                                                        type="submit"
+                                                                        disabled={isExecuting}
+                                                                        className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-mono font-bold transition cursor-pointer"
+                                                                    >
+                                                                        Send & Run ↵
+                                                                    </button>
+                                                                </form>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     {/* Intelligent MySQL Error Diagnostic Card */}
@@ -2271,77 +2381,6 @@ Date:          ${dateStr}
                                     </div>
                                 )}
                             </div>
-
-                            {/* Python Tutor-Style In-Console Stdin Input Dock */}
-                            {!isDatabaseLanguage(activeTab.language) && (
-                                <div className={`border-t px-3 py-2 flex-shrink-0 ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900/95 border-slate-800'}`}>
-                                    {/* EOFError Guidance Banner */}
-                                    {activeTab.output?.stderr && /EOFError|EOF when reading a line/i.test(activeTab.output.stderr) && (
-                                        <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-center justify-between gap-2 animate-pulse">
-                                            <span className="flex items-center gap-1.5 font-medium">
-                                                <Terminal className="w-3.5 h-3.5 shrink-0" />
-                                                <span><strong>Input needed:</strong> Program reached <code className="font-mono font-bold">input()</code> without stdin. Type below and press <strong>Send & Run</strong>.</span>
-                                            </span>
-                                        </div>
-                                    )}
-
-                                    {/* Existing Stdin Buffer Preview Chip */}
-                                    {activeTab.stdin?.trim() && (
-                                        <div className="mb-1.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                                            <span className="truncate">
-                                                stdin buffer: <span className="font-semibold text-indigo-600 dark:text-indigo-400">"{activeTab.stdin.replace(/\n/g, '\\n')}"</span>
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleStdinChange('')}
-                                                className="text-xs text-rose-500 hover:underline shrink-0 ml-2 cursor-pointer font-sans"
-                                            >
-                                                Clear buffer
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <form
-                                        onSubmit={(e) => {
-                                            e.preventDefault();
-                                            handleSendConsoleInput();
-                                        }}
-                                        className="flex items-center gap-1.5"
-                                    >
-                                        <div className="relative flex-1">
-                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400 select-none">
-                                                &gt;
-                                            </span>
-                                            <input
-                                                type="text"
-                                                value={consoleInputText}
-                                                onChange={(e) => setConsoleInputText(e.target.value)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Tab') {
-                                                        e.preventDefault();
-                                                        setConsoleInputText((prev) => prev + '\t');
-                                                    }
-                                                }}
-                                                placeholder="Type program input (supports space/tab) & press Enter..."
-                                                className={`w-full pl-6 pr-2 py-1.5 rounded-lg text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-primary-500 ${
-                                                    isLightMode
-                                                        ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
-                                                        : 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-600'
-                                                }`}
-                                            />
-                                        </div>
-                                        <button
-                                            type="submit"
-                                            disabled={isExecuting}
-                                            className="px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer shadow-xs"
-                                            title="Send input into stdin and re-execute program (Enter)"
-                                        >
-                                            <Play className="w-3 h-3 fill-current" />
-                                            <span>Send & Run</span>
-                                        </button>
-                                    </form>
-                                </div>
-                            )}
                         </div>
                     )}
 

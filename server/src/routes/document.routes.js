@@ -815,9 +815,22 @@ router.get('/:id/download', optionalAuth, asyncHandler(async (req, res) => {
     // If local uploads document
     if (doc.url && doc.url.startsWith('/uploads/')) {
         const fileBasename = path.basename(doc.url);
-        const filePath = path.join(__dirname, '../../uploads', fileBasename);
-        if (fs.existsSync(filePath)) {
-            return res.download(filePath, downloadFileName);
+        const relPath = doc.url.replace(/^\/uploads\//, '');
+        const candidatePaths = [
+            path.join(__dirname, '../../uploads', relPath),
+            path.join(__dirname, '../../uploads', fileBasename),
+            path.join(__dirname, '../../uploads', decodeURIComponent(relPath)),
+            path.join(__dirname, '../../uploads', decodeURIComponent(fileBasename)),
+            path.join(__dirname, '../../uploads/office-media', fileBasename),
+            path.join(__dirname, '../../uploads/conversions', fileBasename),
+            path.join(__dirname, '../../../uploads', relPath),
+            path.join(__dirname, '../../../uploads', fileBasename)
+        ];
+
+        for (const cp of candidatePaths) {
+            if (fs.existsSync(cp)) {
+                return res.download(cp, downloadFileName);
+            }
         }
     }
 
@@ -867,11 +880,24 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
 
     if (doc.url && doc.url.startsWith('/uploads/')) {
         const fileBasename = path.basename(doc.url);
-        const filePath = path.join(__dirname, '../../uploads', fileBasename);
-        if (fs.existsSync(filePath)) {
-            res.setHeader('Content-Type', doc.mimeType || 'application/pdf');
-            res.setHeader('Content-Disposition', 'inline');
-            return res.sendFile(filePath);
+        const relPath = doc.url.replace(/^\/uploads\//, '');
+        const candidatePaths = [
+            path.join(__dirname, '../../uploads', relPath),
+            path.join(__dirname, '../../uploads', fileBasename),
+            path.join(__dirname, '../../uploads', decodeURIComponent(relPath)),
+            path.join(__dirname, '../../uploads', decodeURIComponent(fileBasename)),
+            path.join(__dirname, '../../uploads/office-media', fileBasename),
+            path.join(__dirname, '../../uploads/conversions', fileBasename),
+            path.join(__dirname, '../../../uploads', relPath),
+            path.join(__dirname, '../../../uploads', fileBasename)
+        ];
+
+        for (const cp of candidatePaths) {
+            if (fs.existsSync(cp)) {
+                res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
+                res.setHeader('Content-Disposition', 'inline');
+                return res.sendFile(cp);
+            }
         }
     }
 
@@ -883,7 +909,7 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
                 responseType: 'stream',
                 timeout: 30000
             });
-            const contentType = response.headers['content-type'] || doc.mimeType || 'application/pdf';
+            const contentType = response.headers['content-type'] || doc.mimeType || 'application/octet-stream';
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Disposition', 'inline');
             res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -891,6 +917,33 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         } catch (streamErr) {
             console.warn('[DocStream] Stream proxy failed, falling back to redirect:', streamErr.message);
             return res.redirect(doc.url);
+        }
+    }
+
+    // Fallback for code documents: check student saved workspaces if local upload was misplaced
+    const isCodeDoc = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+    if (isCodeDoc) {
+        try {
+            const workspacesRoot = path.join(__dirname, '../../storage/workspaces/students');
+            if (fs.existsSync(workspacesRoot)) {
+                const userFolders = fs.readdirSync(workspacesRoot);
+                for (const uf of userFolders) {
+                    const wsFile = path.join(workspacesRoot, uf, 'workspace.json');
+                    if (fs.existsSync(wsFile)) {
+                        try {
+                            const wsData = JSON.parse(fs.readFileSync(wsFile, 'utf8'));
+                            const matchingTab = (wsData.tabs || []).find(t => t.documentId === doc.id || t.filename === doc.fileName || t.title === doc.name);
+                            if (matchingTab && typeof matchingTab.code === 'string') {
+                                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                                res.setHeader('Content-Disposition', 'inline');
+                                return res.send(matchingTab.code);
+                            }
+                        } catch (_) {}
+                    }
+                }
+            }
+        } catch (wsSearchErr) {
+            console.warn('[DocStream] Workspace fallback warning:', wsSearchErr.message);
         }
     }
 

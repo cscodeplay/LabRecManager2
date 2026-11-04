@@ -1182,7 +1182,7 @@ export default function FlowchartVisualCanvas({
         const strokeColor = isConnectingSource
             ? '#38bdf8'
             : isSelected
-            ? '#8b5cf6'
+            ? '#f59e0b'
             : borderColor;
         const strokeWidth = isSelected || isConnectingSource ? 2.5 : 2;
 
@@ -1946,7 +1946,7 @@ export default function FlowchartVisualCanvas({
                             markerHeight="6"
                             orient="auto-start-reverse"
                         >
-                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#8b5cf6" />
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#eab308" />
                         </marker>
                     </defs>
 
@@ -2016,6 +2016,11 @@ export default function FlowchartVisualCanvas({
                             return (
                                 <g
                                     key={conn.id}
+                                    onPointerDown={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedConnectorId(conn.id);
+                                        setSelectedNodeIds([]);
+                                    }}
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         setSelectedConnectorId(conn.id);
@@ -2033,20 +2038,33 @@ export default function FlowchartVisualCanvas({
                                         className="cursor-pointer"
                                     />
 
-                                    {/* Visible Curved Connector Line */}
+                                    {/* Subtle Yellow Glow for Selected Connector */}
+                                    {isSelected && (
+                                        <path
+                                            d={data.pathD}
+                                            fill="none"
+                                            stroke="#facc15"
+                                            strokeWidth={6}
+                                            strokeOpacity={0.25}
+                                            strokeLinecap="round"
+                                            className="pointer-events-none"
+                                        />
+                                    )}
+
+                                    {/* Visible Curved Connector Line - Thin yellow highlight when selected */}
                                     <path
                                         d={data.pathD}
                                         fill="none"
                                         stroke={
                                             isSelected
-                                                ? '#8b5cf6'
+                                                ? '#eab308'
                                                 : isLight
                                                 ? '#475569'
                                                 : '#94a3b8'
                                         }
-                                        strokeWidth={isSelected ? 3 : 2}
+                                        strokeWidth={isSelected ? 2.5 : 2}
                                         markerEnd={showArrow ? (isSelected ? 'url(#flowchart-arrowhead-selected)' : 'url(#flowchart-arrowhead)') : undefined}
-                                        className="group-hover:stroke-purple-500"
+                                        className="group-hover:stroke-amber-400 transition-colors"
                                     />
 
                                     {/* Midpoint Cardinality / Label Pill */}
@@ -2065,27 +2083,31 @@ export default function FlowchartVisualCanvas({
                                                 ry={11}
                                                 fill={
                                                     isSelected
-                                                        ? '#8b5cf6'
+                                                        ? isLight
+                                                            ? '#fef9c3'
+                                                            : '#713f12'
                                                         : isLight
                                                         ? '#ffffff'
                                                         : '#1e293b'
                                                 }
                                                 stroke={
                                                     isSelected
-                                                        ? '#7c3aed'
+                                                        ? '#eab308'
                                                         : isLight
                                                         ? '#cbd5e1'
                                                         : '#475569'
                                                 }
                                                 strokeWidth={1.5}
-                                                className="drop-shadow-sm group-hover:stroke-purple-500"
+                                                className="drop-shadow-sm group-hover:stroke-amber-400 transition-colors"
                                             />
                                             <text
                                                 textAnchor="middle"
                                                 dominantBaseline="central"
                                                 fill={
                                                     isSelected
-                                                        ? '#ffffff'
+                                                        ? isLight
+                                                            ? '#854d0e'
+                                                            : '#fef08a'
                                                         : isLight
                                                         ? '#0f172a'
                                                         : '#f8fafc'
@@ -2127,7 +2149,7 @@ export default function FlowchartVisualCanvas({
                                 <path
                                     d={livePathD}
                                     fill="none"
-                                    stroke="#8b5cf6"
+                                    stroke="#eab308"
                                     strokeWidth={2.5}
                                     markerEnd="url(#flowchart-arrowhead-selected)"
                                     className="pointer-events-none drop-shadow-sm"
@@ -2273,7 +2295,7 @@ export default function FlowchartVisualCanvas({
                                                             cy={loc.y}
                                                             r={10}
                                                             fill="none"
-                                                            stroke="#8b5cf6"
+                                                            stroke="#eab308"
                                                             strokeWidth={2}
                                                             strokeDasharray="3,2"
                                                         />
@@ -2286,7 +2308,7 @@ export default function FlowchartVisualCanvas({
                                                         r={isThisHookActive || isThisHookHovered ? 6 : 4}
                                                         fill={
                                                             isThisHookActive
-                                                                ? '#8b5cf6'
+                                                                ? '#eab308'
                                                                 : isThisHookHovered
                                                                 ? '#3b82f6'
                                                                 : isLight

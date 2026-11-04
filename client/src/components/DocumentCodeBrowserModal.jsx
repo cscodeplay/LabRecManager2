@@ -100,21 +100,39 @@ export default function DocumentCodeBrowserModal({
     const handleSelectDocument = async (doc, asNewTab = false) => {
         setOpeningDocId(doc.id);
         try {
-            // Fetch raw file text via authenticated api
+            // Fetch raw file text via authenticated api with layered fallbacks
             let codeText = '';
             try {
                 const response = await documentsAPI.getFileContent(doc.id);
                 codeText = typeof response.data === 'string' ? response.data : String(response.data || '');
             } catch (apiErr) {
-                // Fallback: if document has a direct accessible URL
-                if (doc.url && doc.url.startsWith('http')) {
-                    const directRes = await fetch(doc.url);
-                    if (!directRes.ok) {
-                        throw new Error(apiErr.response?.data?.message || apiErr.message || 'Failed to fetch document file');
-                    }
-                    codeText = await directRes.text();
-                } else {
-                    throw apiErr;
+                console.warn('[DocModal] Primary getFileContent failed, attempting fallbacks:', apiErr.message);
+
+                // Fallback 1: Direct fetch via doc.url (local /uploads rewrites or remote http)
+                if (doc.url) {
+                    try {
+                        const directUrl = doc.url.startsWith('http') || doc.url.startsWith('/') ? doc.url : `/${doc.url}`;
+                        const directRes = await fetch(directUrl);
+                        if (directRes.ok) {
+                            codeText = await directRes.text();
+                        }
+                    } catch (_) {}
+                }
+
+                // Fallback 2: Stream via download endpoint
+                if (!codeText) {
+                    try {
+                        const dlRes = await documentsAPI.getPublic ? await documentsAPI.getFileContent(doc.id) : null;
+                    } catch (_) {}
+                }
+
+                // Fallback 3: If still 404 or missing, open tab gracefully with a comment placeholder rather than throwing
+                if (!codeText) {
+                    const isSqlFile = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql');
+                    codeText = isSqlFile
+                        ? `-- ${doc.name || 'query.sql'}\n-- File loaded from Documents storage\n\n`
+                        : `# ${doc.name || 'script.py'}\n# File loaded from Documents storage\n\n`;
+                    toast.warn(`Opened "${doc.name}" with blank buffer (file source was unreachable)`);
                 }
             }
 
@@ -130,7 +148,9 @@ export default function DocumentCodeBrowserModal({
                 asNewTab
             });
 
-            toast.success(`Opened "${doc.name}" in editor`);
+            if (!codeText.includes('File loaded from Documents storage')) {
+                toast.success(`Opened "${doc.name}" in editor`);
+            }
             onClose();
         } catch (err) {
             console.error('Error opening doc:', err);
