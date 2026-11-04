@@ -69,6 +69,7 @@ import DatabaseEngineModal from '@/components/DatabaseEngineModal';
 import StudentWorkInspectorModal from '@/components/StudentWorkInspectorModal';
 import StudentFeedbackDrawer from '@/components/StudentFeedbackDrawer';
 import MermaidRenderer from '@/components/MermaidRenderer';
+import FindReplaceModal from '@/components/FindReplaceModal';
 
 // Dynamically load Monaco Editor to avoid SSR conflicts
 const Editor = dynamic(() => import('@monaco-editor/react'), {
@@ -254,6 +255,8 @@ function PracticeIDEPage() {
     const activeTabIdRef = useRef(activeTabId);
     activeTabIdRef.current = activeTabId;
     const isCommittingRenameRef = useRef(false);
+    const isProgrammaticUpdateRef = useRef(false);
+    const [showFindReplaceModal, setShowFindReplaceModal] = useState(false);
 
     // Autosave Toggle & Flashing Disappearing Indicator
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
@@ -728,7 +731,7 @@ function PracticeIDEPage() {
         return () => { isMounted = false; };
     }, [urlDocId, isLoadingWorkspace]);
 
-    // Auto-save Program to Appropriate Documents Folder (Documents / Python or Documents / SQL)
+    // Auto-save Program to Appropriate Documents Folder (Coding files / Python or Coding files / SQL)
     const saveProgramToAppropriateFolder = useCallback(
         async (tabToSave) => {
             if (!tabToSave || inspectingStudentId) return null;
@@ -737,7 +740,7 @@ function PracticeIDEPage() {
                 return null;
             }
             const isSql = isDatabaseLanguage(tabToSave.language);
-            const targetFolderName = isSql ? 'SQL' : 'Python';
+            const targetSubfolderName = isSql ? 'SQL' : 'Python';
             const ext = isSql ? '.sql' : '.py';
             let fileName = tabToSave.filename || `program 1${ext}`;
             if (!fileName.toLowerCase().endsWith(ext)) {
@@ -745,7 +748,7 @@ function PracticeIDEPage() {
             }
 
             try {
-                // 1. Resolve or Create Folder in Documents
+                // 1. Resolve or Create Main Folder "Coding files" and Subfolder ("Python" or "SQL")
                 const foldersRes = await foldersAPI.getAll();
                 const rawFolders = foldersRes.data?.data;
                 const foldersList = Array.isArray(rawFolders)
@@ -753,16 +756,38 @@ function PracticeIDEPage() {
                     : Array.isArray(rawFolders?.folders)
                     ? rawFolders.folders
                     : [];
+
+                let codingFilesFolder = foldersList.find(
+                    (f) => !f.parentId && f.name?.toLowerCase() === 'coding files'
+                );
+                if (!codingFilesFolder) {
+                    try {
+                        const createRootRes = await foldersAPI.create({
+                            name: 'Coding files',
+                            color: '#6366f1'
+                        });
+                        codingFilesFolder = createRootRes.data?.data?.folder || createRootRes.data?.data;
+                    } catch (_) {
+                        codingFilesFolder = foldersList.find((f) => f.name?.toLowerCase() === 'coding files');
+                    }
+                }
+
                 let targetFolder = foldersList.find(
-                    (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
+                    (f) => f.name?.toLowerCase() === targetSubfolderName.toLowerCase() &&
+                           (codingFilesFolder?.id ? f.parentId === codingFilesFolder.id : true)
                 );
 
                 if (!targetFolder) {
-                    const createFolderRes = await foldersAPI.create({
-                        name: targetFolderName,
-                        color: isSql ? '#0284c7' : '#f59e0b'
-                    });
-                    targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+                    try {
+                        const createFolderRes = await foldersAPI.create({
+                            name: targetSubfolderName,
+                            parentId: codingFilesFolder?.id || undefined,
+                            color: isSql ? '#0284c7' : '#f59e0b'
+                        });
+                        targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+                    } catch (_) {
+                        targetFolder = foldersList.find((f) => f.name?.toLowerCase() === targetSubfolderName.toLowerCase());
+                    }
                 }
 
                 // 2. Upload file to Documents
@@ -781,29 +806,32 @@ function PracticeIDEPage() {
                 const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
                 const newDocId = savedDoc?.id || tabToSave.documentId;
 
-                // 3. Update tab with documentId in tabs state and storage
+                // 3. Update tab with documentId in tabs state and storage without clobbering live code
                 if (newDocId) {
-                    const nextTabs = (tabsRef.current || tabs).map((t) =>
-                        t.id === tabToSave.id
-                            ? {
-                                  ...t,
-                                  filename: fileName,
-                                  documentId: newDocId,
-                                  folderId: targetFolder?.id,
-                                  isDirty: false
-                              }
-                            : t
-                    );
-                    setTabs(nextTabs);
+                    setTabs((prevTabs) => {
+                        const nextTabs = prevTabs.map((t) =>
+                            t.id === tabToSave.id
+                                ? {
+                                      ...t,
+                                      filename: fileName,
+                                      documentId: newDocId,
+                                      folderId: targetFolder?.id,
+                                      isDirty: false
+                                  }
+                                : t
+                        );
 
-                    // Persist new documentId directly to workspace storage
-                    compilerAPI.saveWorkspace({
-                        tabs: nextTabs,
-                        activeTabId: activeTabIdRef.current || activeTabId,
-                        isAutosaveEnabled,
-                        editorTheme,
-                        outputTheme: outputThemeId
-                    }).catch(() => {});
+                        // Persist new documentId directly to workspace storage
+                        compilerAPI.saveWorkspace({
+                            tabs: nextTabs,
+                            activeTabId: activeTabIdRef.current || activeTabId,
+                            isAutosaveEnabled,
+                            editorTheme,
+                            outputTheme: outputThemeId
+                        }).catch(() => {});
+
+                        return nextTabs;
+                    });
                 }
 
                 loadExistingDocs();
@@ -841,10 +869,12 @@ function PracticeIDEPage() {
                 });
 
                 // 2. If the active tab has a linked document in Documents, auto-sync document file directly when dirty
-                const currentActiveTab = tabsToSave.find((t) => t.id === activeIdToSave);
-                if (currentActiveTab?.documentId && currentActiveTab?.isDirty && currentActiveTab?.code) {
+                const currentActiveTab = (tabsRef.current || tabsToSave).find((t) => t.id === activeIdToSave);
+                const liveCode = editorRef.current ? editorRef.current.getValue() : currentActiveTab?.code;
+
+                if (currentActiveTab?.documentId && currentActiveTab?.isDirty && liveCode && liveCode.trim()) {
                     try {
-                        const fileBlob = new Blob([currentActiveTab.code], { type: 'text/plain;charset=utf-8' });
+                        const fileBlob = new Blob([liveCode], { type: 'text/plain;charset=utf-8' });
                         const fileObj = new File([fileBlob], currentActiveTab.filename || 'script.txt', { type: 'text/plain' });
                         const uploadRes = await documentsAPI.upload(fileObj, {
                             name: currentActiveTab.filename,
@@ -857,30 +887,23 @@ function PracticeIDEPage() {
 
                         const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
                         const resolvedDocId = savedDoc?.id || currentActiveTab.documentId;
-                        const updatedTabsWithDoc = tabsToSave.map((t) =>
-                            t.id === currentActiveTab.id
-                                ? { ...t, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso }
-                                : t
+                        
+                        // Update ONLY tab metadata without replacing active code in state to prevent cursor jump!
+                        setTabs((prevTabs) =>
+                            prevTabs.map((t) =>
+                                t.id === currentActiveTab.id
+                                    ? { ...t, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso }
+                                    : t
+                            )
                         );
-                        setTabs(updatedTabsWithDoc);
-
-                        if (resolvedDocId !== currentActiveTab.documentId) {
-                            compilerAPI.saveWorkspace({
-                                tabs: updatedTabsWithDoc,
-                                activeTabId: activeIdToSave,
-                                isAutosaveEnabled: isAuto,
-                                editorTheme,
-                                outputTheme: outputThemeId
-                            }).catch(() => {});
-                        }
 
                         loadExistingDocs();
                     } catch (docSyncErr) {
                         console.warn('[Autosave] Document sync notice:', docSyncErr.message);
                     }
-                } else if (currentActiveTab && !currentActiveTab.documentId && currentActiveTab.code?.trim()) {
+                } else if (currentActiveTab && !currentActiveTab.documentId && liveCode && liveCode.trim()) {
                     // Automatically save new program to folder if it has no linked document
-                    saveProgramToAppropriateFolder(currentActiveTab);
+                    await saveProgramToAppropriateFolder({ ...currentActiveTab, code: liveCode });
                 }
 
                 setLastAutosavedAt(nowIso);
@@ -891,6 +914,7 @@ function PracticeIDEPage() {
                     setAutosaveFlash({ visible: false, status: 'saved', text: '' });
                 }, 2500);
             } catch (e) {
+                console.warn('[Autosave] Workspace save notice:', e.message);
                 setAutosaveStatus('saved');
                 setAutosaveFlash({ visible: false, status: 'saved', text: '' });
             }
@@ -898,9 +922,10 @@ function PracticeIDEPage() {
         [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs, saveProgramToAppropriateFolder]
     );
 
-    // Code change handler
+    // Code change handler (2500ms debounce prevents cursor repositioning)
     const handleCodeChange = (newCode) => {
         if (inspectingStudentId) return;
+        if (isProgrammaticUpdateRef.current) return;
         const val = newCode || '';
 
         setTabs((prevTabs) => {
@@ -911,7 +936,7 @@ function PracticeIDEPage() {
                 if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
                 autosaveTimerRef.current = setTimeout(() => {
                     triggerSaveWorkspace(nextTabs, activeTabId);
-                }, 800);
+                }, 2500);
             }
             return nextTabs;
         });
@@ -1032,17 +1057,7 @@ Date:          ${dateStr}
     };
 
     const handleFind = () => {
-        if (!editorRef.current) return;
-        const editor = editorRef.current;
-        const findContrib = editor.getContribution('editor.contrib.findController');
-        if (findContrib && typeof findContrib.getState === 'function') {
-            const state = findContrib.getState();
-            if (state && state.isRevealed) {
-                findContrib.closeFindWidget();
-                return;
-            }
-        }
-        editor.getAction('actions.find')?.run();
+        setShowFindReplaceModal((prev) => !prev);
     };
 
     const handleCopyCode = async () => {
@@ -1388,7 +1403,7 @@ Date:          ${dateStr}
         const toastId = toast.loading(`Saving "${fileName}" to Documents...`);
 
         try {
-            // 1. Resolve or Create Folder
+            // 1. Resolve or Create Main Folder "Coding files" and Subfolder ("Python" or "SQL")
             const targetFolderName = folderName || (language === 'sql' ? 'SQL' : 'Python');
             const foldersRes = await foldersAPI.getAll();
             const rawFolders = foldersRes.data?.data;
@@ -1397,16 +1412,38 @@ Date:          ${dateStr}
                 : Array.isArray(rawFolders?.folders)
                 ? rawFolders.folders
                 : [];
+
+            let codingFilesFolder = foldersList.find(
+                (f) => !f.parentId && f.name?.toLowerCase() === 'coding files'
+            );
+            if (!codingFilesFolder) {
+                try {
+                    const createRootRes = await foldersAPI.create({
+                        name: 'Coding files',
+                        color: '#6366f1'
+                    });
+                    codingFilesFolder = createRootRes.data?.data?.folder || createRootRes.data?.data;
+                } catch (_) {
+                    codingFilesFolder = foldersList.find((f) => f.name?.toLowerCase() === 'coding files');
+                }
+            }
+
             let targetFolder = foldersList.find(
-                (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase()
+                (f) => f.name?.toLowerCase() === targetFolderName.toLowerCase() &&
+                       (codingFilesFolder?.id ? f.parentId === codingFilesFolder.id : true)
             );
 
             if (!targetFolder) {
-                const createFolderRes = await foldersAPI.create({
-                    name: targetFolderName,
-                    color: language === 'sql' ? '#0284c7' : '#f59e0b'
-                });
-                targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+                try {
+                    const createFolderRes = await foldersAPI.create({
+                        name: targetFolderName,
+                        parentId: codingFilesFolder?.id || undefined,
+                        color: language === 'sql' ? '#0284c7' : '#f59e0b'
+                    });
+                    targetFolder = createFolderRes.data?.data?.folder || createFolderRes.data?.data;
+                } catch (_) {
+                    targetFolder = foldersList.find((f) => f.name?.toLowerCase() === targetFolderName.toLowerCase());
+                }
             }
 
             // 2. Upload file
@@ -1483,9 +1520,19 @@ Date:          ${dateStr}
     };
 
     // 7. Open Document from Browser into Tab
-    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, updatedAt }) => {
+    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, updatedAt }) => {
         const resolvedDocId = docId || documentId || null;
         const currentTabs = tabsRef.current || tabs;
+        const safeCode = typeof code === 'string' && code.length > 0 ? code : (docLang === 'sql' ? '-- SQL script\n' : '# Python script\n');
+
+        // Flag programmatic update so Monaco onChange does not trigger premature autosave
+        isProgrammaticUpdateRef.current = true;
+        if (editorRef.current) {
+            editorRef.current.setValue(safeCode);
+        }
+        setTimeout(() => {
+            isProgrammaticUpdateRef.current = false;
+        }, 300);
 
         if (updatedAt) {
             setLastAutosavedAt(updatedAt);
@@ -1504,10 +1551,12 @@ Date:          ${dateStr}
             const newTab = createDefaultTab(newId, docLang, studentIdentifier, studentDisplayName);
             newTab.title = name.replace(/\.(py|sql)$/i, '');
             newTab.filename = name;
-            newTab.code = code;
+            newTab.code = safeCode;
             newTab.documentId = resolvedDocId;
+            newTab.folderId = folderId || newTab.folderId;
             newTab.metadata.title = newTab.title;
             newTab.lastSavedAt = updatedAt || new Date().toISOString();
+            newTab.isDirty = false;
 
             const updatedTabs = [...currentTabs, newTab];
             setTabs(updatedTabs);
@@ -1523,8 +1572,9 @@ Date:          ${dateStr}
                           title: name.replace(/\.(py|sql)$/i, ''),
                           filename: name,
                           language: docLang,
-                          code: code,
+                          code: safeCode,
                           documentId: resolvedDocId || t.documentId,
+                          folderId: folderId || t.folderId,
                           lastSavedAt: updatedAt || new Date().toISOString(),
                           isDirty: false,
                           metadata: {
@@ -1570,6 +1620,9 @@ Date:          ${dateStr}
                     } else {
                         handleSaveToDocuments(false);
                     }
+                } else if (e.key === 'f' || e.key === 'F' || e.key === 'h' || e.key === 'H') {
+                    e.preventDefault();
+                    setShowFindReplaceModal(true);
                 } else if (e.key === 'o') {
                     e.preventDefault();
                     setShowDocBrowserModal(true);
@@ -1699,6 +1752,7 @@ Date:          ${dateStr}
                 onUndo={handleUndo}
                 onRedo={handleRedo}
                 onFind={handleFind}
+                onInsertSnippet={handleInsertSnippet}
                 isWordWrapOn={isWordWrapOn}
                 onToggleWordWrap={() => setIsWordWrapOn((prev) => !prev)}
                 isLineNumbersOn={isLineNumbersOn}
@@ -2092,46 +2146,6 @@ Date:          ${dateStr}
                             >
                                 <Copy className="w-3.5 h-3.5" />
                             </button>
-
-                            {/* Code Snippets Dropdown */}
-                            <div className="relative" ref={snippetsMenuRef}>
-                                <button
-                                    onClick={() => setShowSnippetsMenu(!showSnippetsMenu)}
-                                    className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold transition cursor-pointer border ${
-                                        showSnippetsMenu
-                                            ? 'bg-primary-600 text-white border-primary-600 shadow-xs'
-                                            : isLightMode
-                                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-700'
-                                            : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-                                    }`}
-                                    title="Insert Code Snippet"
-                                >
-                                    <Code2 className="w-3.5 h-3.5 text-primary-500" />
-                                    <span className="hidden md:inline">Snippets</span>
-                                    <ChevronDown className="w-3 h-3 text-slate-400" />
-                                </button>
-
-                                {showSnippetsMenu && (
-                                    <div className={`absolute right-0 top-full mt-1.5 w-60 py-1.5 rounded-xl shadow-2xl border z-[90] animate-in fade-in slide-in-from-top-1 text-xs select-none ${
-                                        isLightMode ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-200'
-                                    }`}>
-                                        <p className="text-[10px] uppercase font-bold text-slate-400 px-3 py-1">
-                                            {isDatabaseLanguage(activeTab.language) ? 'SQL Snippets' : 'Python Snippets'}
-                                        </p>
-                                        {(CODE_SNIPPETS[isDatabaseLanguage(activeTab.language) ? 'sql' : 'python'] || []).map((snip, sIdx) => (
-                                            <button
-                                                key={sIdx}
-                                                onClick={() => handleInsertSnippet(snip.code)}
-                                                className={`w-full text-left px-3 py-1.5 flex items-center justify-between text-xs cursor-pointer ${
-                                                    isLightMode ? 'hover:bg-slate-100 text-slate-700 hover:text-slate-900' : 'hover:bg-slate-800 text-slate-200 hover:text-white'
-                                                }`}
-                                            >
-                                                <span>{snip.label}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
 
                             {/* Maximize / Restore Editor Button */}
                             <button
@@ -2988,6 +3002,15 @@ Date:          ${dateStr}
                 onClose={() => setShowDocBrowserModal(false)}
                 onOpenFile={handleOpenDocumentContent}
                 defaultLanguage={activeTab.language}
+            />
+
+            {/* Draggable Centered Find and Replace Modal with Black Border */}
+            <FindReplaceModal
+                isOpen={showFindReplaceModal}
+                onClose={() => setShowFindReplaceModal(false)}
+                editorRef={editorRef}
+                onCodeChange={handleCodeChange}
+                isLightMode={isLightMode}
             />
 
             {/* Traditional Save As Dialog Modal */}

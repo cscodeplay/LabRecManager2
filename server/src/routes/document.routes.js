@@ -28,6 +28,13 @@ const upload = multer({
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'text/csv',
             'text/plain',
+            'text/x-python',
+            'text/x-python-script',
+            'application/x-python-code',
+            'application/sql',
+            'text/sql',
+            'text/x-sql',
+            'application/x-sql',
             'image/jpeg',
             'image/png',
             'image/gif',
@@ -50,10 +57,11 @@ const upload = multer({
             'application/vnd.oasis.opendocument.presentation',
             'text/html'
         ];
-        if (allowedTypes.includes(file.mimetype)) {
+        const isCodeExt = file.originalname?.endsWith('.py') || file.originalname?.endsWith('.sql') || file.originalname?.endsWith('.txt');
+        if (allowedTypes.includes(file.mimetype) || isCodeExt) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, JPG, PNG, GIF, WEBP, Audio, Video, PPT, PPTX'));
+            cb(new Error('Invalid file type. Allowed: PDF, DOC, DOCX, XLS, XLSX, CSV, TXT, PY, SQL, JPG, PNG, GIF, WEBP, Audio, Video, PPT, PPTX'));
         }
     }
 });
@@ -313,6 +321,40 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                 let finalPublicId = `local_${diskFileName}`;
                 let finalUrl = `/uploads/${diskFileName}`;
 
+                // Upload to Cloudinary so code & files are stored on cloud
+                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                    try {
+                        const result = await cloudinary.uploadFile(
+                            req.file.buffer,
+                            req.file.originalname,
+                            req.file.mimetype
+                        );
+                        if (result && (result.secureUrl || result.url)) {
+                            finalPublicId = result.publicId;
+                            finalUrl = result.secureUrl || result.url;
+                        }
+                    } catch (cloudErr) {
+                        console.warn('[DocPersonal] Cloudinary upload notice:', cloudErr.message);
+                    }
+                }
+
+                // Upload to Cloudinary so code & files are stored on cloud
+                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                    try {
+                        const result = await cloudinary.uploadFile(
+                            req.file.buffer,
+                            req.file.originalname,
+                            req.file.mimetype
+                        );
+                        if (result && (result.secureUrl || result.url)) {
+                            finalPublicId = result.publicId;
+                            finalUrl = result.secureUrl || result.url;
+                        }
+                    } catch (cloudErr) {
+                        console.warn('[DocUpdate] Cloudinary upload notice:', cloudErr.message);
+                    }
+                }
+
                 const updated = await prisma.document.update({
                     where: { id: targetDoc.id },
                     data: {
@@ -370,6 +412,23 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 
                 let finalPublicId = `local_${diskFileName}`;
                 let finalUrl = `/uploads/${diskFileName}`;
+
+                // Upload to Cloudinary so code & files are stored on cloud
+                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                    try {
+                        const result = await cloudinary.uploadFile(
+                            req.file.buffer,
+                            req.file.originalname,
+                            req.file.mimetype
+                        );
+                        if (result && (result.secureUrl || result.url)) {
+                            finalPublicId = result.publicId;
+                            finalUrl = result.secureUrl || result.url;
+                        }
+                    } catch (cloudErr) {
+                        console.warn('[DocPersonal] Cloudinary upload notice:', cloudErr.message);
+                    }
+                }
 
                 if (studentPersonalDoc) {
                     const updated = await prisma.document.update({
@@ -473,6 +532,23 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 
             let finalPublicId = `local_${diskFileName}`;
             let finalUrl = `/uploads/${diskFileName}`;
+
+            // Upload to Cloudinary so overwritten documents are stored on cloud
+            if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                try {
+                    const result = await cloudinary.uploadFile(
+                        req.file.buffer,
+                        req.file.originalname,
+                        req.file.mimetype
+                    );
+                    if (result && (result.secureUrl || result.url)) {
+                        finalPublicId = result.publicId;
+                        finalUrl = result.secureUrl || result.url;
+                    }
+                } catch (cloudErr) {
+                    console.warn('[DocOverwrite] Cloudinary upload notice:', cloudErr.message);
+                }
+            }
 
             const overwritten = await prisma.document.update({
                 where: { id: existingDoc.id },
@@ -664,10 +740,32 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         const buf = Buffer.from(content, 'utf8');
         fs.writeFileSync(diskPath, buf);
 
+        let finalPublicId = `local_${diskFileName}`;
+        let finalUrl = `/uploads/${diskFileName}`;
+
+        if (cloudinary.isConfigured() && buf.length <= 10 * 1024 * 1024) {
+            try {
+                if (doc.cloudinaryId && !doc.cloudinaryId.startsWith('local_')) {
+                    await cloudinary.deleteFile(doc.cloudinaryId, 'raw').catch(() => {});
+                }
+                const result = await cloudinary.uploadFile(
+                    buf,
+                    effectiveFileName,
+                    doc.mimeType || 'text/plain'
+                );
+                if (result && (result.secureUrl || result.url)) {
+                    finalPublicId = result.publicId;
+                    finalUrl = result.secureUrl || result.url;
+                }
+            } catch (cloudErr) {
+                console.warn('[DocContentUpdate] Cloudinary upload notice:', cloudErr.message);
+            }
+        }
+
         updateData.fileName = effectiveFileName;
         updateData.fileSize = buf.length;
-        updateData.cloudinaryId = `local_${diskFileName}`;
-        updateData.url = `/uploads/${diskFileName}`;
+        updateData.cloudinaryId = finalPublicId;
+        updateData.url = finalUrl;
     }
 
     const updated = await prisma.document.update({

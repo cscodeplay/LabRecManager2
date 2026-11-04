@@ -153,6 +153,11 @@ model User {
   securityQuestion                               String?                    @map("security_question") @db.VarChar(255)
   securityAnswerHash                             String?                    @map("security_answer_hash") @db.VarChar(255)
   mustChangePassword                             Boolean?                   @default(false) @map("must_change_password")
+  parentName                                     String?                    @map("parent_name") @db.VarChar(100)
+  parentPhone                                    String?                    @map("parent_phone") @db.VarChar(20)
+  parentEmail                                    String?                    @map("parent_email") @db.VarChar(255)
+  parentRelation                                 String?                    @default("Guardian") @map("parent_relation") @db.VarChar(50)
+  parentWhatsAppEnabled                          Boolean?                   @default(true) @map("parent_whatsapp_enabled")
   backupCodes                                    BackupCode[]
   activityLogs                                   ActivityLog[]
   assignmentsAssigned                            AssignmentTarget[]

@@ -3,6 +3,7 @@ const prisma = require('../config/database');
 const emailService = require('./email.service');
 const reportService = require('./report.service');
 const reportEmailService = require('./report.email.service');
+const defaulterEscalationService = require('./defaulterEscalation.service');
 const logger = console; // Use console as logger fallback
 
 let ioInstance = null;
@@ -395,6 +396,16 @@ const initCronJobs = () => {
             filters: { dateRange: 'month' },
             note: 'End-of-week audit detailing assignments, submission percentages, and pending student practicals.'
         });
+    });
+
+    // ===========================================
+    // 3B. AUTOMATED PARENT DEFAULTER ESCALATION CRON
+    // Runs Monday through Friday at 05:00 PM (0 17 * * 1-5)
+    // Scans pending lab submissions & sends WhatsApp / SMS / Email alerts to parents
+    // ===========================================
+    cron.schedule('0 17 * * 1-5', async () => {
+        logger.info('[Parent Notification Cron] Running weekday automated parent escalation dispatches');
+        await defaulterEscalationService.dispatchAutomatedEscalations();
     });
 
     // ===========================================

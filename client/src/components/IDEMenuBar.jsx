@@ -31,8 +31,32 @@ import {
     Maximize2,
     Minimize2,
     WrapText,
-    ListOrdered
+    ListOrdered,
+    Code2
 } from 'lucide-react';
+
+const CODE_SNIPPETS_LIST = {
+    python: [
+        { label: 'File I/O (Read & Write Sample)', code: '# File Input & Output Sample\nfilename = "practice_records.txt"\n\n# 1. Writing to a file\nwith open(filename, "w", encoding="utf-8") as f:\n    f.write("Roll,Name,Score\\n")\n    f.write("101,Aarav Sharma,92.5\\n")\n    f.write("102,Priya Patel,88.0\\n")\n    f.write("103,Rohan Verma,79.5\\n")\nprint(f"Created \'{filename}\' successfully!\\n")\n\n# 2. Reading and processing the file\nprint("Reading file contents:")\nwith open(filename, "r", encoding="utf-8") as f:\n    header = f.readline().strip()\n    print("Header:", header)\n    for line in f:\n        roll, name, score = line.strip().split(",")\n        print(f"Student #{roll}: {name} -> {score}%")' },
+        { label: 'Database I/O (SQLite / DB Connect)', code: '# Database I/O Sample in Python (SQLite / Practice DB)\nimport sqlite3\n\n# Connect to the local practice database in workspace\nconn = sqlite3.connect("practice.sqlite")\ncursor = conn.cursor()\n\n# 1. Create Table\ncursor.execute("""\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    marks REAL\n)\n""")\n\n# 2. Insert Records\ncursor.executemany("INSERT OR REPLACE INTO students VALUES (?, ?, ?)", [\n    (1, "Aarav Sharma", 95.0),\n    (2, "Priya Patel", 89.5),\n    (3, "Rohan Verma", 78.0)\n])\nconn.commit()\n\n# 3. Query Records\ncursor.execute("SELECT id, name, marks FROM students ORDER BY marks DESC")\nrows = cursor.fetchall()\n\nprint(f"{\'ID\':<4} {\'Name\':<16} {\'Marks\':<6}")\nprint("-" * 30)\nfor r in rows:\n    print(f"{r[0]:<4} {r[1]:<16} {r[2]:<6.1f}")\n\nconn.close()' },
+        { label: 'Multi-Value Input (Space/Tab)', code: '# Reading Multiple Values (Space or Tab Separated)\nprint("Enter values separated by spaces or tabs:")\ntry:\n    values = input().split()\n    print("Tokens received:", values)\n    nums = [float(v) for v in values if v.replace(\'.\', \'\', 1).isdigit()]\n    if nums:\n        print("Count:", len(nums))\n        print("Sum:", sum(nums))\n        print("Average:", sum(nums) / len(nums))\nexcept EOFError:\n    print("No input provided via stdin.")' },
+        { label: 'For Loop (Range)', code: 'for i in range(1, 11):\n    print(f"Number: {i}")' },
+        { label: 'While Loop', code: 'count = 0\nwhile count < 5:\n    print("Iteration:", count)\n    count += 1' },
+        { label: 'If - Elif - Else', code: 'score = 85\nif score >= 90:\n    print("Grade A")\nelif score >= 75:\n    print("Grade B")\nelse:\n    print("Grade C")' },
+        { label: 'Function Definition', code: 'def calculate_area(length, width):\n    """Calculates rectangular area"""\n    return length * width' },
+        { label: 'Try - Except Handling', code: 'try:\n    val = int(input("Enter number: "))\n    print("Result:", 100 / val)\nexcept ZeroDivisionError:\n    print("Cannot divide by zero")\nexcept ValueError:\n    print("Invalid numeric input")' },
+        { label: 'List Comprehension', code: 'even_squares = [x**2 for x in range(1, 11) if x % 2 == 0]\nprint(even_squares)' }
+    ],
+    sql: [
+        { label: 'SELECT with WHERE', code: 'SELECT id, name, department\nFROM students\nWHERE department = \'Computer Science\'\nORDER BY name ASC;' },
+        { label: 'CREATE TABLE (PK & Constraints)', code: 'CREATE TABLE students (\n    id INTEGER PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    email VARCHAR(100) UNIQUE,\n    marks DECIMAL(5, 2) DEFAULT 0.0\n);' },
+        { label: 'INSERT INTO', code: 'INSERT INTO students (id, name, email, marks)\nVALUES (101, \'Aarav Sharma\', \'aarav@school.edu\', 88.5);' },
+        { label: 'INNER JOIN Query', code: 'SELECT s.id, s.name, e.course_name, e.grade\nFROM students s\nINNER JOIN enrollments e ON s.id = e.student_id;' },
+        { label: 'GROUP BY & HAVING', code: 'SELECT department, COUNT(*) AS student_count, AVG(marks) AS avg_marks\nFROM students\nGROUP BY department\nHAVING COUNT(*) >= 2;' },
+        { label: 'UPDATE Records', code: 'UPDATE students\nSET marks = marks + 5\nWHERE department = \'Computer Science\';' },
+        { label: 'DELETE Records', code: 'DELETE FROM students\nWHERE marks < 35.0;' }
+    ]
+};
 
 /**
  * Desktop-Grade Top Menu Bar for Practice Studio IDE
@@ -76,6 +100,7 @@ export default function IDEMenuBar({
     onUndo,
     onRedo,
     onFind,
+    onInsertSnippet,
     isWordWrapOn = true,
     onToggleWordWrap,
     isLineNumbersOn = true,
@@ -337,6 +362,52 @@ export default function IDEMenuBar({
                                     Clear Editor Code
                                 </span>
                             </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* SNIPPETS MENU */}
+                <div className="relative">
+                    <button onClick={() => toggleMenu('snippets')} className={menuBtnClass('snippets')}>
+                        Snippets
+                    </button>
+                    {openMenu === 'snippets' && (
+                        <div className={`w-72 max-h-[75vh] overflow-y-auto p-1.5 ${dropdownClass}`}>
+                            <p className="text-[10px] uppercase font-bold text-amber-500 px-3 py-1 flex items-center justify-between">
+                                <span>Python Snippets</span>
+                                <span className="font-mono text-[9px] bg-amber-500/10 px-1.5 py-0.2 rounded text-amber-500 font-bold">.py</span>
+                            </p>
+                            {CODE_SNIPPETS_LIST.python.map((snip, idx) => (
+                                <button
+                                    key={`py-${idx}`}
+                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip.code))}
+                                    className={itemBtnClass}
+                                >
+                                    <span className="flex items-center gap-2 truncate">
+                                        <FileCode className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                        <span className="truncate">{snip.label}</span>
+                                    </span>
+                                </button>
+                            ))}
+
+                            <div className={dividerClass} />
+
+                            <p className="text-[10px] uppercase font-bold text-sky-500 px-3 py-1 flex items-center justify-between">
+                                <span>SQL Snippets</span>
+                                <span className="font-mono text-[9px] bg-sky-500/10 px-1.5 py-0.2 rounded text-sky-500 font-bold">.sql</span>
+                            </p>
+                            {CODE_SNIPPETS_LIST.sql.map((snip, idx) => (
+                                <button
+                                    key={`sql-${idx}`}
+                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip.code))}
+                                    className={itemBtnClass}
+                                >
+                                    <span className="flex items-center gap-2 truncate">
+                                        <Database className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                                        <span className="truncate">{snip.label}</span>
+                                    </span>
+                                </button>
+                            ))}
                         </div>
                     )}
                 </div>

@@ -1401,6 +1401,14 @@ export default function DocumentsPage() {
         }
     };
 
+    // Check if navigating inside Office and Media folder
+    const isInsideOfficeMediaFolder = Boolean(
+        currentFolder && (
+            currentFolder.name?.toLowerCase().includes('office') ||
+            currentFolder.name?.toLowerCase().includes('media')
+        )
+    );
+
     const handleSort = (field) => {
         if (sortField === field) {
             setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -2469,8 +2477,8 @@ export default function DocumentsPage() {
                             )}
                         </div>
 
-                        {/* System Folder: Whiteboard Recordings (Grid) */}
-                        {activeTab === 'my' && !currentFolder && (
+                        {/* System Folder: Whiteboard Recordings (Grid) - Nested inside Office Media Files */}
+                        {activeTab === 'my' && isInsideOfficeMediaFolder && (
                             <div
                                 onClick={() => setActiveTab('recordings')}
                                 className="card p-4 hover:shadow-md transition-all border border-indigo-100 bg-indigo-50/40 hover:bg-indigo-50/70 relative cursor-pointer group"
@@ -2728,8 +2736,8 @@ export default function DocumentsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* System Folder: Whiteboard Recordings (List) */}
-                                    {activeTab === 'my' && !currentFolder && (
+                                    {/* System Folder: Whiteboard Recordings (List) - Nested inside Office Media Files */}
+                                    {activeTab === 'my' && isInsideOfficeMediaFolder && (
                                         <tr
                                             onClick={() => setActiveTab('recordings')}
                                             className="border-b border-indigo-100 bg-indigo-50/20 hover:bg-indigo-50/60 cursor-pointer group transition-colors"

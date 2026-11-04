@@ -193,39 +193,45 @@ export default function DocumentCodeBrowserModal({
                 codeText = typeof response.data === 'string' ? response.data : String(response.data || '');
             } catch (apiErr) {
                 console.warn('[DocModal] Primary getFileContent failed, attempting fallbacks:', apiErr.message);
+            }
 
-                // Fallback 1: Direct fetch via doc.url (local /uploads rewrites or remote http)
+            // If empty string returned from primary API or error, execute layered fallbacks
+            if (!codeText || !codeText.trim()) {
+                // Fallback 1: Direct fetch via doc.url (local /uploads rewrites or remote Cloudinary https)
                 if (doc.url) {
                     try {
                         const directUrl = doc.url.startsWith('http') || doc.url.startsWith('/') ? doc.url : `/${doc.url}`;
                         const directRes = await fetch(directUrl);
                         if (directRes.ok) {
-                            codeText = await directRes.text();
+                            const txt = await directRes.text();
+                            if (txt && txt.trim()) codeText = txt;
                         }
                     } catch (_) {}
                 }
 
                 // Fallback 2: Stream via download endpoint
-                if (!codeText) {
+                if (!codeText || !codeText.trim()) {
                     try {
                         const dlRes = await documentsAPI.download(doc.id);
                         if (dlRes?.data) {
-                            codeText = typeof dlRes.data === 'string' ? dlRes.data : String(dlRes.data);
+                            const txt = typeof dlRes.data === 'string' ? dlRes.data : String(dlRes.data);
+                            if (txt && txt.trim()) codeText = txt;
                         }
                     } catch (_) {}
                 }
 
-                // Fallback 3: If still 404 or missing, open tab gracefully with a comment placeholder rather than throwing
-                if (!codeText) {
-                    const isSqlFile = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql');
+                // Fallback 3: Provide a clean starter code template rather than opening completely blank
+                if (!codeText || !codeText.trim()) {
+                    const isSqlFile = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
+                    const cleanName = doc.name || doc.fileName || (isSqlFile ? 'query.sql' : 'program.py');
                     codeText = isSqlFile
-                        ? `-- ${doc.name || 'query.sql'}\n-- File loaded from Documents storage\n\n`
-                        : `# ${doc.name || 'script.py'}\n# File loaded from Documents storage\n\n`;
-                    toast(`Opened "${doc.name}" with starter buffer`, { icon: '⚠️' });
+                        ? `-- ===============================================================\n-- Script: ${cleanName}\n-- Created: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\n-- Ready for SQL queries\n-- ===============================================================\n\n`
+                        : `\"\"\"\n===============================================================\nScript: ${cleanName}\nCreated: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\nReady for Python code\n===============================================================\n\"\"\"\n\n`;
+                    toast(`Opened "${doc.name}" with starter template`, { icon: 'ℹ️' });
                 }
             }
 
-            const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql');
+            const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
             const lang = isSql ? 'sql' : 'python';
 
             onOpenFile({
@@ -233,11 +239,12 @@ export default function DocumentCodeBrowserModal({
                 code: codeText,
                 language: lang,
                 documentId: doc.id,
+                folderId: doc.folderId,
                 updatedAt: doc.updatedAt || doc.createdAt,
                 asNewTab
             });
 
-            if (!codeText.includes('File loaded from Documents storage')) {
+            if (!codeText.includes('Ready for Python code') && !codeText.includes('Ready for SQL queries')) {
                 toast.success(`Opened "${doc.name}" in editor`);
             }
             onClose();
@@ -292,46 +299,35 @@ export default function DocumentCodeBrowserModal({
 
                 {/* Filter & Quick Sort Toolbar */}
                 <div className="p-3 sm:px-5 sm:py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-950/50">
-                    {/* Folder Filter Pills */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto text-xs pb-1 sm:pb-0 scrollbar-none">
-                        <button
-                            onClick={() => setSelectedFolderId('all')}
-                            className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer whitespace-nowrap ${
-                                selectedFolderId === 'all'
-                                    ? 'bg-primary-600 text-white font-semibold shadow-xs'
-                                    : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                            }`}
-                        >
-                            All ({safeDocuments.length})
-                        </button>
-                        {safeFolders.map((f) => {
-                            const isSelected = selectedFolderId === f.id;
-                            const count = safeDocuments.filter((d) => d.folderId === f.id).length;
-                            return (
-                                <button
-                                    key={f.id}
-                                    onClick={() => setSelectedFolderId(f.id)}
-                                    className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
-                                        isSelected
-                                            ? 'bg-amber-600 text-white font-semibold shadow-xs'
-                                            : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                >
-                                    <span>{f.name}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-amber-700/60 text-white' : 'bg-slate-700 text-slate-400'}`}>
-                                        {count}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        {/* Folder Type Select Filter */}
+                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs transition">
+                            <FolderOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <label htmlFor="folder-select-filter" className="text-[11px] text-slate-400 font-medium">Folder:</label>
+                            <select
+                                id="folder-select-filter"
+                                value={selectedFolderId}
+                                onChange={(e) => setSelectedFolderId(e.target.value)}
+                                className="bg-transparent text-xs text-slate-100 font-medium focus:outline-none cursor-pointer pr-1"
+                            >
+                                <option value="all" className="bg-slate-900 text-slate-100">
+                                    📁 All Folders ({safeDocuments.length})
+                                </option>
+                                {safeFolders.map((f) => {
+                                    const count = safeDocuments.filter((d) => d.folderId === f.id).length;
+                                    return (
+                                        <option key={f.id} value={f.id} className="bg-slate-900 text-slate-100">
+                                            📁 {f.name} ({count})
+                                        </option>
+                                    );
+                                })}
+                            </select>
+                        </div>
 
-                    {/* Search & Quick Sort Selector */}
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
                         {/* Quick Sort Dropdown */}
-                        <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs">
-                            <SlidersHorizontal className="w-3 h-3 text-amber-400" />
-                            <span className="text-[11px] text-slate-400 font-medium hidden md:inline">Sort:</span>
+                        <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs transition">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Sort:</span>
                             <select
                                 value={`${sortField}-${sortOrder}`}
                                 onChange={(e) => {
@@ -339,37 +335,37 @@ export default function DocumentCodeBrowserModal({
                                     setSortField(f);
                                     setSortOrder(o);
                                 }}
-                                className="bg-transparent text-xs text-slate-200 focus:outline-none cursor-pointer pr-1"
+                                className="bg-transparent text-xs text-slate-100 font-medium focus:outline-none cursor-pointer pr-1"
                             >
-                                <option value="createdAt-desc" className="bg-slate-900 text-slate-200">Creation Date (Newest first)</option>
-                                <option value="createdAt-asc" className="bg-slate-900 text-slate-200">Creation Date (Oldest first)</option>
-                                <option value="name-asc" className="bg-slate-900 text-slate-200">Filename (A → Z)</option>
-                                <option value="name-desc" className="bg-slate-900 text-slate-200">Filename (Z → A)</option>
-                                <option value="updatedAt-desc" className="bg-slate-900 text-slate-200">Last Modified (Recent first)</option>
-                                <option value="fileSize-desc" className="bg-slate-900 text-slate-200">Size (Largest first)</option>
+                                <option value="createdAt-desc" className="bg-slate-900 text-slate-100">Creation Date (Newest first)</option>
+                                <option value="createdAt-asc" className="bg-slate-900 text-slate-100">Creation Date (Oldest first)</option>
+                                <option value="name-asc" className="bg-slate-900 text-slate-100">Filename (A → Z)</option>
+                                <option value="name-desc" className="bg-slate-900 text-slate-100">Filename (Z → A)</option>
+                                <option value="updatedAt-desc" className="bg-slate-900 text-slate-100">Last Modified (Recent first)</option>
+                                <option value="fileSize-desc" className="bg-slate-900 text-slate-100">Size (Largest first)</option>
                             </select>
                         </div>
+                    </div>
 
-                        {/* Search Input */}
-                        <div className="relative flex-1 sm:w-48 md:w-56">
-                            <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search scripts..."
-                                className="w-full pl-8 pr-3 py-1 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-amber-500 placeholder-slate-600 transition"
-                            />
-                        </div>
+                    {/* Search Input */}
+                    <div className="relative flex-1 sm:w-48 md:w-56 max-w-xs">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search scripts..."
+                            className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-amber-500 placeholder-slate-500 transition"
+                        />
                     </div>
                 </div>
 
                 {/* Table Header Row for Easy Sorting */}
                 <div className="grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-950 border-b border-slate-800 text-[11px] font-semibold text-slate-400 select-none">
-                    {/* Filename Column Header */}
+                    {/* Filename Column Header (col-span-3, reduced to view filesize column) */}
                     <button
                         onClick={() => handleColumnSort('name')}
-                        className="col-span-12 sm:col-span-4 flex items-center gap-1.5 hover:text-white transition group text-left cursor-pointer"
+                        className="col-span-12 sm:col-span-3 flex items-center gap-1.5 hover:text-white transition group text-left cursor-pointer"
                         title="Click to sort by filename"
                     >
                         <span>Filename / Script</span>
@@ -412,13 +408,16 @@ export default function DocumentCodeBrowserModal({
                         {renderSortArrow('updatedAt')}
                     </button>
 
-                    {/* Size & Action Headers */}
+                    {/* File Size Column Header (col-span-2, increased so file size is clearly visible!) */}
                     <button
                         onClick={() => handleColumnSort('fileSize')}
-                        className="hidden sm:flex col-span-1 items-center gap-1 hover:text-white transition group cursor-pointer justify-end"
+                        className={`hidden sm:flex col-span-2 items-center gap-1.5 hover:text-white transition group cursor-pointer justify-end pr-2 ${
+                            sortField === 'fileSize' ? 'text-amber-400 font-bold' : 'hover:text-white'
+                        }`}
                         title="Click to sort by file size"
                     >
-                        <span>Size</span>
+                        <HardDrive className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
+                        <span>File Size</span>
                         {renderSortArrow('fileSize')}
                     </button>
 
@@ -447,8 +446,8 @@ export default function DocumentCodeBrowserModal({
                                     key={doc.id}
                                     className="grid grid-cols-12 gap-3 items-center p-2.5 sm:px-3 bg-slate-950/70 hover:bg-slate-800/60 border border-slate-800/70 hover:border-slate-700 rounded-xl transition group"
                                 >
-                                    {/* Filename & Icon */}
-                                    <div className="col-span-12 sm:col-span-4 flex items-center gap-2.5 min-w-0">
+                                    {/* Filename & Icon (col-span-3) */}
+                                    <div className="col-span-12 sm:col-span-3 flex items-center gap-2.5 min-w-0">
                                         <div
                                             className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${
                                                 isSql
@@ -502,12 +501,14 @@ export default function DocumentCodeBrowserModal({
                                         </span>
                                     </div>
 
-                                    {/* File Size */}
-                                    <div className="hidden sm:flex col-span-1 justify-end font-mono text-[11px] text-slate-400">
-                                        {formatFileSize(doc.fileSize)}
+                                    {/* File Size (col-span-2: clear, prominent badge) */}
+                                    <div className="hidden sm:flex col-span-2 justify-end pr-2 items-center">
+                                        <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-emerald-400 font-semibold shadow-xs">
+                                            {formatFileSize(doc.fileSize)}
+                                        </span>
                                     </div>
 
-                                    {/* Actions */}
+                                    {/* Actions (col-span-1) */}
                                     <div className="col-span-12 sm:col-span-1 flex items-center justify-end gap-1.5">
                                         <button
                                             onClick={() => handleSelectDocument(doc, false)}

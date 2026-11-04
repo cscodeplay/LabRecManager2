@@ -49,13 +49,14 @@ class CloudinaryService {
         }
 
         return new Promise((resolve, reject) => {
-            // Determine resource type based on mime type
+            // Determine resource type based on mime type and extension
             let resourceType = 'auto';
-            if (mimeType.startsWith('image/')) {
+            const isCodeOrDoc = (fileName && (fileName.endsWith('.py') || fileName.endsWith('.sql') || fileName.endsWith('.txt') || fileName.endsWith('.csv') || fileName.endsWith('.json') || fileName.endsWith('.docx') || fileName.endsWith('.xlsx') || fileName.endsWith('.pptx'))) || mimeType === 'application/pdf' || mimeType?.startsWith('text/') || mimeType?.includes('sql') || mimeType?.includes('python');
+            if (mimeType && mimeType.startsWith('image/')) {
                 resourceType = 'image';
-            } else if (mimeType.startsWith('video/')) {
+            } else if (mimeType && mimeType.startsWith('video/')) {
                 resourceType = 'video';
-            } else if (mimeType === 'application/pdf') {
+            } else if (isCodeOrDoc) {
                 resourceType = 'raw';
             }
 

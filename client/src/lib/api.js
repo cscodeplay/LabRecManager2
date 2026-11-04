@@ -973,4 +973,12 @@ export const browserAPI = {
     searchImages: (params) => api.get('/browser/images', { params }),
 };
 
+// Defaulter Escalation & Parent Notifications API
+export const defaulterEscalationAPI = {
+    getStatus: () => api.get('/defaulter-escalation/status'),
+    scan: (params) => api.get('/defaulter-escalation/scan', { params }),
+    dispatch: (data) => api.post('/defaulter-escalation/dispatch', data),
+    getLogs: (params) => api.get('/defaulter-escalation/logs', { params }),
+};
+
 export default api;

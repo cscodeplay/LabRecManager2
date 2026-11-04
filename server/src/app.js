@@ -53,6 +53,7 @@ const implementationPlansRoutes = require('./routes/implementation-plans.routes'
 const quizRoutes = require('./routes/quiz.routes');
 const browserRoutes = require('./routes/browser.routes');
 const mathSolverRoutes = require('./routes/mathSolver.routes');
+const defaulterEscalationRoutes = require('./routes/defaulterEscalation.routes');
 const { registerCompilerSocket } = require('./sockets/compiler.socket');
 const initQuizTables = require('./scripts/init-quiz-tables');
 const initBackupCodeTables = require('./scripts/init-backup-code-tables');
@@ -203,6 +204,7 @@ app.use('/api/drive', require('./routes/drive.routes'));
 app.use('/api/quiz', quizRoutes);
 app.use('/api/browser', browserRoutes);
 app.use('/api/whiteboard/math-solver', mathSolverRoutes);
+app.use('/api/defaulter-escalation', defaulterEscalationRoutes);
 
 // Initialize quiz & backup code tables
 initQuizTables().catch(err => console.warn('[App] Quiz tables init warning:', err.message));

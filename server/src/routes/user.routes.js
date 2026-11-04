@@ -92,6 +92,11 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
                 studentId: true,
                 employeeId: true,
                 profileImageUrl: true,
+                parentName: true,
+                parentPhone: true,
+                parentEmail: true,
+                parentRelation: true,
+                parentWhatsAppEnabled: true,
                 isActive: true,
                 lastLogin: true,
                 createdAt: true,
@@ -219,6 +224,11 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
             employeeId: true,
             profileImageUrl: true,
             preferredLanguage: true,
+            parentName: true,
+            parentPhone: true,
+            parentEmail: true,
+            parentRelation: true,
+            parentWhatsAppEnabled: true,
             isActive: true,
             lastLogin: true,
             createdAt: true,
@@ -267,7 +277,8 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
 
     const {
         firstName, firstNameHindi, lastName, lastNameHindi,
-        phone, preferredLanguage, profileImageUrl, gender
+        phone, preferredLanguage, profileImageUrl, gender,
+        parentName, parentPhone, parentEmail, parentRelation, parentWhatsAppEnabled
     } = req.body;
 
     // Admin can update more fields
@@ -291,6 +302,11 @@ router.put('/:id', authenticate, asyncHandler(async (req, res) => {
             preferredLanguage,
             profileImageUrl,
             gender: gender || req.body.gender,
+            parentName,
+            parentPhone,
+            parentEmail,
+            parentRelation,
+            parentWhatsAppEnabled: parentWhatsAppEnabled !== undefined ? parentWhatsAppEnabled : undefined,
             ...adminFields
         },
         select: {
@@ -335,7 +351,8 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
 
     const {
         email, firstName, firstNameHindi, lastName, lastNameHindi,
-        role, phone, admissionNumber, studentId, employeeId, password, classId, gender
+        role, phone, admissionNumber, studentId, employeeId, password, classId, gender,
+        parentName, parentPhone, parentEmail, parentRelation, parentWhatsAppEnabled
     } = req.body;
 
     // Check if email exists
@@ -365,6 +382,11 @@ router.post('/', authenticate, authorize('admin', 'principal', 'instructor'), [
             role: role || 'student',
             schoolId: req.user.schoolId,
             phone,
+            parentName,
+            parentPhone,
+            parentEmail,
+            parentRelation: parentRelation || 'Guardian',
+            parentWhatsAppEnabled: parentWhatsAppEnabled !== undefined ? parentWhatsAppEnabled : true,
             admissionNumber,
             studentId: studentId || admissionNumber, // Use studentId or fallback to admissionNumber
             employeeId,
