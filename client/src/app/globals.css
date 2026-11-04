@@ -533,3 +533,26 @@ img.img-frame-polaroid, .notes-content img.img-frame-polaroid, .ql-editor img.im
   user-select: none !important;
   -webkit-user-select: none !important;
 }
+
+/* Monaco Editor Find & Replace Widget Stabilization (Instant close & zero flicker) */
+.monaco-editor .find-widget {
+  transition: transform 0.12s ease-out !important;
+  z-index: 45 !important;
+}
+
+.monaco-editor .find-widget:not(.visible) {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.monaco-editor .find-widget .button.codicon-widget-close {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  z-index: 55 !important;
+}
+
+.monaco-editor .find-widget .button.codicon-widget-close:hover {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+  color: #ef4444 !important;
+}

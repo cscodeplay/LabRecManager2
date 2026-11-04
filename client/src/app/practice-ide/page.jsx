@@ -146,12 +146,14 @@ const STARTER_CODES = {
 
 const CODE_SNIPPETS = {
     python: [
+        { label: 'File I/O (Read & Write Sample)', code: '# File Input & Output Sample\nfilename = "practice_records.txt"\n\n# 1. Writing to a file\nwith open(filename, "w", encoding="utf-8") as f:\n    f.write("Roll,Name,Score\\n")\n    f.write("101,Aarav Sharma,92.5\\n")\n    f.write("102,Priya Patel,88.0\\n")\n    f.write("103,Rohan Verma,79.5\\n")\nprint(f"Created \'{filename}\' successfully!\\n")\n\n# 2. Reading and processing the file\nprint("Reading file contents:")\nwith open(filename, "r", encoding="utf-8") as f:\n    header = f.readline().strip()\n    print("Header:", header)\n    for line in f:\n        roll, name, score = line.strip().split(",")\n        print(f"Student #{roll}: {name} -> {score}%")' },
+        { label: 'Database I/O (SQLite / DB Connect)', code: '# Database I/O Sample in Python (SQLite / Practice DB)\nimport sqlite3\n\n# Connect to the local practice database in workspace\nconn = sqlite3.connect("practice.sqlite")\ncursor = conn.cursor()\n\n# 1. Create Table\ncursor.execute("""\nCREATE TABLE IF NOT EXISTS students (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    marks REAL\n)\n""")\n\n# 2. Insert Records\ncursor.executemany("INSERT OR REPLACE INTO students VALUES (?, ?, ?)", [\n    (1, "Aarav Sharma", 95.0),\n    (2, "Priya Patel", 89.5),\n    (3, "Rohan Verma", 78.0)\n])\nconn.commit()\n\n# 3. Query Records\ncursor.execute("SELECT id, name, marks FROM students ORDER BY marks DESC")\nrows = cursor.fetchall()\n\nprint(f"{\'ID\':<4} {\'Name\':<16} {\'Marks\':<6}")\nprint("-" * 30)\nfor r in rows:\n    print(f"{r[0]:<4} {r[1]:<16} {r[2]:<6.1f}")\n\nconn.close()' },
+        { label: 'Multi-Value Input (Space/Tab)', code: '# Reading Multiple Values (Space or Tab Separated)\nprint("Enter values separated by spaces or tabs:")\ntry:\n    values = input().split()\n    print("Tokens received:", values)\n    nums = [float(v) for v in values if v.replace(\'.\', \'\', 1).isdigit()]\n    if nums:\n        print("Count:", len(nums))\n        print("Sum:", sum(nums))\n        print("Average:", sum(nums) / len(nums))\nexcept EOFError:\n    print("No input provided via stdin.")' },
         { label: 'For Loop (Range)', code: 'for i in range(1, 11):\n    print(f"Number: {i}")' },
         { label: 'While Loop', code: 'count = 0\nwhile count < 5:\n    print("Iteration:", count)\n    count += 1' },
         { label: 'If - Elif - Else', code: 'score = 85\nif score >= 90:\n    print("Grade A")\nelif score >= 75:\n    print("Grade B")\nelse:\n    print("Grade C")' },
         { label: 'Function Definition', code: 'def calculate_area(length, width):\n    """Calculates rectangular area"""\n    return length * width' },
         { label: 'Try - Except Handling', code: 'try:\n    val = int(input("Enter number: "))\n    print("Result:", 100 / val)\nexcept ZeroDivisionError:\n    print("Cannot divide by zero")\nexcept ValueError:\n    print("Invalid numeric input")' },
-        { label: 'File Context (with open)', code: 'with open("output.txt", "w") as f:\n    f.write("Lab Practice Entry\\n")' },
         { label: 'List Comprehension', code: 'even_squares = [x**2 for x in range(1, 11) if x % 2 == 0]\nprint(even_squares)' }
     ],
     sql: [
@@ -329,6 +331,9 @@ function PracticeIDEPage() {
     // Responsive Mobile Views ('code_output' | 'editor' | 'diagram')
     const [mobileView, setMobileView] = useState('code_output');
 
+    // Python Tutor style interactive in-console stdin input state
+    const [consoleInputText, setConsoleInputText] = useState('');
+
     // UI-aligned Custom Confirmation Modals (Replacing browser alert/confirm)
     const [tabToCloseConfirm, setTabToCloseConfirm] = useState(null);
     const [showResetDbModal, setShowResetDbModal] = useState(false);
@@ -345,6 +350,7 @@ function PracticeIDEPage() {
     const [showEngineModal, setShowEngineModal] = useState(false);
     const [existingTables, setExistingTables] = useState([]);
     const [isResettingDb, setIsResettingDb] = useState(false);
+    const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
 
     // Student Work Inspection & Review Studio
     const [showInspectorModal, setShowInspectorModal] = useState(false);
@@ -392,7 +398,13 @@ function PracticeIDEPage() {
 
     // 2. Initial Workspace Loading (Server + Local Storage)
     useEffect(() => {
+        if (!_hasHydrated) return;
         let isMounted = true;
+
+        // Fallback safety timeout so splash screen never hangs
+        const safetyTimer = setTimeout(() => {
+            if (isMounted) setIsLoadingWorkspace(false);
+        }, 2000);
 
         async function loadWorkspace() {
             try {
@@ -497,6 +509,10 @@ function PracticeIDEPage() {
                 }
             } catch (err) {
                 console.warn('Workspace load warning:', err.message);
+            } finally {
+                if (isMounted) {
+                    setIsLoadingWorkspace(false);
+                }
             }
         }
 
@@ -505,8 +521,9 @@ function PracticeIDEPage() {
 
         return () => {
             isMounted = false;
+            clearTimeout(safetyTimer);
         };
-    }, [inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs, urlLang]);
+    }, [_hasHydrated, isAuthenticated, inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs, urlLang]);
 
     // Auto-load document if opened with ?docId=...
     useEffect(() => {
@@ -720,8 +737,9 @@ function PracticeIDEPage() {
 
     // Stdin change for active tab
     const handleStdinChange = (newStdin) => {
+        const currentActiveId = activeTabIdRef.current || activeTabId;
         setTabs((prevTabs) =>
-            prevTabs.map((t) => (t.id === activeTabId ? { ...t, stdin: newStdin } : t))
+            prevTabs.map((t) => (t.id === currentActiveId || t.id === activeTab.id ? { ...t, stdin: newStdin } : t))
         );
     };
 
@@ -824,9 +842,17 @@ Date:          ${dateStr}
     };
 
     const handleFind = () => {
-        if (editorRef.current) {
-            editorRef.current.getAction('actions.find')?.run();
+        if (!editorRef.current) return;
+        const editor = editorRef.current;
+        const findContrib = editor.getContribution('editor.contrib.findController');
+        if (findContrib && typeof findContrib.getState === 'function') {
+            const state = findContrib.getState();
+            if (state && state.isRevealed) {
+                findContrib.closeFindWidget();
+                return;
+            }
         }
+        editor.getAction('actions.find')?.run();
     };
 
     const handleCopyCode = async () => {
@@ -847,15 +873,19 @@ Date:          ${dateStr}
         if (!editorRef.current) return;
         const editor = editorRef.current;
         const selection = editor.getSelection();
-        if (selection) {
+        const model = editor.getModel();
+        const range = selection && !selection.isEmpty() ? selection : (model ? model.getFullModelRange() : null);
+
+        if (range) {
             editor.executeEdits('snippet', [
                 {
-                    range: selection,
+                    range,
                     text: snippetCode,
                     forceMoveMarkers: true
                 }
             ]);
             editor.focus();
+            handleCodeChange(editor.getValue());
             toast.success('Inserted code snippet!');
         }
     };
@@ -1000,8 +1030,11 @@ Date:          ${dateStr}
     };
 
     // 5. Execute Code (Coordinated with Active Tab Output)
-    const handleExecuteCode = async () => {
-        if (!activeTab?.code?.trim()) {
+    const handleExecuteCode = async (overrideStdin = null) => {
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        const currentTab = (tabsRef.current || tabs).find((t) => t.id === currentActiveId) || activeTab;
+        const codeToExecute = editorRef.current ? editorRef.current.getValue() : (currentTab?.code || '');
+        if (!codeToExecute.trim()) {
             toast.error('Active editor tab is empty. Please write code to run.');
             return;
         }
@@ -1009,22 +1042,30 @@ Date:          ${dateStr}
         setIsExecuting(true);
         setRightPanelMode('output');
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-            setMobileView('output');
+            setMobileView('code_output');
         }
+
+        const effectiveStdin = typeof overrideStdin === 'string'
+            ? overrideStdin
+            : (!isDatabaseLanguage(currentTab.language) ? (currentTab.stdin || '') : '');
 
         try {
             const response = await compilerAPI.execute({
-                language: isDatabaseLanguage(activeTab.language) ? (activeTab.language === 'plsql' ? 'plsql' : 'sql') : (activeTab.language === 'python' ? 'python3' : activeTab.language),
-                code: activeTab.code,
-                stdin: !isDatabaseLanguage(activeTab.language) ? (activeTab.stdin || '') : ''
+                language: isDatabaseLanguage(currentTab.language) ? (currentTab.language === 'plsql' ? 'plsql' : 'sql') : (currentTab.language === 'python' ? 'python3' : currentTab.language),
+                code: codeToExecute,
+                stdin: effectiveStdin
             });
 
             if (response.data && response.data.success) {
                 const resData = response.data.data;
 
-                // Update active tab output
+                // Update active tab output (and stdin if overridden)
                 setTabs((prevTabs) =>
-                    prevTabs.map((t) => (t.id === activeTabId ? { ...t, output: resData } : t))
+                    prevTabs.map((t) => ((t.id === currentActiveId || t.id === activeTab.id) ? {
+                        ...t,
+                        stdin: typeof overrideStdin === 'string' ? overrideStdin : t.stdin,
+                        output: resData
+                    } : t))
                 );
 
                 if (resData.existingTables) {
@@ -1034,16 +1075,17 @@ Date:          ${dateStr}
                 if (resData.stderr && !resData.stdout) {
                     toast.error('Execution encountered an error');
                 } else {
-                    toast.success(`Executed Tab "${activeTab.title}" (${resData.durationMs || 0}ms)`);
+                    toast.success(`Executed Tab "${currentTab.title}" (${resData.durationMs || 0}ms)`);
                 }
             }
         } catch (err) {
             const errMsg = err.response?.data?.message || err.message || 'Execution failed';
             setTabs((prevTabs) =>
                 prevTabs.map((t) =>
-                    t.id === activeTabId
+                    (t.id === currentActiveId || t.id === activeTab.id)
                         ? {
                               ...t,
+                              stdin: typeof overrideStdin === 'string' ? overrideStdin : t.stdin,
                               output: { stdout: '', stderr: errMsg, exitCode: 1, durationMs: 0 }
                           }
                         : t
@@ -1053,6 +1095,20 @@ Date:          ${dateStr}
         } finally {
             setIsExecuting(false);
         }
+    };
+
+    // Python Tutor style interactive in-console stdin input handler
+    const handleSendConsoleInput = (inputVal) => {
+        const inputDomVal = typeof document !== 'undefined' ? document.querySelector('input[placeholder*="Type program input"]')?.value : '';
+        const val = inputVal !== undefined ? inputVal : (consoleInputText || inputDomVal || '');
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        const currentTab = (tabsRef.current || tabs).find((t) => t.id === currentActiveId) || activeTab;
+        if (!val.trim() && !currentTab?.stdin) return;
+
+        const nextStdin = currentTab?.stdin ? `${currentTab.stdin}\n${val}` : val;
+        handleStdinChange(nextStdin);
+        setConsoleInputText('');
+        handleExecuteCode(nextStdin);
     };
 
     // 6. Save to Documents
@@ -1326,7 +1382,25 @@ Date:          ${dateStr}
     };
 
     return (
-        <div className={`flex flex-col h-[calc(100vh-4rem)] w-full max-w-full overflow-x-hidden min-w-0 font-sans ${isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
+        <div className={`flex flex-col h-[calc(100vh-4rem)] w-full max-w-full overflow-x-hidden min-w-0 font-sans relative ${isLightMode ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
+            {/* 0. WORKSPACE RESTORATION LOADING SPLASH */}
+            {isLoadingWorkspace && (
+                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-xs transition-opacity duration-300">
+                    <div className="flex flex-col items-center gap-3 p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl text-center max-w-sm mx-4">
+                        <div className="w-12 h-12 rounded-2xl bg-primary-600/20 border border-primary-500/40 flex items-center justify-center text-primary-400">
+                            <RefreshCw className="w-6 h-6 animate-spin" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-white tracking-wide">Restoring Coding Studio</h3>
+                            <p className="text-xs text-slate-400 mt-1">Loading your workspace programs, opened tabs, and database state...</p>
+                        </div>
+                        <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden mt-1">
+                            <div className="bg-primary-500 h-full rounded-full animate-pulse w-3/4" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* 1. TOP DESKTOP-GRADE IDE MENU BAR */}
             <IDEMenuBar
                 activeTab={activeTab}
@@ -1637,70 +1711,15 @@ Date:          ${dateStr}
                 } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full overflow-hidden ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
-                        {/* Left: Active filename with quick rename & Read-only preselected language indicator */}
+                        {/* Left: Language Badge & Autosave Status */}
                         <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
-                            {/* Quick Rename Program from Sub-Toolbar */}
-                            {editingTabId === activeTab.id && editingTabLocation === 'subtoolbar' ? (
-                                <input
-                                    autoFocus
-                                    type="text"
-                                    value={editingTabTitle}
-                                    onFocus={(e) => e.target.select()}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onMouseDown={(e) => e.stopPropagation()}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onChange={(e) => setEditingTabTitle(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        e.stopPropagation();
-                                        if (e.key === 'Enter') handleCommitTabRename(activeTab.id);
-                                        if (e.key === 'Escape') {
-                                            setEditingTabId(null);
-                                            setEditingTabLocation(null);
-                                        }
-                                    }}
-                                    onBlur={() => handleCommitTabRename(activeTab.id)}
-                                    className={`w-36 px-2 py-0.5 border rounded text-xs font-mono font-bold focus:outline-none ${
-                                        isLightMode
-                                            ? 'bg-white border-primary-600 text-slate-900 shadow-xs ring-1 ring-primary-500'
-                                            : 'bg-slate-900 border-primary-500 text-white shadow-xs ring-1 ring-primary-400'
-                                    }`}
-                                />
-                            ) : (
-                                <div className="flex items-center gap-1 group">
-                                    <span
-                                        className={`font-mono text-xs font-bold cursor-pointer hover:underline ${
-                                            isLightMode ? 'text-primary-700' : 'text-emerald-400'
-                                        }`}
-                                        title={`Absolute Path: ${getTabAbsolutePath(activeTab)}\n(Click or click pencil to rename)`}
-                                        onClick={() => {
-                                            if (inspectingStudentId) return;
-                                            setEditingTabLocation('subtoolbar');
-                                            setEditingTabId(activeTab.id);
-                                            setEditingTabTitle(activeTab.title || (activeTab.filename ? activeTab.filename.replace(/\.[^/.]+$/, '') : ''));
-                                        }}
-                                    >
-                                        {activeTab.filename}
-                                    </span>
-                                    {!inspectingStudentId && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setEditingTabLocation('subtoolbar');
-                                                setEditingTabId(activeTab.id);
-                                                setEditingTabTitle(activeTab.title || (activeTab.filename ? activeTab.filename.replace(/\.[^/.]+$/, '') : ''));
-                                            }}
-                                            className={`p-0.5 rounded transition opacity-70 hover:opacity-100 ${
-                                                isLightMode
-                                                    ? 'hover:bg-slate-200 text-slate-500 hover:text-slate-800'
-                                                    : 'hover:bg-slate-800 text-slate-400 hover:text-slate-200'
-                                            }`}
-                                            title="Quick rename program filename"
-                                        >
-                                            <Edit2 className="w-3 h-3" />
-                                        </button>
-                                    )}
-                                </div>
-                            )}
+                            <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                                isLightMode
+                                    ? 'bg-slate-100 border-slate-300 text-slate-700'
+                                    : 'bg-slate-800 border-slate-700 text-slate-300'
+                            }`}>
+                                {activeTab.language === 'plsql' ? 'PL/SQL' : activeTab.language?.toUpperCase() || 'CODE'}
+                            </span>
 
                             {/* Flashing Autosave Transient Notice (appears on autosave, disappears after 2.5s) */}
                             <div
@@ -1858,7 +1877,7 @@ Date:          ${dateStr}
 
                             {/* Round Play Button */}
                             <button
-                                onClick={handleExecuteCode}
+                                onClick={() => handleExecuteCode()}
                                 disabled={isExecuting}
                                 className={`w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer active:scale-95 group relative ${
                                     isExecuting ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 animate-pulse' : ''
@@ -1999,7 +2018,21 @@ Date:          ${dateStr}
                                     <textarea
                                         value={activeTab.stdin}
                                         onChange={(e) => handleStdinChange(e.target.value)}
-                                        placeholder="Values entered here feed sequentially into input() calls..."
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Tab') {
+                                                e.preventDefault();
+                                                const target = e.target;
+                                                const start = target.selectionStart;
+                                                const end = target.selectionEnd;
+                                                const val = target.value;
+                                                const updated = val.substring(0, start) + '\t' + val.substring(end);
+                                                handleStdinChange(updated);
+                                                setTimeout(() => {
+                                                    target.selectionStart = target.selectionEnd = start + 1;
+                                                }, 0);
+                                            }
+                                        }}
+                                        placeholder="Values entered here feed sequentially into input() calls (supports spaces & tabs)..."
                                         rows={2}
                                         style={{ fontSize: `${fontSize}px` }}
                                         className={`w-full p-2 border rounded font-mono focus:outline-none focus:border-indigo-500 resize-none ${
@@ -2020,7 +2053,7 @@ Date:          ${dateStr}
                         ? 'hidden'
                         : mobileView === 'code_output'
                         ? 'h-[50%] lg:h-full border-t lg:border-t-0'
-                        : mobileView === 'diagram'
+                        : mobileView === 'diagram' || mobileView === 'output'
                         ? 'h-full w-full'
                         : 'hidden lg:flex lg:h-full'
                 } ${isLightMode ? 'bg-slate-50' : 'bg-slate-900/60'}`}>
@@ -2116,124 +2149,197 @@ Date:          ${dateStr}
 
                     {/* CONTENT 1: COORDINATED OUTPUT SCREEN */}
                     {rightPanelMode === 'output' && (
-                        <div
-                            className={`flex-1 flex flex-col p-4 overflow-y-auto custom-scrollbar transition-colors duration-200 ${currentOutputTheme.containerClass}`}
-                        >
-                            {activeTab.output ? (
-                                <div className="space-y-4">
-                                    {/* Execution metadata bar */}
-                                    <div
-                                        className={`flex items-center justify-between pb-2 border-b text-[11px] ${currentOutputTheme.headerClass}`}
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className={`inline-flex items-center gap-1 font-semibold ${
-                                                    activeTab.output.exitCode === 0
-                                                        ? currentOutputTheme.accentText
-                                                        : 'text-rose-500'
-                                                }`}
-                                            >
-                                                {activeTab.output.exitCode === 0 ? (
-                                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                                ) : (
-                                                    <AlertCircle className="w-3.5 h-3.5" />
-                                                )}
-                                                {activeTab.output.exitCode === 0
-                                                    ? 'Process Finished (0)'
-                                                    : `Exited with Error (${activeTab.output.exitCode})`}
-                                            </span>
-                                            <span>•</span>
-                                            <span>Duration: {activeTab.output.durationMs || 0}ms</span>
-                                        </div>
-                                        <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">
-                                            Runner: {activeTab.output.runner || 'native'}
-                                        </span>
-                                    </div>
-
-                                    {/* Standard Output (stdout) */}
-                                    {activeTab.output.stdout ? (
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <div
+                                className={`flex-1 flex flex-col p-4 overflow-y-auto custom-scrollbar transition-colors duration-200 ${currentOutputTheme.containerClass}`}
+                            >
+                                {activeTab.output ? (
+                                    <div className="space-y-4">
+                                        {/* Execution metadata bar */}
                                         <div
-                                            style={{ fontSize: `${fontSize}px` }}
-                                            className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono ${currentOutputTheme.stdoutClass}`}
+                                            className={`flex items-center justify-between pb-2 border-b text-[11px] ${currentOutputTheme.headerClass}`}
                                         >
-                                            {activeTab.output.stdout}
-                                        </div>
-                                    ) : !activeTab.output.stderr ? (
-                                        <p className="opacity-60 italic text-xs">
-                                            Command executed successfully with no stdout output.
-                                        </p>
-                                    ) : null}
-
-                                    {/* Standard Error (stderr) */}
-                                    {activeTab.output.stderr && (() => {
-                                        const noSuchTableMatch = activeTab.output.stderr.match(/Table\s+['`](?:[^'`. ]+\.)?([^'` ]+)['`]\s+doesn't exist/i) ||
-                                            activeTab.output.stderr.match(/no such table:\s*['`]?([^'`\s\n]+)['`]?/i);
-                                        const missingTableName = noSuchTableMatch ? noSuchTableMatch[1] : null;
-
-                                        return (
-                                            <div className="space-y-3">
-                                                <div
-                                                    style={{ fontSize: `${fontSize}px` }}
-                                                    className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300 p-3 rounded-lg whitespace-pre-wrap leading-relaxed select-text font-mono overflow-x-auto custom-scrollbar"
+                                            <div className="flex items-center gap-2">
+                                                <span
+                                                    className={`inline-flex items-center gap-1 font-semibold ${
+                                                        activeTab.output.exitCode === 0
+                                                            ? currentOutputTheme.accentText
+                                                            : 'text-rose-500'
+                                                    }`}
                                                 >
-                                                    <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 mb-1 text-xs">
-                                                        <AlertCircle className="w-4 h-4" />
-                                                        <span>Runtime / SQL Execution Error:</span>
-                                                    </div>
-                                                    {activeTab.output.stderr}
-                                                </div>
+                                                    {activeTab.output.exitCode === 0 ? (
+                                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                                    ) : (
+                                                        <AlertCircle className="w-3.5 h-3.5" />
+                                                    )}
+                                                    {activeTab.output.exitCode === 0
+                                                        ? 'Process Finished (0)'
+                                                        : `Exited with Error (${activeTab.output.exitCode})`}
+                                                </span>
+                                                <span>•</span>
+                                                <span>Duration: {activeTab.output.durationMs || 0}ms</span>
+                                            </div>
+                                            <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">
+                                                Runner: {activeTab.output.runner || 'native'}
+                                            </span>
+                                        </div>
 
-                                                {/* Intelligent MySQL Error Diagnostic Card */}
-                                                {missingTableName && (
-                                                    <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 dark:border-amber-700/60 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 text-xs space-y-2.5 shadow-xs">
-                                                        <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
-                                                            <Database className="w-4 h-4 text-amber-600" />
-                                                            <span>MySQL Error 1146: Table <code className="px-1.5 py-0.5 rounded bg-amber-200/70 dark:bg-amber-900/60 font-mono text-amber-950 dark:text-amber-100">{missingTableName}</code> Does Not Exist</span>
+                                        {/* Standard Output (stdout) */}
+                                        {activeTab.output.stdout ? (
+                                            <div
+                                                style={{ fontSize: `${fontSize}px` }}
+                                                className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono ${currentOutputTheme.stdoutClass}`}
+                                            >
+                                                {activeTab.output.stdout}
+                                            </div>
+                                        ) : !activeTab.output.stderr ? (
+                                            <p className="opacity-60 italic text-xs">
+                                                Command executed successfully with no stdout output.
+                                            </p>
+                                        ) : null}
+
+                                        {/* Standard Error (stderr) */}
+                                        {activeTab.output.stderr && (() => {
+                                            const noSuchTableMatch = activeTab.output.stderr.match(/Table\s+['`](?:[^'`. ]+\.)?([^'` ]+)['`]\s+doesn't exist/i) ||
+                                                activeTab.output.stderr.match(/no such table:\s*['`]?([^'`\s\n]+)['`]?/i);
+                                            const missingTableName = noSuchTableMatch ? noSuchTableMatch[1] : null;
+
+                                            return (
+                                                <div className="space-y-3">
+                                                    <div
+                                                        style={{ fontSize: `${fontSize}px` }}
+                                                        className="bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300 p-3 rounded-lg whitespace-pre-wrap leading-relaxed select-text font-mono overflow-x-auto custom-scrollbar"
+                                                    >
+                                                        <div className="flex items-center gap-1.5 font-bold text-rose-600 dark:text-rose-400 mb-1 text-xs">
+                                                            <AlertCircle className="w-4 h-4" />
+                                                            <span>Runtime / SQL Execution Error:</span>
                                                         </div>
+                                                        {activeTab.output.stderr}
+                                                    </div>
 
-                                                        <p className="leading-relaxed">
-                                                            Your personal practice MySQL database is an isolated sandbox and currently does not have a table named <code className="font-bold underline">{missingTableName}</code>. In SQL, any table queried with <code className="font-mono">SELECT</code> or <code className="font-mono">INSERT</code> must first be defined with a <code className="font-mono font-bold">CREATE TABLE</code> statement.
-                                                        </p>
-
-                                                        <div className="pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center justify-between gap-2">
-                                                            <div className="text-[11px] text-amber-800 dark:text-amber-300">
-                                                                <strong>Existing Tables: </strong>
-                                                                {existingTables && existingTables.length > 0 ? (
-                                                                    <span className="font-mono font-semibold">{existingTables.join(', ')}</span>
-                                                                ) : (
-                                                                    <span className="italic opacity-80">None (database is currently empty)</span>
-                                                                )}
+                                                    {/* Intelligent MySQL Error Diagnostic Card */}
+                                                    {missingTableName && (
+                                                        <div className="p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 dark:border-amber-700/60 dark:bg-amber-950/50 text-amber-900 dark:text-amber-200 text-xs space-y-2.5 shadow-xs">
+                                                            <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
+                                                                <Database className="w-4 h-4 text-amber-600" />
+                                                                <span>MySQL Error 1146: Table <code className="px-1.5 py-0.5 rounded bg-amber-200/70 dark:bg-amber-900/60 font-mono text-amber-950 dark:text-amber-100">{missingTableName}</code> Does Not Exist</span>
                                                             </div>
 
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    const ddlSnippet = `\n-- Create '${missingTableName}' Table\nCREATE TABLE ${missingTableName} (\n    id INT AUTO_INCREMENT PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n`;
-                                                                    handleInsertSnippet(ddlSnippet);
-                                                                    toast.success(`Inserted CREATE TABLE template for ${missingTableName}!`);
-                                                                }}
-                                                                className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
-                                                            >
-                                                                <span>+ Insert CREATE TABLE {missingTableName}</span>
-                                                            </button>
+                                                            <p className="leading-relaxed">
+                                                                Your personal practice MySQL database is an isolated sandbox and currently does not have a table named <code className="font-bold underline">{missingTableName}</code>. In SQL, any table queried with <code className="font-mono">SELECT</code> or <code className="font-mono">INSERT</code> must first be defined with a <code className="font-mono font-bold">CREATE TABLE</code> statement.
+                                                            </p>
+
+                                                            <div className="pt-2 border-t border-amber-200 dark:border-amber-800/60 flex flex-wrap items-center justify-between gap-2">
+                                                                <div className="text-[11px] text-amber-800 dark:text-amber-300">
+                                                                    <strong>Existing Tables: </strong>
+                                                                    {existingTables && existingTables.length > 0 ? (
+                                                                        <span className="font-mono font-semibold">{existingTables.join(', ')}</span>
+                                                                    ) : (
+                                                                        <span className="italic opacity-80">None (database is currently empty)</span>
+                                                                    )}
+                                                                </div>
+
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const ddlSnippet = `\n-- Create '${missingTableName}' Table\nCREATE TABLE ${missingTableName} (\n    id INT AUTO_INCREMENT PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n`;
+                                                                        handleInsertSnippet(ddlSnippet);
+                                                                        toast.success(`Inserted CREATE TABLE template for ${missingTableName}!`);
+                                                                    }}
+                                                                    className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                                                                >
+                                                                    <span>+ Insert CREATE TABLE {missingTableName}</span>
+                                                                </button>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-60">
-                                    <Terminal className="w-10 h-10 mb-3 stroke-1" />
-                                    <p className="text-sm font-semibold">No execution output for {activeTab.title}</p>
-                                    <p className="text-xs mt-1 max-w-sm">
-                                        Click <span className="font-semibold underline">Run Code</span> above the editor or press{' '}
-                                        <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px]">
-                                            Ctrl+Enter
-                                        </kbd>{' '}
-                                        to execute this tab.
-                                    </p>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 opacity-60">
+                                        <Terminal className="w-10 h-10 mb-3 stroke-1" />
+                                        <p className="text-sm font-semibold">No execution output for {activeTab.title}</p>
+                                        <p className="text-xs mt-1 max-w-sm">
+                                            Click <span className="font-semibold underline">Run Code</span> above the editor or press{' '}
+                                            <kbd className="px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px]">
+                                                Ctrl+Enter
+                                            </kbd>{' '}
+                                            to execute this tab.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Python Tutor-Style In-Console Stdin Input Dock */}
+                            {!isDatabaseLanguage(activeTab.language) && (
+                                <div className={`border-t px-3 py-2 flex-shrink-0 ${isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-slate-900/95 border-slate-800'}`}>
+                                    {/* EOFError Guidance Banner */}
+                                    {activeTab.output?.stderr && /EOFError|EOF when reading a line/i.test(activeTab.output.stderr) && (
+                                        <div className="mb-2 px-2.5 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs flex items-center justify-between gap-2 animate-pulse">
+                                            <span className="flex items-center gap-1.5 font-medium">
+                                                <Terminal className="w-3.5 h-3.5 shrink-0" />
+                                                <span><strong>Input needed:</strong> Program reached <code className="font-mono font-bold">input()</code> without stdin. Type below and press <strong>Send & Run</strong>.</span>
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* Existing Stdin Buffer Preview Chip */}
+                                    {activeTab.stdin?.trim() && (
+                                        <div className="mb-1.5 flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                                            <span className="truncate">
+                                                stdin buffer: <span className="font-semibold text-indigo-600 dark:text-indigo-400">"{activeTab.stdin.replace(/\n/g, '\\n')}"</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleStdinChange('')}
+                                                className="text-xs text-rose-500 hover:underline shrink-0 ml-2 cursor-pointer font-sans"
+                                            >
+                                                Clear buffer
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    <form
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            handleSendConsoleInput();
+                                        }}
+                                        className="flex items-center gap-1.5"
+                                    >
+                                        <div className="relative flex-1">
+                                            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-mono font-bold text-slate-400 select-none">
+                                                &gt;
+                                            </span>
+                                            <input
+                                                type="text"
+                                                value={consoleInputText}
+                                                onChange={(e) => setConsoleInputText(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Tab') {
+                                                        e.preventDefault();
+                                                        setConsoleInputText((prev) => prev + '\t');
+                                                    }
+                                                }}
+                                                placeholder="Type program input (supports space/tab) & press Enter..."
+                                                className={`w-full pl-6 pr-2 py-1.5 rounded-lg text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-primary-500 ${
+                                                    isLightMode
+                                                        ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                                                        : 'bg-slate-950 border-slate-700 text-slate-100 placeholder-slate-600'
+                                                }`}
+                                            />
+                                        </div>
+                                        <button
+                                            type="submit"
+                                            disabled={isExecuting}
+                                            className="px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shrink-0 cursor-pointer shadow-xs"
+                                            title="Send input into stdin and re-execute program (Enter)"
+                                        >
+                                            <Play className="w-3 h-3 fill-current" />
+                                            <span>Send & Run</span>
+                                        </button>
+                                    </form>
                                 </div>
                             )}
                         </div>

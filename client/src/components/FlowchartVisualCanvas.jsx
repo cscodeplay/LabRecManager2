@@ -1467,36 +1467,8 @@ export default function FlowchartVisualCanvas({
                     isLight ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
                 }`}
             >
-                {/* Left: Mode Title & Tools */}
+                {/* Left: Pointer & Mode Tools */}
                 <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                    {/* Active Mode Indicator Badge */}
-                    <div
-                        className={`flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-md text-xs font-bold border shrink-0 ${
-                            isErMode
-                                ? isLight
-                                    ? 'bg-sky-50 border-sky-300 text-sky-800'
-                                    : 'bg-sky-950/60 border-sky-800 text-sky-300'
-                                : isLight
-                                ? 'bg-purple-50 border-purple-300 text-purple-800'
-                                : 'bg-purple-950/60 border-purple-800 text-purple-300'
-                        }`}
-                        title={isErMode ? 'ER Diagram Designer (Active for SQL/PL-SQL)' : 'Flowchart Designer (Active for Python/C/C++/Java)'}
-                    >
-                        {isErMode ? (
-                            <>
-                                <Database className="w-3.5 h-3.5 text-sky-500" />
-                                <span className="hidden sm:inline">ER Diagram (DBMS)</span>
-                                <span className="sm:hidden inline">ER</span>
-                            </>
-                        ) : (
-                            <>
-                                <Shapes className="w-3.5 h-3.5 text-purple-500" />
-                                <span className="hidden sm:inline">Flowchart Designer</span>
-                                <span className="sm:hidden inline">Flowchart</span>
-                            </>
-                        )}
-                    </div>
-
                     {/* Pointer / Navigation Tools (Segmented Control) */}
                     <div
                         className={`flex items-center rounded-lg p-0.5 border shrink-0 ${
@@ -1715,33 +1687,31 @@ export default function FlowchartVisualCanvas({
 
                 {/* Right: Actions, Fullscreen & Controls */}
                 <div className="flex items-center gap-1 sm:gap-1.5 text-xs shrink-0">
-                    {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) */}
+                    {/* TRADITIONAL RULE-BASED GENERATOR (NO AI) - Icon Only with Tooltip */}
                     <button
                         onClick={handleTraditionalGenerate}
-                        className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold rounded shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
-                        title={`Generate ${isErMode ? 'ER Diagram' : 'Flowchart'} automatically from editor code using static parser (Traditional rule-based, 100% offline, 0 AI calls)`}
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold shadow-xs flex items-center justify-center transition cursor-pointer shrink-0"
+                        title={`Generate ${isErMode ? 'ER Diagram' : 'Flowchart'} from editor code (Static rule-based, 100% offline, zero AI)`}
+                        aria-label="Generate Diagram from Code"
                     >
-                        <Cpu className="w-3.5 h-3.5 text-slate-950 shrink-0" />
-                        <span className="hidden md:inline">Generate from Code (No AI)</span>
-                        <span className="md:hidden inline">Generate</span>
+                        <Cpu className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950 shrink-0" />
                     </button>
 
-                    {/* Export PNG */}
+                    {/* Export PNG - Icon Only with Tooltip */}
                     <button
                         onClick={() => handleExportCanvas('png')}
-                        className="px-2 sm:px-2.5 py-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded font-bold shadow-xs flex items-center gap-1 transition cursor-pointer shrink-0"
+                        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold shadow-xs flex items-center justify-center transition cursor-pointer shrink-0"
                         title="Download as PNG Image"
+                        aria-label="Export PNG"
                     >
-                        <Download className="w-3.5 h-3.5 shrink-0" />
-                        <span className="hidden md:inline">Export PNG</span>
-                        <span className="md:hidden inline">PNG</span>
+                        <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                     </button>
 
                     {/* Starter Template - ONLY for Flowchart mode (ZERO templates for ER mode) */}
                     {!isErMode && (
                         <button
                             onClick={handleResetToTemplate}
-                            className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
+                            className={`p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
                                 isLight ? 'text-slate-500 hover:text-sky-600 hover:bg-slate-100' : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800'
                             }`}
                             title="Load Starter Flowchart Example"
@@ -1753,7 +1723,7 @@ export default function FlowchartVisualCanvas({
                     {/* Clear Canvas */}
                     <button
                         onClick={handleClearCanvas}
-                        className={`p-1.5 rounded transition cursor-pointer shrink-0 ${
+                        className={`p-1.5 rounded-lg transition cursor-pointer shrink-0 ${
                             isLight ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-400 hover:text-rose-400 hover:bg-rose-950/40'
                         }`}
                         title="Clear Canvas"
@@ -1763,10 +1733,10 @@ export default function FlowchartVisualCanvas({
 
                     <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                    {/* FULLSCREEN OVERLAY TOGGLE BUTTON */}
+                    {/* FULLSCREEN OVERLAY TOGGLE BUTTON - Icon Only with Tooltip */}
                     <button
                         onClick={() => setIsFullScreen(!isFullScreen)}
-                        className={`px-2 sm:px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1.5 border cursor-pointer ${
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center border cursor-pointer shrink-0 ${
                             isFullScreen
                                 ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400/40'
                                 : isLight
@@ -1777,15 +1747,9 @@ export default function FlowchartVisualCanvas({
                         aria-label="Toggle Fullscreen"
                     >
                         {isFullScreen ? (
-                            <>
-                                <Minimize2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Exit Fullscreen</span>
-                            </>
+                            <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         ) : (
-                            <>
-                                <Maximize2 className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Fullscreen</span>
-                            </>
+                            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                         )}
                     </button>
                 </div>
