@@ -515,6 +515,33 @@ function PracticeIDEPage() {
                     } catch (e) {}
                 }
 
+                // Check if opened with urlDocId
+                let urlDocLoaded = null;
+                if (urlDocId) {
+                    try {
+                        const docRes = await documentsAPI.getById(urlDocId);
+                        const docData = docRes.data?.data?.document || docRes.data?.data || docRes.data;
+                        let codeText = '';
+                        try {
+                            const fileRes = await documentsAPI.getFileContent(urlDocId);
+                            codeText = typeof fileRes.data === 'string' ? fileRes.data : String(fileRes.data || '');
+                        } catch (_) {}
+                        if (docData) {
+                            const fileName = docData.fileName || docData.name || 'practice.py';
+                            const isSql = fileName.endsWith('.sql') || docData.category === 'sql';
+                            urlDocLoaded = {
+                                docData,
+                                fileName,
+                                codeText: codeText || (isSql ? '-- SQL script\n' : '# Python script\n'),
+                                lang: isSql ? 'sql' : 'python',
+                                updatedAt: docData.updatedAt || docData.createdAt
+                            };
+                        }
+                    } catch (e) {
+                        console.warn('Could not pre-load urlDocId in workspace:', e.message);
+                    }
+                }
+
                 const params = inspectingStudentId ? { studentId: inspectingStudentId } : {};
                 const response = await compilerAPI.getWorkspace(params);
 
@@ -572,15 +599,44 @@ function PracticeIDEPage() {
                             ];
                         }
 
-                        setTabs(finalTabs);
-                        if (urlLang === 'sql') {
-                            const sqlTab = finalTabs.find((t) => t.language === 'sql');
-                            if (sqlTab) setActiveTabId(sqlTab.id);
-                        } else if (ws.activeTabId && finalTabs.some((t) => t.id === ws.activeTabId)) {
-                            setActiveTabId(ws.activeTabId);
+                        if (urlDocLoaded) {
+                            const existingIdx = finalTabs.findIndex((t) => t.documentId === urlDocId);
+                            if (existingIdx !== -1) {
+                                finalTabs[existingIdx] = {
+                                    ...finalTabs[existingIdx],
+                                    title: urlDocLoaded.fileName.replace(/\.(py|sql)$/i, ''),
+                                    filename: urlDocLoaded.fileName,
+                                    language: urlDocLoaded.lang,
+                                    code: urlDocLoaded.codeText,
+                                    lastSavedAt: urlDocLoaded.updatedAt,
+                                    isDirty: false
+                                };
+                                setActiveTabId(finalTabs[existingIdx].id);
+                            } else {
+                                const newId = `tab_${Date.now()}`;
+                                const newTab = createDefaultTab(newId, urlDocLoaded.lang, studentIdentifier, studentDisplayName);
+                                newTab.title = urlDocLoaded.fileName.replace(/\.(py|sql)$/i, '');
+                                newTab.filename = urlDocLoaded.fileName;
+                                newTab.code = urlDocLoaded.codeText;
+                                newTab.documentId = urlDocId;
+                                newTab.lastSavedAt = urlDocLoaded.updatedAt;
+                                newTab.isDirty = false;
+                                finalTabs = [newTab, ...finalTabs];
+                                setActiveTabId(newId);
+                            }
+                            if (urlDocLoaded.updatedAt) setLastAutosavedAt(urlDocLoaded.updatedAt);
                         } else {
-                            setActiveTabId(finalTabs[0].id);
+                            if (urlLang === 'sql') {
+                                const sqlTab = finalTabs.find((t) => t.language === 'sql');
+                                if (sqlTab) setActiveTabId(sqlTab.id);
+                            } else if (ws.activeTabId && finalTabs.some((t) => t.id === ws.activeTabId)) {
+                                setActiveTabId(ws.activeTabId);
+                            } else {
+                                setActiveTabId(finalTabs[0].id);
+                            }
                         }
+
+                        setTabs(finalTabs);
                     } else if (ws.pythonCode || ws.sqlCode) {
                         // Legacy single-code upgrade
                         const upgradedTabs = [];
@@ -620,11 +676,15 @@ function PracticeIDEPage() {
             isMounted = false;
             clearTimeout(safetyTimer);
         };
-    }, [_hasHydrated, isAuthenticated, inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs, urlLang]);
+    }, [_hasHydrated, isAuthenticated, inspectingStudentId, isInstructorOrAdmin, studentIdentifier, studentDisplayName, loadExistingDocs, urlLang, urlDocId]);
 
-    // Auto-load document if opened with ?docId=...
+    // Auto-load document if opened with ?docId=... after initial workspace hydration
     useEffect(() => {
-        if (!urlDocId) return;
+        if (!urlDocId || isLoadingWorkspace) return;
+        const currentTabs = tabsRef.current || tabs;
+        if (currentTabs.some(t => t.documentId === urlDocId && t.id === activeTabId)) {
+            return; // Already loaded and active tab
+        }
         let isMounted = true;
         async function fetchUrlDoc() {
             try {
@@ -666,12 +726,16 @@ function PracticeIDEPage() {
         }
         fetchUrlDoc();
         return () => { isMounted = false; };
-    }, [urlDocId]);
+    }, [urlDocId, isLoadingWorkspace]);
 
     // Auto-save Program to Appropriate Documents Folder (Documents / Python or Documents / SQL)
     const saveProgramToAppropriateFolder = useCallback(
         async (tabToSave) => {
             if (!tabToSave || inspectingStudentId) return null;
+            // Prevent creating 0-byte blank documents if no real code exists yet
+            if (!tabToSave.code || !tabToSave.code.trim()) {
+                return null;
+            }
             const isSql = isDatabaseLanguage(tabToSave.language);
             const targetFolderName = isSql ? 'SQL' : 'Python';
             const ext = isSql ? '.sql' : '.py';
@@ -719,19 +783,27 @@ function PracticeIDEPage() {
 
                 // 3. Update tab with documentId in tabs state and storage
                 if (newDocId) {
-                    setTabs((prevTabs) => {
-                        const nextTabs = prevTabs.map((t) =>
-                            t.id === tabToSave.id
-                                ? {
-                                      ...t,
-                                      filename: fileName,
-                                      documentId: newDocId,
-                                      isDirty: false
-                                  }
-                                : t
-                        );
-                        return nextTabs;
-                    });
+                    const nextTabs = (tabsRef.current || tabs).map((t) =>
+                        t.id === tabToSave.id
+                            ? {
+                                  ...t,
+                                  filename: fileName,
+                                  documentId: newDocId,
+                                  folderId: targetFolder?.id,
+                                  isDirty: false
+                              }
+                            : t
+                    );
+                    setTabs(nextTabs);
+
+                    // Persist new documentId directly to workspace storage
+                    compilerAPI.saveWorkspace({
+                        tabs: nextTabs,
+                        activeTabId: activeTabIdRef.current || activeTabId,
+                        isAutosaveEnabled,
+                        editorTheme,
+                        outputTheme: outputThemeId
+                    }).catch(() => {});
                 }
 
                 loadExistingDocs();
@@ -741,7 +813,7 @@ function PracticeIDEPage() {
                 return null;
             }
         },
-        [inspectingStudentId, loadExistingDocs]
+        [inspectingStudentId, loadExistingDocs, isAutosaveEnabled, editorTheme, outputThemeId, activeTabId]
     );
 
     // 3. Debounced Autosave (saves tabs, active tab, and output to server and local)
@@ -768,19 +840,40 @@ function PracticeIDEPage() {
                     outputTheme: outputThemeId
                 });
 
-                // 2. If the active tab has a linked document in Documents, auto-sync document file directly
+                // 2. If the active tab has a linked document in Documents, auto-sync document file directly when dirty
                 const currentActiveTab = tabsToSave.find((t) => t.id === activeIdToSave);
-                if (currentActiveTab?.documentId && currentActiveTab?.code) {
+                if (currentActiveTab?.documentId && currentActiveTab?.isDirty && currentActiveTab?.code) {
                     try {
                         const fileBlob = new Blob([currentActiveTab.code], { type: 'text/plain;charset=utf-8' });
                         const fileObj = new File([fileBlob], currentActiveTab.filename || 'script.txt', { type: 'text/plain' });
-                        await documentsAPI.upload(fileObj, {
+                        const uploadRes = await documentsAPI.upload(fileObj, {
                             name: currentActiveTab.filename,
                             description: `${currentActiveTab.metadata?.title || ''} - ${currentActiveTab.metadata?.description || ''}`.trim(),
                             category: 'code',
+                            folderId: currentActiveTab.folderId,
                             overwrite: true,
                             existingDocumentId: currentActiveTab.documentId
                         });
+
+                        const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
+                        const resolvedDocId = savedDoc?.id || currentActiveTab.documentId;
+                        const updatedTabsWithDoc = tabsToSave.map((t) =>
+                            t.id === currentActiveTab.id
+                                ? { ...t, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso }
+                                : t
+                        );
+                        setTabs(updatedTabsWithDoc);
+
+                        if (resolvedDocId !== currentActiveTab.documentId) {
+                            compilerAPI.saveWorkspace({
+                                tabs: updatedTabsWithDoc,
+                                activeTabId: activeIdToSave,
+                                isAutosaveEnabled: isAuto,
+                                editorTheme,
+                                outputTheme: outputThemeId
+                            }).catch(() => {});
+                        }
+
                         loadExistingDocs();
                     } catch (docSyncErr) {
                         console.warn('[Autosave] Document sync notice:', docSyncErr.message);
@@ -908,17 +1001,6 @@ Date:          ${dateStr}
         setActiveTabId(newId);
         triggerSaveWorkspace(updatedTabs, newId);
         toast.success(`Created program ${nextNum} (${isSql ? 'SQL' : 'Python'})`);
-
-        // Automatically save new program directly to appropriate folder (Documents / Python or Documents / SQL)
-        const targetFolderName = isSql ? 'SQL' : 'Python';
-        saveProgramToAppropriateFolder(newTab).then((docId) => {
-            if (docId) {
-                toast.success(`Auto-saved "${newTab.filename}" to Documents / ${targetFolderName}`, {
-                    id: `autosave-${newId}`,
-                    icon: '📁'
-                });
-            }
-        });
     };
 
     // Major Editor Action Handlers
@@ -1328,7 +1410,8 @@ Date:          ${dateStr}
             }
 
             // 2. Upload file
-            const fileBlob = new Blob([activeTab.code], { type: 'text/plain;charset=utf-8' });
+            const currentCode = (editorRef.current ? editorRef.current.getValue() : null) ?? activeTab.code ?? '';
+            const fileBlob = new Blob([currentCode], { type: 'text/plain;charset=utf-8' });
             const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
 
             const uploadRes = await documentsAPI.upload(fileObj, {
@@ -1352,13 +1435,16 @@ Date:          ${dateStr}
                           filename: fileName,
                           language: language || t.language,
                           title: problemTitle || t.title,
+                          code: currentCode,
                           documentId: newDocId,
+                          folderId: targetFolder?.id,
                           metadata: {
                               ...t.metadata,
                               title: problemTitle || t.metadata?.title || '',
                               description: problemDescription !== undefined ? problemDescription : t.metadata?.description || ''
                           },
-                          isDirty: false
+                          isDirty: false,
+                          lastSavedAt: new Date().toISOString()
                       }
                     : t
             );

@@ -81,7 +81,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         borderColor: '#16a34a',
         textColor: '#14532d'
     });
-    let prevNodeId = startId;
+    let incomingSources = [{ nodeId: startId, port: 'bottom', label: '' }];
     yCursor += 85;
 
     const isFunctionCall = (text) => {
@@ -99,12 +99,15 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
     };
 
     const classify = (text) => {
-        if (/\b(input|scanf|cin|Scanner|readline)\b/.test(text)) return 'input';
-        if (/\b(print|printf|cout|System\.out\.print|println)\b/.test(text)) return 'output';
-        if (text.startsWith('while ') || text.startsWith('while(')) return 'while';
-        if (text.startsWith('for ') || text.startsWith('for(')) return 'for';
-        if (text.startsWith('if ') || text.startsWith('if(')) return 'if';
-        if (isFunctionCall(text)) return 'call';
+        const trimmed = text.trim();
+        if (/^(?:elif\b|else\s+if\b|\}\s*else\s+if\b)/.test(trimmed)) return 'elif';
+        if (/^(?:else\s*:|else\s*\{|\}\s*else\s*\{?|\}\s*else)$/.test(trimmed)) return 'else';
+        if (trimmed.startsWith('if ') || trimmed.startsWith('if(') || /^\}\s*if\b/.test(trimmed)) return 'if';
+        if (/\b(input|scanf|cin|Scanner|readline)\b/.test(trimmed)) return 'input';
+        if (/\b(print|printf|cout|System\.out\.print|println)\b/.test(trimmed)) return 'output';
+        if (trimmed.startsWith('while ') || trimmed.startsWith('while(')) return 'while';
+        if (trimmed.startsWith('for ') || trimmed.startsWith('for(')) return 'for';
+        if (isFunctionCall(trimmed)) return 'call';
         return 'assign';
     };
 
@@ -158,42 +161,57 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             if (cFor) return `${cFor[1].trim()} ?`;
             return stmt.replace(/^for\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim() + ' ?';
         }
-        if (type === 'if') {
-            return stmt.replace(/^if\s*\(?/, '').replace(/[:\)\{]\s*$/, '').trim() + ' ?';
+        if (type === 'if' || type === 'elif') {
+            return stmt
+                .replace(/^(\}\s*)?(?:else\s+if|elif|if)\s*\(?/, '')
+                .replace(/[:\)\{\s]+$/, '')
+                .trim() + ' ?';
         }
         return stmt;
     };
 
     let idx = 0;
-    let pendingFalseSource = null;
 
     const connectIncoming = (targetNodeId, targetPort = 'top') => {
-        if (pendingFalseSource) {
-            const sourceId = typeof pendingFalseSource === 'object' ? pendingFalseSource.nodeId : pendingFalseSource;
-            const sourcePort = typeof pendingFalseSource === 'object' ? (pendingFalseSource.port || 'right') : 'right';
-            const sourceLabel = typeof pendingFalseSource === 'object' ? (pendingFalseSource.label !== undefined ? pendingFalseSource.label : 'No') : 'No';
+        for (const src of incomingSources) {
+            connectors.push({
+                id: makeConnId(),
+                from: src.nodeId,
+                fromPort: src.port || 'bottom',
+                to: targetNodeId,
+                toPort: targetPort,
+                label: src.label || ''
+            });
+        }
+        incomingSources = [];
+    };
 
-            connectors.push({
-                id: makeConnId(),
-                from: sourceId,
-                fromPort: sourcePort,
-                to: targetNodeId,
-                toPort: targetPort,
-                label: sourceLabel
-            });
-            pendingFalseSource = null;
-        }
-        if (prevNodeId) {
-            connectors.push({
-                id: makeConnId(),
-                from: prevNodeId,
-                fromPort: 'bottom',
-                to: targetNodeId,
-                toPort: targetPort,
-                label: ''
-            });
-            prevNodeId = null;
-        }
+    const formatStmtsText = (stmts) => {
+        return stmts.map((s) => {
+            const k = classify(s.text);
+            if (k === 'output') return `Display ${cleanOutput(s.text)}`;
+            if (k === 'input') return cleanInput(s.text);
+            return s.text.replace(/;\s*$/, '');
+        }).join('\n');
+    };
+
+    const formatStmtsType = (stmts) => {
+        if (!stmts || stmts.length === 0) return 'process';
+        const hasIO = stmts.some((s) => {
+            const k = classify(s.text);
+            return k === 'output' || k === 'input';
+        });
+        return hasIO ? 'io' : 'process';
+    };
+
+    const getBranchActionStyle = (stmts) => {
+        const isIO = formatStmtsType(stmts) === 'io';
+        return {
+            type: isIO ? 'io' : 'process',
+            color: isIO ? '#dbeafe' : '#ffffff',
+            borderColor: isIO ? '#2563eb' : '#64748b',
+            textColor: isIO ? '#1e3a8a' : '#0f172a'
+        };
     };
 
     while (idx < statements.length) {
@@ -218,7 +236,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             });
 
             connectIncoming(nodeId);
-            prevNodeId = nodeId;
+            incomingSources = [{ nodeId, port: 'bottom', label: '' }];
             yCursor += height + 35;
             idx++;
         } else if (kind === 'call') {
@@ -245,7 +263,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             });
 
             connectIncoming(nodeId);
-            prevNodeId = nodeId;
+            incomingSources = [{ nodeId, port: 'bottom', label: '' }];
             yCursor += height + 35;
             idx++;
         } else if (kind === 'assign') {
@@ -277,152 +295,291 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             });
 
             connectIncoming(nodeId);
-            prevNodeId = nodeId;
+            incomingSources = [{ nodeId, port: 'bottom', label: '' }];
             yCursor += height + 35;
         } else if (kind === 'if') {
             const ifIndent = item.indent;
-            const ifNodeId = makeId('decision');
-            const ifWidth = 160;
-            const ifHeight = 72;
-            const condText = cleanCondition(item.text, 'if');
+            const branches = [];
 
-            nodes.push({
-                id: ifNodeId,
-                type: 'decision',
-                text: condText,
-                x: xCenter - ifWidth / 2,
-                y: yCursor,
-                width: ifWidth,
-                height: ifHeight,
-                color: '#fef3c7',
-                borderColor: '#d97706',
-                textColor: '#78350f'
-            });
-
-            connectIncoming(ifNodeId);
-
+            // 1. First branch: 'if'
+            const firstCond = cleanCondition(item.text, 'if');
             idx++;
-            yCursor += ifHeight + 40;
-
-            // Collect statements in True (if) branch
-            const trueStmts = [];
+            const firstStmts = [];
             while (
                 idx < statements.length &&
                 statements[idx].indent > ifIndent &&
-                !/^(else\s*:|else\s*\{|elif\b)/.test(statements[idx].text)
+                !/^(elif\b|else\s+if\b|\}\s*else\s+if\b|else\s*:|else\s*\{|\}\s*else)/.test(statements[idx].text)
             ) {
-                trueStmts.push(statements[idx]);
+                firstStmts.push(statements[idx]);
                 idx++;
             }
+            branches.push({ type: 'if', text: item.text, condition: firstCond, statements: firstStmts });
 
-            // Check if there is an Else (or Elif) branch
-            let elseStmts = [];
-            if (
-                idx < statements.length &&
-                /^(else\s*:|else\s*\{|elif\b)/.test(statements[idx].text) &&
-                statements[idx].indent === ifIndent
-            ) {
-                idx++; // consume 'else:'
-                while (idx < statements.length && statements[idx].indent > ifIndent) {
-                    elseStmts.push(statements[idx]);
+            // 2. Subsequent branches at same indent level: 'elif' / 'else if' or 'else'
+            while (idx < statements.length && statements[idx].indent === ifIndent) {
+                const nextLine = statements[idx].text;
+                const isElif = /^(elif\b|else\s+if\b|\}\s*else\s+if\b)/.test(nextLine);
+                const isElse = /^(else\s*:|else\s*\{|\}\s*else\s*\{?|\}\s*else)$/.test(nextLine);
+
+                if (isElif) {
+                    const cond = cleanCondition(nextLine, 'elif');
                     idx++;
+                    const branchStmts = [];
+                    while (
+                        idx < statements.length &&
+                        statements[idx].indent > ifIndent &&
+                        !/^(elif\b|else\s+if\b|\}\s*else\s+if\b|else\s*:|else\s*\{|\}\s*else)/.test(statements[idx].text)
+                    ) {
+                        branchStmts.push(statements[idx]);
+                        idx++;
+                    }
+                    branches.push({ type: 'elif', text: nextLine, condition: cond, statements: branchStmts });
+                } else if (isElse) {
+                    idx++;
+                    const branchStmts = [];
+                    while (
+                        idx < statements.length &&
+                        statements[idx].indent > ifIndent &&
+                        !/^(elif\b|else\s+if\b|\}\s*else\s+if\b|else\s*:|else\s*\{|\}\s*else)/.test(statements[idx].text)
+                    ) {
+                        branchStmts.push(statements[idx]);
+                        idx++;
+                    }
+                    branches.push({ type: 'else', text: nextLine, condition: null, statements: branchStmts });
+                    break; // 'else' is always the terminal branch in an if-ladder
+                } else {
+                    break;
                 }
             }
 
-            // Build node for True Branch
-            let trueNodeId = null;
-            if (trueStmts.length > 0) {
-                const firstKind = classify(trueStmts[0].text);
-                trueNodeId = makeId(firstKind === 'output' ? 'io' : 'process');
-                const trueTexts = trueStmts.map((s) => {
-                    const k = classify(s.text);
-                    if (k === 'output') return `Display ${cleanOutput(s.text)}`;
-                    if (k === 'input') return cleanInput(s.text);
-                    return s.text.replace(/;\s*$/, '');
-                });
+            const decisionBranches = branches.filter((b) => b.type === 'if' || b.type === 'elif');
+            const elseBranch = branches.find((b) => b.type === 'else') || null;
 
+            if (decisionBranches.length === 1) {
+                // Classic single if / if-else
+                const ifNodeId = makeId('decision');
+                const ifWidth = 160;
+                const ifHeight = 72;
+                nodes.push({
+                    id: ifNodeId,
+                    type: 'decision',
+                    text: decisionBranches[0].condition,
+                    x: xCenter - ifWidth / 2,
+                    y: yCursor,
+                    width: ifWidth,
+                    height: ifHeight,
+                    color: '#fef3c7',
+                    borderColor: '#d97706',
+                    textColor: '#78350f'
+                });
+                connectIncoming(ifNodeId);
+                yCursor += ifHeight + 40;
+
+                const trueStmts = decisionBranches[0].statements;
+                const elseStmts = elseBranch ? elseBranch.statements : [];
+
+                let trueNodeId = null;
+                let elseNodeId = null;
                 const tWidth = 175;
-                const tHeight = Math.max(54, 30 + trueTexts.length * 16);
-                const isTrueOutput = firstKind === 'output';
-
-                nodes.push({
-                    id: trueNodeId,
-                    type: isTrueOutput ? 'io' : 'process',
-                    text: trueTexts.join('\n'),
-                    x: elseStmts.length > 0 ? xCenter - tWidth - 25 : xCenter - tWidth / 2,
-                    y: yCursor,
-                    width: tWidth,
-                    height: tHeight,
-                    color: isTrueOutput ? '#dbeafe' : '#ffffff',
-                    borderColor: isTrueOutput ? '#2563eb' : '#64748b',
-                    textColor: isTrueOutput ? '#1e3a8a' : '#0f172a'
-                });
-
-                connectors.push({
-                    id: makeConnId(),
-                    from: ifNodeId,
-                    fromPort: 'bottom',
-                    to: trueNodeId,
-                    toPort: 'top',
-                    label: 'Yes'
-                });
-            }
-
-            // Build node for False / Else Branch if present
-            let elseNodeId = null;
-            if (elseStmts.length > 0) {
-                const firstKind = classify(elseStmts[0].text);
-                elseNodeId = makeId(firstKind === 'output' ? 'io' : 'process');
-                const elseTexts = elseStmts.map((s) => {
-                    const k = classify(s.text);
-                    if (k === 'output') return `Display ${cleanOutput(s.text)}`;
-                    if (k === 'input') return cleanInput(s.text);
-                    return s.text.replace(/;\s*$/, '');
-                });
-
                 const eWidth = 175;
-                const eHeight = Math.max(54, 30 + elseTexts.length * 16);
-                const isElseOutput = firstKind === 'output';
 
-                nodes.push({
-                    id: elseNodeId,
-                    type: isElseOutput ? 'io' : 'process',
-                    text: elseTexts.join('\n'),
-                    x: xCenter + 25,
-                    y: yCursor,
-                    width: eWidth,
-                    height: eHeight,
-                    color: isElseOutput ? '#dbeafe' : '#ffffff',
-                    borderColor: isElseOutput ? '#2563eb' : '#64748b',
-                    textColor: isElseOutput ? '#1e3a8a' : '#0f172a'
-                });
+                if (trueStmts.length > 0) {
+                    trueNodeId = makeId('branch_action');
+                    const tHeight = Math.max(54, 30 + trueStmts.length * 16);
+                    const style = getBranchActionStyle(trueStmts);
+                    nodes.push({
+                        id: trueNodeId,
+                        type: style.type,
+                        text: formatStmtsText(trueStmts),
+                        x: elseStmts.length > 0 ? xCenter - tWidth - 25 : xCenter - tWidth / 2,
+                        y: yCursor,
+                        width: tWidth,
+                        height: tHeight,
+                        color: style.color,
+                        borderColor: style.borderColor,
+                        textColor: style.textColor
+                    });
+                    connectors.push({
+                        id: makeConnId(),
+                        from: ifNodeId,
+                        fromPort: 'bottom',
+                        to: trueNodeId,
+                        toPort: 'top',
+                        label: 'Yes'
+                    });
+                }
 
-                connectors.push({
-                    id: makeConnId(),
-                    from: ifNodeId,
-                    fromPort: 'right',
-                    to: elseNodeId,
-                    toPort: 'top',
-                    label: 'No'
-                });
-            }
+                if (elseStmts.length > 0) {
+                    elseNodeId = makeId('branch_action');
+                    const eHeight = Math.max(54, 30 + elseStmts.length * 16);
+                    const style = getBranchActionStyle(elseStmts);
+                    nodes.push({
+                        id: elseNodeId,
+                        type: style.type,
+                        text: formatStmtsText(elseStmts),
+                        x: xCenter + 25,
+                        y: yCursor,
+                        width: eWidth,
+                        height: eHeight,
+                        color: style.color,
+                        borderColor: style.borderColor,
+                        textColor: style.textColor
+                    });
+                    connectors.push({
+                        id: makeConnId(),
+                        from: ifNodeId,
+                        fromPort: 'right',
+                        to: elseNodeId,
+                        toPort: 'top',
+                        label: 'No'
+                    });
+                }
 
-            // Convergence & cursor advancement
-            if (trueNodeId && elseNodeId) {
-                yCursor += Math.max(54, trueStmts.length * 16, elseStmts.length * 16) + 45;
-                prevNodeId = trueNodeId;
-                pendingFalseSource = { nodeId: elseNodeId, port: 'bottom', label: '' };
-            } else if (trueNodeId) {
-                yCursor += Math.max(54, trueStmts.length * 16) + 40;
-                prevNodeId = trueNodeId;
-                pendingFalseSource = { nodeId: ifNodeId, port: 'right', label: 'No' };
-            } else if (elseNodeId) {
-                yCursor += Math.max(54, elseStmts.length * 16) + 40;
-                prevNodeId = ifNodeId;
-                pendingFalseSource = { nodeId: elseNodeId, port: 'bottom', label: '' };
+                const maxH = Math.max(54, trueStmts.length * 16, elseStmts.length * 16);
+                yCursor += maxH + 45;
+
+                incomingSources = [];
+                if (trueNodeId) incomingSources.push({ nodeId: trueNodeId, port: 'bottom', label: '' });
+                if (elseNodeId) {
+                    incomingSources.push({ nodeId: elseNodeId, port: 'bottom', label: '' });
+                } else {
+                    incomingSources.push({ nodeId: ifNodeId, port: 'right', label: 'No' });
+                }
             } else {
-                prevNodeId = ifNodeId;
-                pendingFalseSource = null;
+                // Multi-branch ladder (if + 1 or more elifs)
+                const colWidth = 195;
+                const dWidth = 160;
+                const dHeight = 72;
+                const aWidth = 175;
+                const totalCols = decisionBranches.length + (elseBranch ? 1 : 0);
+                const totalSpan = (totalCols - 1) * colWidth;
+                const xStart = Math.max(40, xCenter - (totalSpan / 2));
+
+                const decisionNodeIds = [];
+                const actionSources = [];
+
+                // 1. Create Decision Diamonds in Row 1
+                for (let i = 0; i < decisionBranches.length; i++) {
+                    const dId = makeId('decision');
+                    decisionNodeIds.push(dId);
+                    const colX = xStart + i * colWidth;
+                    nodes.push({
+                        id: dId,
+                        type: 'decision',
+                        text: decisionBranches[i].condition,
+                        x: colX + (colWidth - dWidth) / 2,
+                        y: yCursor,
+                        width: dWidth,
+                        height: dHeight,
+                        color: '#fef3c7',
+                        borderColor: '#d97706',
+                        textColor: '#78350f'
+                    });
+                }
+
+                // Connect incoming trunk to first decision
+                connectIncoming(decisionNodeIds[0]);
+
+                // Connect consecutive decisions via 'No' (right port -> left port)
+                for (let i = 0; i < decisionNodeIds.length - 1; i++) {
+                    connectors.push({
+                        id: makeConnId(),
+                        from: decisionNodeIds[i],
+                        fromPort: 'right',
+                        to: decisionNodeIds[i + 1],
+                        toPort: 'left',
+                        label: 'No'
+                    });
+                }
+
+                const row2Y = yCursor + dHeight + 45;
+                let maxActionHeight = 54;
+
+                // 2. Create Action Blocks for Decisions in Row 2
+                for (let i = 0; i < decisionBranches.length; i++) {
+                    const stmts = decisionBranches[i].statements;
+                    if (stmts.length > 0) {
+                        const aId = makeId('branch_action');
+                        const aHeight = Math.max(54, 30 + stmts.length * 16);
+                        if (aHeight > maxActionHeight) maxActionHeight = aHeight;
+                        const colX = xStart + i * colWidth;
+                        const style = getBranchActionStyle(stmts);
+
+                        nodes.push({
+                            id: aId,
+                            type: style.type,
+                            text: formatStmtsText(stmts),
+                            x: colX + (colWidth - aWidth) / 2,
+                            y: row2Y,
+                            width: aWidth,
+                            height: aHeight,
+                            color: style.color,
+                            borderColor: style.borderColor,
+                            textColor: style.textColor
+                        });
+
+                        connectors.push({
+                            id: makeConnId(),
+                            from: decisionNodeIds[i],
+                            fromPort: 'bottom',
+                            to: aId,
+                            toPort: 'top',
+                            label: 'Yes'
+                        });
+
+                        actionSources.push({ nodeId: aId, port: 'bottom', label: '' });
+                    } else {
+                        // Empty branch connects directly from decision bottom
+                        actionSources.push({ nodeId: decisionNodeIds[i], port: 'bottom', label: 'Yes' });
+                    }
+                }
+
+                // 3. Else branch
+                const lastDecisionId = decisionNodeIds[decisionNodeIds.length - 1];
+                if (elseBranch) {
+                    const eStmts = elseBranch.statements;
+                    const elseColIndex = decisionBranches.length;
+                    const colX = xStart + elseColIndex * colWidth;
+
+                    if (eStmts.length > 0) {
+                        const elseNodeId = makeId('branch_action');
+                        const eHeight = Math.max(54, 30 + eStmts.length * 16);
+                        if (eHeight > maxActionHeight) maxActionHeight = eHeight;
+                        const style = getBranchActionStyle(eStmts);
+
+                        nodes.push({
+                            id: elseNodeId,
+                            type: style.type,
+                            text: formatStmtsText(eStmts),
+                            x: colX + (colWidth - aWidth) / 2,
+                            y: row2Y,
+                            width: aWidth,
+                            height: eHeight,
+                            color: style.color,
+                            borderColor: style.borderColor,
+                            textColor: style.textColor
+                        });
+
+                        connectors.push({
+                            id: makeConnId(),
+                            from: lastDecisionId,
+                            fromPort: 'right',
+                            to: elseNodeId,
+                            toPort: 'top',
+                            label: 'No'
+                        });
+
+                        actionSources.push({ nodeId: elseNodeId, port: 'bottom', label: '' });
+                    } else {
+                        actionSources.push({ nodeId: lastDecisionId, port: 'right', label: 'No' });
+                    }
+                } else {
+                    // No else block: final decision's 'No' branch connects to next node
+                    actionSources.push({ nodeId: lastDecisionId, port: 'right', label: 'No' });
+                }
+
+                yCursor = row2Y + maxActionHeight + 45;
+                incomingSources = actionSources;
             }
         } else if (kind === 'while' || kind === 'for') {
             const loopIndent = item.indent;
@@ -501,8 +658,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             }
 
             // The loop decision's False branch connects to the subsequent statement outside loop
-            prevNodeId = null;
-            pendingFalseSource = { nodeId: loopNodeId, port: 'right', label: 'No' };
+            incomingSources = [{ nodeId: loopNodeId, port: 'right', label: 'No' }];
         } else if (kind === 'output') {
             // Group consecutive print/output statements into ONE combined display node
             const outputs = [];
@@ -529,8 +685,7 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             });
 
             connectIncoming(nodeId);
-
-            prevNodeId = nodeId;
+            incomingSources = [{ nodeId, port: 'bottom', label: '' }];
             yCursor += height + 35;
         } else {
             idx++;
@@ -539,11 +694,21 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
 
     // End Terminator
     const endId = makeId('end');
+    let endX = xCenter - 70;
+    if (incomingSources.length > 2) {
+        const srcNodes = nodes.filter((n) => incomingSources.some((s) => s.nodeId === n.id));
+        if (srcNodes.length > 0) {
+            const minX = Math.min(...srcNodes.map((n) => n.x));
+            const maxX = Math.max(...srcNodes.map((n) => n.x + (n.width || 140)));
+            endX = Math.round((minX + maxX) / 2 - 70);
+        }
+    }
+
     nodes.push({
         id: endId,
         type: 'terminator',
         text: 'End',
-        x: xCenter - 70,
+        x: endX,
         y: yCursor,
         width: 140,
         height: 50,

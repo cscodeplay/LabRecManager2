@@ -296,64 +296,167 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
             where: { id: existingDocumentId, schoolId: req.user.schoolId, deletedAt: null }
         });
 
-        if (targetDoc && (['admin', 'principal'].includes(req.user.role) || targetDoc.uploadedById === req.user.id)) {
-            const uploadDir = path.join(__dirname, '../../uploads');
-            if (!fs.existsSync(uploadDir)) {
-                fs.mkdirSync(uploadDir, { recursive: true });
-            }
-            const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-            const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
-            const diskPath = path.join(uploadDir, diskFileName);
-            fs.writeFileSync(diskPath, req.file.buffer);
+        if (targetDoc) {
+            const isAuthorizedOwnerOrAdmin = ['admin', 'principal'].includes(req.user.role) || targetDoc.uploadedById === req.user.id;
+            const isCodeDoc = targetDoc.category === 'code' || category === 'code' || targetDoc.name?.endsWith('.py') || targetDoc.name?.endsWith('.sql') || targetDoc.fileName?.endsWith('.py') || targetDoc.fileName?.endsWith('.sql');
 
-            let finalPublicId = `local_${diskFileName}`;
-            let finalUrl = `/uploads/${diskFileName}`;
-
-            const updated = await prisma.document.update({
-                where: { id: targetDoc.id },
-                data: {
-                    name: resolvedName,
-                    fileName: resolvedFileName,
-                    folderId: targetFolderId !== undefined ? targetFolderId : targetDoc.folderId,
-                    description: description !== undefined ? description : targetDoc.description,
-                    category: category || targetDoc.category,
-                    fileType: getFileType(req.file.mimetype),
-                    mimeType: req.file.mimetype,
-                    fileSize: req.file.size,
-                    cloudinaryId: finalPublicId,
-                    url: finalUrl,
-                    updatedAt: new Date()
-                },
-                include: {
-                    uploadedBy: { select: { id: true, firstName: true, lastName: true } },
-                    folder: { select: { id: true, name: true } }
+            if (isAuthorizedOwnerOrAdmin) {
+                const uploadDir = path.join(__dirname, '../../uploads');
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
                 }
-            });
+                const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+                const diskPath = path.join(uploadDir, diskFileName);
+                fs.writeFileSync(diskPath, req.file.buffer);
 
-            return res.status(200).json({
-                success: true,
-                message: 'Document updated successfully',
-                data: {
-                    document: {
-                        ...updated,
-                        fileSizeFormatted: formatSize(updated.fileSize)
+                let finalPublicId = `local_${diskFileName}`;
+                let finalUrl = `/uploads/${diskFileName}`;
+
+                const updated = await prisma.document.update({
+                    where: { id: targetDoc.id },
+                    data: {
+                        name: resolvedName,
+                        fileName: resolvedFileName,
+                        folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : targetDoc.folderId,
+                        description: description !== undefined ? description : targetDoc.description,
+                        category: category || targetDoc.category,
+                        fileType: getFileType(req.file.mimetype),
+                        mimeType: req.file.mimetype,
+                        fileSize: req.file.size,
+                        cloudinaryId: finalPublicId,
+                        url: finalUrl,
+                        updatedAt: new Date()
+                    },
+                    include: {
+                        uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                        folder: { select: { id: true, name: true } }
                     }
+                });
+
+                return res.status(200).json({
+                    success: true,
+                    message: 'Document updated successfully',
+                    data: {
+                        document: {
+                            ...updated,
+                            fileSizeFormatted: formatSize(updated.fileSize)
+                        }
+                    }
+                });
+            } else if (isCodeDoc) {
+                // In Code Practice Studio, students editing shared or teacher-provided code templates save to their personal copy
+                let studentPersonalDoc = await prisma.document.findFirst({
+                    where: {
+                        schoolId: req.user.schoolId,
+                        uploadedById: req.user.id,
+                        folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : targetDoc.folderId,
+                        deletedAt: null,
+                        OR: [
+                            { name: { equals: resolvedName, mode: 'insensitive' } },
+                            { fileName: { equals: resolvedFileName, mode: 'insensitive' } }
+                        ]
+                    }
+                });
+
+                const uploadDir = path.join(__dirname, '../../uploads');
+                if (!fs.existsSync(uploadDir)) {
+                    fs.mkdirSync(uploadDir, { recursive: true });
                 }
-            });
+                const safeBaseName = req.file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
+                const diskFileName = `doc_${Date.now()}_${safeBaseName}`;
+                const diskPath = path.join(uploadDir, diskFileName);
+                fs.writeFileSync(diskPath, req.file.buffer);
+
+                let finalPublicId = `local_${diskFileName}`;
+                let finalUrl = `/uploads/${diskFileName}`;
+
+                if (studentPersonalDoc) {
+                    const updated = await prisma.document.update({
+                        where: { id: studentPersonalDoc.id },
+                        data: {
+                            name: resolvedName,
+                            fileName: resolvedFileName,
+                            description: description !== undefined ? description : studentPersonalDoc.description,
+                            category: 'code',
+                            fileType: getFileType(req.file.mimetype),
+                            mimeType: req.file.mimetype,
+                            fileSize: req.file.size,
+                            cloudinaryId: finalPublicId,
+                            url: finalUrl,
+                            updatedAt: new Date()
+                        },
+                        include: {
+                            uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                            folder: { select: { id: true, name: true } }
+                        }
+                    });
+
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Personal code document updated successfully',
+                        data: {
+                            document: {
+                                ...updated,
+                                fileSizeFormatted: formatSize(updated.fileSize)
+                            }
+                        }
+                    });
+                } else {
+                    const created = await prisma.document.create({
+                        data: {
+                            schoolId: req.user.schoolId,
+                            uploadedById: req.user.id,
+                            folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : targetDoc.folderId,
+                            name: resolvedName,
+                            fileName: resolvedFileName,
+                            description: description !== undefined ? description : `${targetDoc.description || resolvedName}`.trim(),
+                            category: 'code',
+                            fileType: getFileType(req.file.mimetype),
+                            mimeType: req.file.mimetype,
+                            fileSize: req.file.size,
+                            cloudinaryId: finalPublicId,
+                            url: finalUrl,
+                            isPublic: false
+                        },
+                        include: {
+                            uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                            folder: { select: { id: true, name: true } }
+                        }
+                    });
+
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Personal code document saved successfully',
+                        data: {
+                            document: {
+                                ...created,
+                                fileSizeFormatted: formatSize(created.fileSize)
+                            }
+                        }
+                    });
+                }
+            }
         }
     }
 
     // Enforce uniqueness: Do not allow same file name in the same folder
+    // For non-admins (students/instructors), scope duplicate check to their own uploads so other students aren't blocked
+    const duplicateWhere = {
+        schoolId: req.user.schoolId,
+        folderId: targetFolderId,
+        deletedAt: null,
+        OR: [
+            { name: { equals: resolvedName, mode: 'insensitive' } },
+            { fileName: { equals: resolvedFileName, mode: 'insensitive' } }
+        ]
+    };
+    if (!['admin', 'principal'].includes(req.user.role)) {
+        duplicateWhere.uploadedById = req.user.id;
+    }
+
     const existingDoc = await prisma.document.findFirst({
-        where: {
-            schoolId: req.user.schoolId,
-            folderId: targetFolderId,
-            deletedAt: null,
-            OR: [
-                { name: { equals: resolvedName, mode: 'insensitive' } },
-                { fileName: { equals: resolvedFileName, mode: 'insensitive' } }
-            ]
-        }
+        where: duplicateWhere
     });
 
     if (existingDoc) {
@@ -376,6 +479,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                 data: {
                     name: resolvedName,
                     fileName: resolvedFileName,
+                    folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : existingDoc.folderId,
                     description: description !== undefined ? description : existingDoc.description,
                     category: category || existingDoc.category,
                     fileType: getFileType(req.file.mimetype),
@@ -910,6 +1014,9 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         }
     }
 
+    const isCodeDoc = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+    let zeroByteCodeFilePath = null;
+
     if (doc.url && doc.url.startsWith('/uploads/')) {
         const fileBasename = path.basename(doc.url);
         const relPath = doc.url.replace(/^\/uploads\//, '');
@@ -926,9 +1033,14 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
 
         for (const cp of candidatePaths) {
             if (fs.existsSync(cp)) {
-                res.setHeader('Content-Type', doc.mimeType || 'application/octet-stream');
-                res.setHeader('Content-Disposition', 'inline');
-                return res.sendFile(cp);
+                const stat = fs.statSync(cp);
+                if (stat.size > 0 || !isCodeDoc) {
+                    res.setHeader('Content-Type', doc.mimeType || (isCodeDoc ? 'text/plain; charset=utf-8' : 'application/octet-stream'));
+                    res.setHeader('Content-Disposition', 'inline');
+                    return res.sendFile(cp);
+                } else {
+                    zeroByteCodeFilePath = cp;
+                }
             }
         }
     }
@@ -948,35 +1060,78 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
             return response.data.pipe(res);
         } catch (streamErr) {
             console.warn('[DocStream] Stream proxy failed, falling back to redirect:', streamErr.message);
-            return res.redirect(doc.url);
+            if (!isCodeDoc) {
+                return res.redirect(doc.url);
+            }
         }
     }
 
-    // Fallback for code documents: check student saved workspaces if local upload was misplaced
-    const isCodeDoc = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+    // Fallback for code documents: check student and instructor saved workspaces if local file was 0 bytes or misplaced
     if (isCodeDoc) {
         try {
-            const workspacesRoot = path.join(__dirname, '../../storage/workspaces/students');
-            if (fs.existsSync(workspacesRoot)) {
-                const userFolders = fs.readdirSync(workspacesRoot);
-                for (const uf of userFolders) {
-                    const wsFile = path.join(workspacesRoot, uf, 'workspace.json');
-                    if (fs.existsSync(wsFile)) {
-                        try {
-                            const wsData = JSON.parse(fs.readFileSync(wsFile, 'utf8'));
-                            const matchingTab = (wsData.tabs || []).find(t => t.documentId === doc.id || t.filename === doc.fileName || t.title === doc.name);
-                            if (matchingTab && typeof matchingTab.code === 'string') {
-                                res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-                                res.setHeader('Content-Disposition', 'inline');
-                                return res.send(matchingTab.code);
-                            }
-                        } catch (_) {}
+            const workspaceRoots = [
+                path.join(__dirname, '../../storage/workspaces/students'),
+                path.join(__dirname, '../../storage/workspaces/instructors')
+            ];
+            for (const workspacesRoot of workspaceRoots) {
+                if (fs.existsSync(workspacesRoot)) {
+                    const userFolders = fs.readdirSync(workspacesRoot);
+                    for (const uf of userFolders) {
+                        const wsFile = path.join(workspacesRoot, uf, 'workspace.json');
+                        if (fs.existsSync(wsFile)) {
+                            try {
+                                const wsData = JSON.parse(fs.readFileSync(wsFile, 'utf8'));
+                                const matchingTab = (wsData.tabs || []).find(t => 
+                                    (t.documentId === doc.id || t.filename === doc.fileName || t.title === doc.name || t.filename === doc.name) &&
+                                    typeof t.code === 'string' && t.code.trim().length > 0
+                                );
+                                if (matchingTab) {
+                                    // Auto-repair physical file on disk if 0-byte or missing
+                                    const targetDiskPath = zeroByteCodeFilePath || path.join(__dirname, '../../uploads', path.basename(doc.url || `doc_${Date.now()}_${doc.fileName || doc.name}`));
+                                    try {
+                                        const uploadDir = path.dirname(targetDiskPath);
+                                        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+                                        fs.writeFileSync(targetDiskPath, matchingTab.code, 'utf8');
+                                        await prisma.document.update({
+                                            where: { id: doc.id },
+                                            data: { fileSize: Buffer.byteLength(matchingTab.code, 'utf8') }
+                                        }).catch(() => {});
+                                    } catch (_) {}
+
+                                    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+                                    res.setHeader('Content-Disposition', 'inline');
+                                    return res.send(matchingTab.code);
+                                }
+                            } catch (_) {}
+                        }
                     }
                 }
             }
         } catch (wsSearchErr) {
             console.warn('[DocStream] Workspace fallback warning:', wsSearchErr.message);
         }
+
+        // If zero-byte file exists or was created with 0 bytes, provide a clean starter template rather than a blank 0-byte file
+        const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
+        const cleanName = doc.name || doc.fileName || (isSql ? 'query.sql' : 'program.py');
+        const starterCode = isSql
+            ? `-- ===============================================================\n-- Script: ${cleanName}\n-- Created: ${new Date(doc.createdAt).toLocaleDateString()}\n-- Ready for SQL queries\n-- ===============================================================\n\n`
+            : `\"\"\"\n===============================================================\nScript: ${cleanName}\nCreated: ${new Date(doc.createdAt).toLocaleDateString()}\nReady for Python code\n===============================================================\n\"\"\"\n\n`;
+
+        const targetDiskPath = zeroByteCodeFilePath || path.join(__dirname, '../../uploads', path.basename(doc.url || `doc_${Date.now()}_${doc.fileName || doc.name}`));
+        try {
+            const uploadDir = path.dirname(targetDiskPath);
+            if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+            fs.writeFileSync(targetDiskPath, starterCode, 'utf8');
+            await prisma.document.update({
+                where: { id: doc.id },
+                data: { fileSize: Buffer.byteLength(starterCode, 'utf8') }
+            }).catch(() => {});
+        } catch (_) {}
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', 'inline');
+        return res.send(starterCode);
     }
 
     return res.status(404).send('File not found');
