@@ -45,6 +45,10 @@ export default function DocumentCodeBrowserModal({
                     ? rawFolders
                     : Array.isArray(rawFolders?.folders)
                     ? rawFolders.folders
+                    : Array.isArray(foldersRes.data?.folders)
+                    ? foldersRes.data.folders
+                    : Array.isArray(foldersRes.data)
+                    ? foldersRes.data
                     : [];
                 setFolders(fetchedFolders);
 
@@ -67,6 +71,10 @@ export default function DocumentCodeBrowserModal({
                     ? rawDocs
                     : Array.isArray(rawDocs?.documents)
                     ? rawDocs.documents
+                    : Array.isArray(docsRes.data?.documents)
+                    ? docsRes.data.documents
+                    : Array.isArray(docsRes.data)
+                    ? docsRes.data
                     : [];
                 setDocuments(fetchedDocs);
             } catch (err) {
@@ -122,7 +130,10 @@ export default function DocumentCodeBrowserModal({
                 // Fallback 2: Stream via download endpoint
                 if (!codeText) {
                     try {
-                        const dlRes = await documentsAPI.getPublic ? await documentsAPI.getFileContent(doc.id) : null;
+                        const dlRes = await documentsAPI.download(doc.id);
+                        if (dlRes?.data) {
+                            codeText = typeof dlRes.data === 'string' ? dlRes.data : String(dlRes.data);
+                        }
                     } catch (_) {}
                 }
 
@@ -132,7 +143,7 @@ export default function DocumentCodeBrowserModal({
                     codeText = isSqlFile
                         ? `-- ${doc.name || 'query.sql'}\n-- File loaded from Documents storage\n\n`
                         : `# ${doc.name || 'script.py'}\n# File loaded from Documents storage\n\n`;
-                    toast.warn(`Opened "${doc.name}" with blank buffer (file source was unreachable)`);
+                    toast(`Opened "${doc.name}" with blank buffer (file source was unreachable)`, { icon: '⚠️' });
                 }
             }
 

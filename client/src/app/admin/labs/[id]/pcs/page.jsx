@@ -1457,7 +1457,7 @@ export default function LabInventoryPage() {
                                             toast.success(`Created ${data.created.length} shift request(s)`);
                                         }
                                         if (data.skipped.length > 0) {
-                                            toast.info(`Skipped ${data.skipped.length} item(s) (already pending or in destination)`);
+                                            toast(`Skipped ${data.skipped.length} item(s) (already pending or in destination)`, { icon: 'ℹ️' });
                                         }
                                         if (data.errors.length > 0) {
                                             toast.error(`${data.errors.length} item(s) had errors`);

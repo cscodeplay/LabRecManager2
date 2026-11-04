@@ -14408,7 +14408,7 @@ export default function Whiteboard({
             const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
             if (activeCount >= 3 && !spaceCheck.hasSpace) {
                 addNewPage();
-                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+                toast('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
             }
 
             const activeTargetPage = currentPageRef.current;
@@ -14472,7 +14472,7 @@ export default function Whiteboard({
             const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
             if (activeCount >= 3 && !spaceCheck.hasSpace) {
                 addNewPage();
-                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+                toast('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
             }
 
             const activeTargetPage = currentPageRef.current;
@@ -14531,7 +14531,7 @@ export default function Whiteboard({
             const spaceCheck = findAvailableCanvasSpace(reqW, reqH);
             if (activeCount >= 3 && !spaceCheck.hasSpace) {
                 addNewPage();
-                toast.info('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
+                toast('📄 Board was crowded — opened a fresh board for this diagram', { icon: '✨' });
             }
 
             const activeTargetPage = currentPageRef.current;
@@ -18024,7 +18024,7 @@ export default function Whiteboard({
                             if (!hasAutoPagedForTurn && !freeSpace.hasSpace && activeCount >= 4) {
                                 hasAutoPagedForTurn = true;
                                 addNewPage();
-                                toast.info('📄 Board was full — created fresh board for new content', { icon: '✨' });
+                                toast('📄 Board was full — created fresh board for new content', { icon: '✨' });
                             }
 
                             const actStroke = action.strokeWidth !== undefined ? Number(action.strokeWidth) : (action.border !== undefined ? Number(action.border) : strokeWidth || 3);

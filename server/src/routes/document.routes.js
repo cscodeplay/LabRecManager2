@@ -115,7 +115,23 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     const isAdmin = ['admin', 'principal'].includes(req.user.role);
     if (!isAdmin) {
-        conditions.push({ uploadedById: req.user.id });
+        if (category === 'code') {
+            // In Code Practice Studio, students can access all school code programs & exercises
+            conditions.push({
+                OR: [
+                    { uploadedById: req.user.id },
+                    { isPublic: true },
+                    { schoolId: req.user.schoolId }
+                ]
+            });
+        } else {
+            conditions.push({
+                OR: [
+                    { uploadedById: req.user.id },
+                    { isPublic: true }
+                ]
+            });
+        }
     }
 
     if (category) conditions.push({ category });
@@ -789,7 +805,15 @@ router.get('/:id/download', optionalAuth, asyncHandler(async (req, res) => {
     }
 
     // Check permission if not public
-    if (!doc.isPublic && (!req.user || req.user.schoolId !== doc.schoolId)) {
+    const isOwner = req.user && (
+        doc.uploadedBy === req.user.id ||
+        doc.uploadedById === req.user.id
+    );
+    const isSuperAdmin = req.user && req.user.role === 'superadmin';
+    const sameSchool = req.user && req.user.schoolId && doc.schoolId && req.user.schoolId === doc.schoolId;
+    const isCodeCategory = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+
+    if (!doc.isPublic && !isSuperAdmin && !isOwner && !sameSchool && !isCodeCategory) {
         return res.status(403).json({ success: false, message: 'Not authorized to download this document' });
     }
 
@@ -856,7 +880,15 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         return res.status(404).send('Document not found');
     }
 
-    if (!doc.isPublic && (!req.user || req.user.schoolId !== doc.schoolId)) {
+    const isOwner = req.user && (
+        doc.uploadedBy === req.user.id ||
+        doc.uploadedById === req.user.id
+    );
+    const isSuperAdmin = req.user && req.user.role === 'superadmin';
+    const sameSchool = req.user && req.user.schoolId && doc.schoolId && req.user.schoolId === doc.schoolId;
+    const isCodeCategory = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+
+    if (!doc.isPublic && !isSuperAdmin && !isOwner && !sameSchool && !isCodeCategory) {
         return res.status(403).send('Not authorized');
     }
 

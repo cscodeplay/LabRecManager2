@@ -789,7 +789,7 @@ export default function AdminTimetablePage() {
         });
 
         if (slotsToCreate.length === 0) {
-            toast.info('All slots already filled');
+            toast('All slots already filled', { icon: 'ℹ️' });
             return;
         }
 

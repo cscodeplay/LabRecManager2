@@ -143,13 +143,21 @@ const sameSchool = async (req, res, next) => {
  */
 const optionalAuth = async (req, res, next) => {
     try {
+        let token = null;
         const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else if (req.query?.token) {
+            token = req.query.token;
+        } else if (req.cookies?.token) {
+            token = req.cookies.token;
+        }
+
+        if (!token) {
             return next();
         }
 
-        const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, jwtConfig.secret);
 
         const user = await prisma.user.findUnique({
