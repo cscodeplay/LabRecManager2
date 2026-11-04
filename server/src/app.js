@@ -53,6 +53,7 @@ const implementationPlansRoutes = require('./routes/implementation-plans.routes'
 const quizRoutes = require('./routes/quiz.routes');
 const browserRoutes = require('./routes/browser.routes');
 const mathSolverRoutes = require('./routes/mathSolver.routes');
+const { registerCompilerSocket } = require('./sockets/compiler.socket');
 const initQuizTables = require('./scripts/init-quiz-tables');
 const initBackupCodeTables = require('./scripts/init-backup-code-tables');
 
@@ -294,6 +295,9 @@ function getWaitingRoom(roomId) {
 // Socket.io connection handling for meeting sessions
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+
+  // Register interactive compiler streaming & step-by-step input handlers
+  registerCompilerSocket(io, socket);
 
   // ===========================================
   // MULTI-DEVICE MEETING MESH SIGNALING & WAITING ROOM

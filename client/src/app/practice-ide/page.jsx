@@ -53,9 +53,11 @@ import {
     Maximize2,
     Minimize2,
     WrapText,
-    ListOrdered
+    ListOrdered,
+    Square
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import io from 'socket.io-client';
 import { useAuthStore } from '@/lib/store';
 import { compilerAPI, documentsAPI, foldersAPI } from '@/lib/api';
 import { generateRelationalErDiagram, generateErDiagramFromSql, generateRelationalErDiagramFromSql } from '@/lib/traditionalGenerators';
@@ -339,6 +341,12 @@ function PracticeIDEPage() {
     // Python Tutor style interactive in-console stdin input state
     const [consoleInputText, setConsoleInputText] = useState('');
 
+    // Socket.IO Interactive Compiler State (for sequential input() prompting)
+    const socketRef = useRef(null);
+    const [activePrompt, setActivePrompt] = useState(null); // { sessionId: string, prompt: string }
+    const [promptValue, setPromptValue] = useState('');
+    const promptInputRef = useRef(null);
+
     // UI-aligned Custom Confirmation Modals (Replacing browser alert/confirm)
     const [tabToCloseConfirm, setTabToCloseConfirm] = useState(null);
     const [showResetDbModal, setShowResetDbModal] = useState(false);
@@ -384,6 +392,90 @@ function PracticeIDEPage() {
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Socket.IO Interactive Compiler Connection
+    useEffect(() => {
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5001');
+        const socket = io(socketUrl, {
+            path: '/socket.io',
+            transports: ['websocket', 'polling']
+        });
+        socketRef.current = socket;
+
+        socket.on('compiler:stdout', ({ sessionId, text }) => {
+            setTabs((prevTabs) =>
+                prevTabs.map((t) => {
+                    if (t.id === sessionId) {
+                        const curOut = t.output || { stdout: '', stderr: '', exitCode: null, durationMs: 0 };
+                        return {
+                            ...t,
+                            output: {
+                                ...curOut,
+                                stdout: (curOut.stdout || '') + text
+                            }
+                        };
+                    }
+                    return t;
+                })
+            );
+        });
+
+        socket.on('compiler:stderr', ({ sessionId, text }) => {
+            setTabs((prevTabs) =>
+                prevTabs.map((t) => {
+                    if (t.id === sessionId) {
+                        const curOut = t.output || { stdout: '', stderr: '', exitCode: null, durationMs: 0 };
+                        return {
+                            ...t,
+                            output: {
+                                ...curOut,
+                                stderr: (curOut.stderr || '') + text
+                            }
+                        };
+                    }
+                    return t;
+                })
+            );
+        });
+
+        socket.on('compiler:prompt', ({ sessionId, prompt }) => {
+            setActivePrompt({ sessionId, prompt: typeof prompt === 'string' ? prompt : '' });
+            setPromptValue('');
+            setTimeout(() => {
+                if (promptInputRef.current) {
+                    promptInputRef.current.focus();
+                }
+            }, 60);
+        });
+
+        socket.on('compiler:exit', ({ sessionId, exitCode, durationMs, existingTables: newTables }) => {
+            setIsExecuting(false);
+            setActivePrompt((prev) => (prev?.sessionId === sessionId ? null : prev));
+            setTabs((prevTabs) =>
+                prevTabs.map((t) => {
+                    if (t.id === sessionId) {
+                        const curOut = t.output || { stdout: '', stderr: '', exitCode: null, durationMs: 0 };
+                        return {
+                            ...t,
+                            output: {
+                                ...curOut,
+                                exitCode: exitCode ?? 0,
+                                durationMs: durationMs || curOut.durationMs || 0
+                            }
+                        };
+                    }
+                    return t;
+                })
+            );
+            if (newTables && Array.isArray(newTables) && newTables.length > 0) {
+                setExistingTables(newTables);
+            }
+        });
+
+        return () => {
+            if (socket) socket.disconnect();
+        };
     }, []);
 
     const editorRef = useRef(null);
@@ -1056,9 +1148,34 @@ Date:          ${dateStr}
         }
 
         setIsExecuting(true);
+        setActivePrompt(null);
+        setPromptValue('');
         setRightPanelMode('output');
         if (typeof window !== 'undefined' && window.innerWidth < 1024) {
             setMobileView('code_output');
+        }
+
+        const isPython = currentTab.language === 'python' || currentTab.language === 'python3';
+        if (isPython && socketRef.current) {
+            // Live Interactive Socket Execution
+            setTabs((prevTabs) =>
+                prevTabs.map((t) =>
+                    (t.id === currentActiveId || t.id === activeTab.id)
+                        ? {
+                              ...t,
+                              output: { stdout: '', stderr: '', exitCode: null, durationMs: 0, runner: 'interactive-python' }
+                          }
+                        : t
+                )
+            );
+
+            socketRef.current.emit('compiler:run', {
+                sessionId: currentActiveId,
+                code: codeToExecute,
+                language: 'python3',
+                userId: user?.id || studentIdentifier || 'guest'
+            });
+            return;
         }
 
         const effectiveStdin = typeof overrideStdin === 'string'
@@ -1113,8 +1230,61 @@ Date:          ${dateStr}
         }
     };
 
+    // Submit value for active input() prompt
+    const handlePromptSubmit = (e) => {
+        if (e) e.preventDefault();
+        if (!activePrompt || !socketRef.current) return;
+
+        const val = promptValue;
+        const sId = activePrompt.sessionId;
+        const promptText = activePrompt.prompt || '';
+
+        // Immediately append prompt and user's input line to the console stdout stream
+        setTabs((prevTabs) =>
+            prevTabs.map((t) => {
+                if (t.id === sId) {
+                    const curOut = t.output || { stdout: '', stderr: '', exitCode: null, durationMs: 0 };
+                    const echoLine = promptText ? `${promptText}${val}\n` : `${val}\n`;
+                    return {
+                        ...t,
+                        output: {
+                            ...curOut,
+                            stdout: (curOut.stdout || '') + echoLine
+                        }
+                    };
+                }
+                return t;
+            })
+        );
+
+        // Send value to running Python process
+        socketRef.current.emit('compiler:stdin', {
+            sessionId: sId,
+            value: val
+        });
+
+        setActivePrompt(null);
+        setPromptValue('');
+    };
+
+    // Kill currently executing program
+    const handleStopExecution = () => {
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        if (socketRef.current) {
+            socketRef.current.emit('compiler:kill', { sessionId: currentActiveId });
+        }
+        setIsExecuting(false);
+        setActivePrompt(null);
+        setPromptValue('');
+        toast('Execution stopped', { icon: '⏹️' });
+    };
+
     // Python Tutor style interactive in-console stdin input handler
     const handleSendConsoleInput = (inputVal) => {
+        if (activePrompt) {
+            handlePromptSubmit();
+            return;
+        }
         const inputDomVal = typeof document !== 'undefined'
             ? document.querySelector('input[data-console-stdin="true"]')?.value ||
               document.querySelector('input[placeholder*="stdin"]')?.value ||
@@ -1895,22 +2065,27 @@ Date:          ${dateStr}
 
                             <div className={`h-4 w-px mx-0.5 ${isLightMode ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                            {/* Round Play Button */}
-                            <button
-                                onClick={() => handleExecuteCode()}
-                                disabled={isExecuting}
-                                className={`w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center disabled:opacity-50 cursor-pointer active:scale-95 group relative ${
-                                    isExecuting ? 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 animate-pulse' : ''
-                                }`}
-                                title="Run Program (Ctrl+↵)"
-                                aria-label="Run Program"
-                            >
-                                {isExecuting ? (
-                                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                                ) : (
+                            {/* Round Play / Stop Button */}
+                            {isExecuting ? (
+                                <button
+                                    onClick={handleStopExecution}
+                                    className="px-2.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-md shadow-rose-600/30 transition-all flex items-center gap-1 cursor-pointer active:scale-95 group relative animate-pulse"
+                                    title="Stop Program Execution (Ctrl+C)"
+                                    aria-label="Stop Program"
+                                >
+                                    <Square className="w-3.5 h-3.5 fill-current" />
+                                    <span className="text-[11px] font-sans font-bold">Stop</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => handleExecuteCode()}
+                                    className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative"
+                                    title="Run Program (Ctrl+↵)"
+                                    aria-label="Run Program"
+                                >
                                     <Play className="w-4 h-4 fill-current ml-0.5" />
-                                )}
-                            </button>
+                                </button>
+                            )}
 
                             {/* ER Diagram Generator from Live Database Schema (in SQL / PL-SQL mode) */}
                             {isDatabaseLanguage(activeTab.language) && (
@@ -2173,102 +2348,158 @@ Date:          ${dateStr}
                             <div
                                 className={`flex-1 flex flex-col p-4 overflow-y-auto custom-scrollbar transition-colors duration-200 ${currentOutputTheme.containerClass}`}
                             >
-                                {activeTab.output ? (
+                                {activeTab.output || isExecuting ? (
                                     <div className="space-y-4">
                                         {/* Execution metadata bar */}
                                         <div
                                             className={`flex items-center justify-between pb-2 border-b text-[11px] ${currentOutputTheme.headerClass}`}
                                         >
                                             <div className="flex items-center gap-2">
-                                                <span
-                                                    className={`inline-flex items-center gap-1 font-semibold ${
-                                                        activeTab.output.exitCode === 0
-                                                            ? currentOutputTheme.accentText
-                                                            : 'text-rose-500'
-                                                    }`}
-                                                >
-                                                    {activeTab.output.exitCode === 0 ? (
-                                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                                    ) : (
-                                                        <AlertCircle className="w-3.5 h-3.5" />
-                                                    )}
-                                                    {activeTab.output.exitCode === 0
-                                                        ? 'Process Finished (0)'
-                                                        : `Exited with Error (${activeTab.output.exitCode})`}
-                                                </span>
+                                                {isExecuting ? (
+                                                    <span className="inline-flex items-center gap-1.5 font-bold text-amber-500 animate-pulse">
+                                                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                                        <span>{activePrompt && activePrompt.sessionId === activeTab.id ? 'Waiting for input()...' : 'Program Running...'}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span
+                                                        className={`inline-flex items-center gap-1 font-semibold ${
+                                                            activeTab.output?.exitCode === 0
+                                                                ? currentOutputTheme.accentText
+                                                                : 'text-rose-500'
+                                                        }`}
+                                                    >
+                                                        {activeTab.output?.exitCode === 0 ? (
+                                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                                        ) : (
+                                                            <AlertCircle className="w-3.5 h-3.5" />
+                                                        )}
+                                                        {activeTab.output?.exitCode === 0
+                                                            ? 'Process Finished (0)'
+                                                            : `Exited with Error (${activeTab.output?.exitCode})`}
+                                                    </span>
+                                                )}
                                                 <span>•</span>
-                                                <span>Duration: {activeTab.output.durationMs || 0}ms</span>
+                                                <span>Duration: {activeTab.output?.durationMs || 0}ms</span>
                                             </div>
-                                            <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">
-                                                Runner: {activeTab.output.runner || 'native'}
-                                            </span>
+                                            <div className="flex items-center gap-2">
+                                                {isExecuting && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleStopExecution}
+                                                        className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer transition shadow-xs"
+                                                        title="Stop execution (Ctrl+C)"
+                                                    >
+                                                        <Square className="w-3 h-3 fill-current" />
+                                                        <span>Stop</span>
+                                                    </button>
+                                                )}
+                                                <span className="text-[10px] uppercase tracking-wider font-semibold opacity-80">
+                                                    Runner: {activeTab.output?.runner || 'native'}
+                                                </span>
+                                            </div>
                                         </div>
 
-                                        {/* Standard Output (stdout) */}
-                                        {activeTab.output.stdout ? (
+                                        {/* Standard Output (stdout) or Active Prompt stream */}
+                                        {(activeTab.output?.stdout || (activePrompt && activePrompt.sessionId === activeTab.id) || (isExecuting && !activeTab.output?.stderr)) ? (
                                             <div
                                                 style={{ fontSize: `${fontSize}px` }}
                                                 className={`p-3 rounded-lg border whitespace-pre-wrap leading-relaxed select-text font-mono ${currentOutputTheme.stdoutClass}`}
                                             >
-                                                {activeTab.output.stdout}
+                                                {activeTab.output?.stdout || ''}
 
-                                                {/* Inline Console Stdin Input (Directly within stdout stream) */}
-                                                {!isDatabaseLanguage(activeTab.language) && (
-                                                    <div className="mt-2.5 pt-2 border-t border-dashed border-slate-400/30 font-mono">
-                                                        {activeTab.stdin?.trim() && (
-                                                            <div className="mb-1 text-[11px] opacity-75 flex items-center justify-between">
-                                                                <span>stdin: <strong className="text-emerald-400">"{activeTab.stdin.replace(/\n/g, '\\n')}"</strong></span>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleStdinChange('')}
-                                                                    className="text-[10px] text-rose-400 hover:underline cursor-pointer font-sans"
-                                                                >
-                                                                    Clear stdin
-                                                                </button>
-                                                            </div>
-                                                        )}
+                                                {/* Real-time Interactive Prompt (Triggered when program calls input()) */}
+                                                {activePrompt && activePrompt.sessionId === activeTab.id ? (
+                                                    <div className="mt-2.5 pt-2 border-t border-dashed border-amber-400/50 font-mono">
                                                         <form
-                                                            onSubmit={(e) => {
-                                                                e.preventDefault();
-                                                                handleSendConsoleInput();
-                                                            }}
+                                                            onSubmit={handlePromptSubmit}
                                                             className="flex items-center gap-1.5 text-xs"
                                                         >
-                                                            <span className="text-emerald-500 font-bold select-none">&gt;</span>
+                                                            <span data-interactive-prompt-label="true" className="text-amber-500 font-bold select-none">{activePrompt.prompt || '>'}</span>
                                                             <input
+                                                                ref={promptInputRef}
                                                                 type="text"
-                                                                data-console-stdin="true"
-                                                                value={consoleInputText}
-                                                                onChange={(e) => setConsoleInputText(e.target.value)}
+                                                                data-interactive-prompt="true"
+                                                                value={promptValue}
+                                                                onChange={(e) => setPromptValue(e.target.value)}
                                                                 onKeyDown={(e) => {
                                                                     if (e.key === 'Tab') {
                                                                         e.preventDefault();
-                                                                        setConsoleInputText((prev) => prev + '\t');
+                                                                        setPromptValue((prev) => prev + '\t');
                                                                     }
                                                                 }}
-                                                                placeholder="type input & press Enter ↵ (supports space/tab)..."
-                                                                className="flex-1 bg-transparent border-0 border-b border-dashed border-slate-400/40 focus:border-emerald-500 focus:outline-none text-inherit text-xs font-mono py-0.5 px-1 transition-colors"
+                                                                placeholder="type value & press Enter ↵..."
+                                                                autoFocus
+                                                                className="flex-1 bg-transparent border-0 border-b border-dashed border-amber-400/80 focus:border-emerald-500 focus:outline-none text-emerald-500 dark:text-emerald-400 font-bold text-xs font-mono py-0.5 px-1 transition-colors"
                                                             />
                                                             <button
                                                                 type="submit"
-                                                                disabled={isExecuting}
-                                                                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-mono transition cursor-pointer shadow-xs"
+                                                                className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-mono font-bold transition cursor-pointer shadow-xs flex items-center gap-1"
                                                                 title="Send input into program (Enter)"
                                                             >
-                                                                Enter ↵
+                                                                <span>Enter</span>
+                                                                <span>↵</span>
                                                             </button>
                                                         </form>
                                                     </div>
+                                                ) : (
+                                                    /* Standard Console Input bar when not in active input() prompt */
+                                                    !isDatabaseLanguage(activeTab.language) && !isExecuting && (
+                                                        <div className="mt-2.5 pt-2 border-t border-dashed border-slate-400/30 font-mono">
+                                                            {activeTab.stdin?.trim() && (
+                                                                <div className="mb-1 text-[11px] opacity-75 flex items-center justify-between">
+                                                                    <span>stdin: <strong className="text-emerald-400">"{activeTab.stdin.replace(/\n/g, '\\n')}"</strong></span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleStdinChange('')}
+                                                                        className="text-[10px] text-rose-400 hover:underline cursor-pointer font-sans"
+                                                                    >
+                                                                        Clear stdin
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            <form
+                                                                onSubmit={(e) => {
+                                                                    e.preventDefault();
+                                                                    handleSendConsoleInput();
+                                                                }}
+                                                                className="flex items-center gap-1.5 text-xs"
+                                                            >
+                                                                <span className="text-emerald-500 font-bold select-none">&gt;</span>
+                                                                <input
+                                                                    type="text"
+                                                                    data-console-stdin="true"
+                                                                    value={consoleInputText}
+                                                                    onChange={(e) => setConsoleInputText(e.target.value)}
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Tab') {
+                                                                            e.preventDefault();
+                                                                            setConsoleInputText((prev) => prev + '\t');
+                                                                        }
+                                                                    }}
+                                                                    placeholder="type input & press Enter ↵ (supports space/tab)..."
+                                                                    className="flex-1 bg-transparent border-0 border-b border-dashed border-slate-400/40 focus:border-emerald-500 focus:outline-none text-inherit text-xs font-mono py-0.5 px-1 transition-colors"
+                                                                />
+                                                                <button
+                                                                    type="submit"
+                                                                    disabled={isExecuting}
+                                                                    className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-mono transition cursor-pointer shadow-xs"
+                                                                    title="Send input into program (Enter)"
+                                                                >
+                                                                    Enter ↵
+                                                                </button>
+                                                            </form>
+                                                        </div>
+                                                    )
                                                 )}
                                             </div>
-                                        ) : !activeTab.output.stderr ? (
+                                        ) : !activeTab.output?.stderr ? (
                                             <p className="opacity-60 italic text-xs">
                                                 Command executed successfully with no stdout output.
                                             </p>
                                         ) : null}
 
                                         {/* Standard Error (stderr) */}
-                                        {activeTab.output.stderr && (() => {
+                                        {activeTab.output?.stderr && (() => {
                                             const noSuchTableMatch = activeTab.output.stderr.match(/Table\s+['`](?:[^'`. ]+\.)?([^'` ]+)['`]\s+doesn't exist/i) ||
                                                 activeTab.output.stderr.match(/no such table:\s*['`]?([^'`\s\n]+)['`]?/i);
                                             const missingTableName = noSuchTableMatch ? noSuchTableMatch[1] : null;
@@ -2286,7 +2517,7 @@ Date:          ${dateStr}
                                                         {activeTab.output.stderr}
 
                                                         {/* Inline Stdin Input on EOFError when stdout was empty */}
-                                                        {!isDatabaseLanguage(activeTab.language) && !activeTab.output.stdout && (
+                                                        {!isDatabaseLanguage(activeTab.language) && !activeTab.output?.stdout && (
                                                             <div className="mt-3 pt-2 border-t border-dashed border-rose-300/40 dark:border-rose-800/50">
                                                                 <div className="mb-2 text-[11px] text-amber-600 dark:text-amber-400 font-sans font-medium flex items-center gap-1">
                                                                     <Terminal className="w-3.5 h-3.5" />
