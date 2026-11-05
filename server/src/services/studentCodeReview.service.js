@@ -241,13 +241,21 @@ Return ONLY a valid JSON object with the following structure (no markdown wrappe
     /**
      * Get Enriched Student Inspection Directory
      */
-    async getStudentsInspectionList({ schoolId = null }) {
+    async getStudentsInspectionList({ schoolId = null, classId = null }) {
+        const whereClause = {
+            role: 'student',
+            isActive: true,
+            ...(schoolId ? { schoolId } : {})
+        };
+
+        if (classId && classId !== 'ALL') {
+            whereClause.classEnrollments = {
+                some: { classId }
+            };
+        }
+
         const students = await prisma.user.findMany({
-            where: {
-                role: 'student',
-                isActive: true,
-                ...(schoolId ? { schoolId } : {})
-            },
+            where: whereClause,
             select: {
                 id: true,
                 firstName: true,
@@ -265,8 +273,10 @@ Return ONLY a valid JSON object with the following structure (no markdown wrappe
                     take: 1
                 }
             },
-            orderBy: { firstName: 'asc' },
-            take: 200
+            orderBy: [
+                { firstName: 'asc' },
+                { lastName: 'asc' }
+            ]
         });
 
         const list = students.map((s) => {
@@ -291,7 +301,7 @@ Return ONLY a valid JSON object with the following structure (no markdown wrappe
                         const langSet = new Set(ws.tabs.map(t => t.language).filter(Boolean));
                         languages = Array.from(langSet);
                         const active = ws.tabs.find(t => t.id === ws.activeTabId) || ws.tabs[0];
-                        if (active) activeTabTitle = active.name;
+                        if (active) activeTabTitle = active.name || active.title || '';
                     }
                 } catch (_) {}
             }
@@ -305,15 +315,24 @@ Return ONLY a valid JSON object with the following structure (no markdown wrappe
 
             const latestReview = reviewData.latestReview || null;
 
-            const enrollment = s.classEnrollments[0];
-            const className = enrollment?.class?.name 
-                ? `${enrollment.class.name}${enrollment.class.section ? ` - ${enrollment.class.section}` : ''}`
-                : 'General';
+            const enrollment = s.classEnrollments?.[0];
+            let className = 'General';
+            if (enrollment?.class?.name) {
+                const cName = enrollment.class.name.trim();
+                const sec = (enrollment.class.section || '').trim();
+                if (sec && !cName.toLowerCase().endsWith(sec.toLowerCase()) && !cName.toLowerCase().includes(`-${sec.toLowerCase()}`)) {
+                    className = `${cName} - ${sec}`;
+                } else {
+                    className = cName;
+                }
+            }
+
+            const fullName = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Student';
 
             return {
                 id: s.id,
-                name: `${s.firstName} ${s.lastName || ''}`.trim(),
-                email: s.email,
+                name: fullName,
+                email: s.email || '',
                 admissionNumber: s.admissionNumber || s.studentId || 'N/A',
                 rollNumber: enrollment?.rollNumber || 'N/A',
                 className,
@@ -321,9 +340,9 @@ Return ONLY a valid JSON object with the following structure (no markdown wrappe
                 hasWorkspace,
                 updatedAt,
                 tabsCount,
-                languages,
+                languages: Array.isArray(languages) ? languages : [],
                 activeTabTitle,
-                reviewStatus: latestReview ? latestReview.status : (hasWorkspace ? 'unreviewed' : 'no_activity'),
+                reviewStatus: latestReview?.status || (hasWorkspace ? 'unreviewed' : 'no_activity'),
                 latestRating: latestReview ? latestReview.rating : null,
                 latestReviewedAt: latestReview ? latestReview.reviewedAt : null,
                 latestReviewedBy: latestReview ? latestReview.reviewedBy : null

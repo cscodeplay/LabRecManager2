@@ -254,6 +254,7 @@ export default function DocumentCodeBrowserModal({
                 language: lang,
                 documentId: doc.id,
                 folderId: doc.folderId,
+                createdAt: doc.createdAt,
                 updatedAt: doc.updatedAt || doc.createdAt,
                 asNewTab: true
             });
@@ -435,11 +436,11 @@ export default function DocumentCodeBrowserModal({
                 </div>
 
                 {/* Table Header Row */}
-                <div className="grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 select-none">
+                <div className="grid grid-cols-12 gap-2 sm:gap-3 px-5 py-2.5 bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 select-none">
                     {/* Filename Column Header */}
                     <button
                         onClick={() => handleColumnSort('name')}
-                        className="col-span-12 sm:col-span-4 flex items-center gap-1.5 hover:text-slate-900 transition group text-left cursor-pointer"
+                        className="col-span-12 sm:col-span-3 flex items-center gap-1.5 hover:text-slate-900 transition group text-left cursor-pointer"
                         title="Click to sort by filename"
                     >
                         <span>Filename / Script</span>
@@ -465,19 +466,31 @@ export default function DocumentCodeBrowserModal({
                         title="Click to sort creation datewise"
                     >
                         <Calendar className="w-3 h-3 text-slate-500 group-hover:text-amber-700" />
-                        <span>Created Date</span>
+                        <span>Created</span>
                         {renderSortArrow('createdAt')}
+                    </button>
+
+                    {/* Updated Date Column Header */}
+                    <button
+                        onClick={() => handleColumnSort('updatedAt')}
+                        className={`hidden md:flex col-span-2 items-center gap-1.5 transition group cursor-pointer ${
+                            sortField === 'updatedAt' ? 'text-amber-700 font-bold' : 'hover:text-slate-900'
+                        }`}
+                        title="Click to sort by updated date"
+                    >
+                        <Clock className="w-3 h-3 text-slate-500 group-hover:text-amber-700" />
+                        <span>Updated</span>
+                        {renderSortArrow('updatedAt')}
                     </button>
 
                     {/* File Size Column Header */}
                     <button
                         onClick={() => handleColumnSort('fileSize')}
-                        className={`hidden md:flex col-span-2 items-center gap-1.5 hover:text-slate-900 transition group cursor-pointer justify-end pr-2 ${
+                        className={`hidden md:flex col-span-1 items-center gap-1 hover:text-slate-900 transition group cursor-pointer justify-end pr-1 ${
                             sortField === 'fileSize' ? 'text-amber-700 font-bold' : 'hover:text-slate-900'
                         }`}
                         title="Click to sort by file size"
                     >
-                        <HardDrive className="w-3 h-3 text-slate-500 group-hover:text-amber-700" />
                         <span>Size</span>
                         {renderSortArrow('fileSize')}
                     </button>
@@ -501,16 +514,16 @@ export default function DocumentCodeBrowserModal({
                             const isOpening = openingDocId === doc.id;
                             const folderName = folderMap[doc.folderId] || (isSql ? 'SQL' : 'Python');
                             const created = formatDate(doc.createdAt);
-                            const updated = formatDate(doc.updatedAt);
+                            const updated = formatDate(doc.updatedAt || doc.createdAt);
 
                             return (
                                 <div
                                     key={doc.id}
                                     data-doc-row={doc.id}
-                                    className="grid grid-cols-12 gap-3 items-center p-2.5 sm:px-3 bg-white hover:bg-amber-50/40 border border-slate-200/90 hover:border-amber-300/80 rounded-xl transition-all shadow-2xs group"
+                                    className="grid grid-cols-12 gap-2 sm:gap-3 items-center p-2.5 sm:px-3 bg-white hover:bg-amber-50/40 border border-slate-200/90 hover:border-amber-300/80 rounded-xl transition-all shadow-2xs group"
                                 >
-                                    {/* Filename & Icon (col-span-4) */}
-                                    <div className="col-span-12 sm:col-span-4 flex items-center gap-2.5 min-w-0">
+                                    {/* Filename & Icon (col-span-12 sm:col-span-3) */}
+                                    <div className="col-span-12 sm:col-span-3 flex items-center gap-2.5 min-w-0">
                                         <div
                                             className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${
                                                 isSql
@@ -556,9 +569,15 @@ export default function DocumentCodeBrowserModal({
                                         <span className="text-[10px] text-slate-400">{created.time}</span>
                                     </div>
 
-                                    {/* File Size (col-span-2) */}
-                                    <div className="hidden md:flex col-span-2 justify-end pr-2 items-center">
-                                        <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold shadow-2xs">
+                                    {/* Updated Date (col-span-2) */}
+                                    <div className="hidden md:flex col-span-2 flex-col justify-center text-[11px] min-w-0">
+                                        <span className="text-slate-800 font-medium">{updated.date}</span>
+                                        <span className="text-[10px] text-amber-700/80 font-mono">{updated.time}</span>
+                                    </div>
+
+                                    {/* File Size (col-span-1) */}
+                                    <div className="hidden md:flex col-span-1 justify-end pr-1 items-center">
+                                        <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 font-semibold shadow-2xs">
                                             {formatFileSize(doc.fileSize)}
                                         </span>
                                     </div>

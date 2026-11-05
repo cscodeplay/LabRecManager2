@@ -587,7 +587,7 @@ export default function IDEMenuBar({
 
             {/* Right: Autosave Toggle & Instructor Inspection Selector */}
             <div className="flex items-center gap-2.5">
-                {/* Autosave Status & Datetime Pill */}
+                {/* Autosave Status Pill (Global toggle; timestamp tracked on individual file level) */}
                 <div
                     onClick={onToggleAutosave}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer transition ${
@@ -595,9 +595,7 @@ export default function IDEMenuBar({
                     }`}
                     title={
                         isAutosaveEnabled
-                            ? (lastAutosavedAt
-                                ? `Autosave is ON. Last autosaved at ${new Date(lastAutosavedAt).toLocaleTimeString()} on ${new Date(lastAutosavedAt).toLocaleDateString()}. Click to disable.`
-                                : 'Autosave is ON. Click to disable.')
+                            ? 'Autosave is ON (per-file automatic saving enabled). Click to disable.'
                             : 'Autosave is OFF. Click to enable.'
                     }
                 >
@@ -606,15 +604,13 @@ export default function IDEMenuBar({
                             {autosaveStatus === 'saving' ? (
                                 <>
                                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                                    <span className="hidden md:inline text-[11px] text-emerald-500 font-bold">Autosaving...</span>
+                                    <span className="hidden md:inline text-[11px] text-emerald-500 font-bold">Saving...</span>
                                 </>
                             ) : (
                                 <>
                                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                                     <span className="hidden md:inline text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                        {lastAutosavedAt
-                                            ? `Autosaved ${new Date(lastAutosavedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-                                            : 'Autosave: ON'}
+                                        Autosave: ON
                                     </span>
                                 </>
                             )}

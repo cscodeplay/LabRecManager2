@@ -21,6 +21,7 @@ import {
     FileSpreadsheet,
     HelpCircle,
     Info,
+    Calendar,
     CheckCircle2,
     AlertCircle,
     Clock,
@@ -264,6 +265,7 @@ function PracticeIDEPage() {
     const [autosaveStatus, setAutosaveStatus] = useState('saved'); // 'saved' | 'saving'
     const [lastAutosavedAt, setLastAutosavedAt] = useState(null);
     const autosaveTimerRef = useRef(null);
+    const tabAutosaveTimersRef = useRef({});
     const [autosaveFlash, setAutosaveFlash] = useState({ visible: false, status: 'saved', text: '' });
     const autosaveFlashTimerRef = useRef(null);
 
@@ -814,6 +816,7 @@ function PracticeIDEPage() {
                 const newDocId = savedDoc?.id || tabToSave.documentId;
 
                 // 3. Update tab with documentId in tabs state and storage immediately without clobbering live code
+                const saveTimestamp = new Date().toISOString();
                 if (newDocId) {
                     if (tabsRef.current) {
                         tabsRef.current = tabsRef.current.map((t) =>
@@ -823,6 +826,8 @@ function PracticeIDEPage() {
                                       filename: fileName,
                                       documentId: newDocId,
                                       folderId: targetFolder?.id,
+                                      createdAt: t.createdAt || saveTimestamp,
+                                      lastSavedAt: saveTimestamp,
                                       isDirty: false
                                   }
                                 : t
@@ -837,6 +842,8 @@ function PracticeIDEPage() {
                                       filename: fileName,
                                       documentId: newDocId,
                                       folderId: targetFolder?.id,
+                                      createdAt: t.createdAt || saveTimestamp,
+                                      lastSavedAt: saveTimestamp,
                                       isDirty: false
                                   }
                                 : t
@@ -911,11 +918,18 @@ function PracticeIDEPage() {
                         const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
                         const resolvedDocId = savedDoc?.id || currentActiveTab.documentId;
                         
-                        // Update ONLY tab metadata without replacing active code in state to prevent cursor jump!
+                        // Update tab metadata and code without replacing active code in state to prevent cursor jump!
+                        if (tabsRef.current) {
+                            tabsRef.current = tabsRef.current.map((t) =>
+                                t.id === currentActiveTab.id
+                                    ? { ...t, code: liveCode, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
+                                    : t
+                            );
+                        }
                         setTabs((prevTabs) =>
                             prevTabs.map((t) =>
                                 t.id === currentActiveTab.id
-                                    ? { ...t, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso }
+                                    ? { ...t, code: liveCode, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
                                     : t
                             )
                         );
@@ -945,21 +959,27 @@ function PracticeIDEPage() {
         [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs, saveProgramToAppropriateFolder]
     );
 
-    // Code change handler (2500ms debounce prevents cursor repositioning)
+    // Code change handler (Per-tab debounced autosave prevents cursor repositioning and isolates changes per file)
     const handleCodeChange = (newCode) => {
         if (inspectingStudentId) return;
         if (isProgrammaticUpdateRef.current) return;
         const val = newCode || '';
+        const currentActiveId = activeTabIdRef.current || activeTabId;
 
         setTabs((prevTabs) => {
-            const nextTabs = prevTabs.map((t) => (t.id === activeTabId ? { ...t, code: val, isDirty: true } : t));
+            const nextTabs = prevTabs.map((t) => (t.id === currentActiveId ? { ...t, code: val, isDirty: true } : t));
+            tabsRef.current = nextTabs;
+
             if (isAutosaveEnabled) {
                 setAutosaveStatus('saving');
                 setAutosaveFlash({ visible: true, status: 'saving', text: 'Autosaving...' });
-                if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
-                autosaveTimerRef.current = setTimeout(() => {
-                    triggerSaveWorkspace(nextTabs, activeTabId);
-                }, 2500);
+                if (tabAutosaveTimersRef.current[currentActiveId]) {
+                    clearTimeout(tabAutosaveTimersRef.current[currentActiveId]);
+                }
+                tabAutosaveTimersRef.current[currentActiveId] = setTimeout(async () => {
+                    await triggerSaveWorkspace(tabsRef.current || nextTabs, currentActiveId);
+                    delete tabAutosaveTimersRef.current[currentActiveId];
+                }, 2000);
             }
             return nextTabs;
         });
@@ -1208,6 +1228,28 @@ Date:          ${dateStr}
         executeCloseTab(tabIdToClose);
     };
 
+    const handleSelectTab = (targetTabId) => {
+        if (targetTabId === activeTabId) return;
+        const currentTabs = tabsRef.current || tabs;
+        if (editorRef.current) {
+            const liveVal = editorRef.current.getValue();
+            const updated = currentTabs.map((t) => (t.id === activeTabId ? { ...t, code: liveVal } : t));
+            tabsRef.current = updated;
+            setTabs(updated);
+        }
+        setActiveTabId(targetTabId);
+        activeTabIdRef.current = targetTabId;
+
+        const targetTab = (tabsRef.current || currentTabs).find((t) => t.id === targetTabId);
+        if (targetTab && editorRef.current) {
+            isProgrammaticUpdateRef.current = true;
+            editorRef.current.setValue(targetTab.code || '');
+            setTimeout(() => {
+                isProgrammaticUpdateRef.current = false;
+            }, 100);
+        }
+    };
+
     const executeCloseTab = (tabIdToClose) => {
         const currentTabs = tabsRef.current || tabs;
         const updatedTabs = currentTabs.filter((t) => t.id !== tabIdToClose);
@@ -1215,8 +1257,18 @@ Date:          ${dateStr}
         if (activeTabId === tabIdToClose) {
             nextActiveId = updatedTabs[0]?.id || '';
             setActiveTabId(nextActiveId);
+            activeTabIdRef.current = nextActiveId;
+            const targetTab = updatedTabs[0];
+            if (targetTab && editorRef.current) {
+                isProgrammaticUpdateRef.current = true;
+                editorRef.current.setValue(targetTab.code || '');
+                setTimeout(() => {
+                    isProgrammaticUpdateRef.current = false;
+                }, 100);
+            }
         }
 
+        tabsRef.current = updatedTabs;
         setTabs(updatedTabs);
         triggerSaveWorkspace(updatedTabs, nextActiveId);
         setTabToCloseConfirm(null);
@@ -1632,16 +1684,19 @@ Date:          ${dateStr}
     };
 
     // 7. Open Document from Browser into Tab (Switches to existing tab if already open, loads into pristine empty tab, or opens in a NEW tab)
-    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, updatedAt }) => {
+    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, createdAt, updatedAt }) => {
         const resolvedDocId = docId || documentId || null;
         const currentTabs = tabsRef.current || tabs;
         const safeCode = typeof code === 'string' && code.length > 0 ? code : (docLang === 'sql' ? '-- SQL script\n' : '# Python script\n');
+        const nowIso = new Date().toISOString();
+        const fileCreatedAt = createdAt || updatedAt || nowIso;
+        const fileUpdatedAt = updatedAt || createdAt || nowIso;
 
         const savedTimeStr = updatedAt
             ? `(Last saved: ${new Date(updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
             : '';
 
-        // 1. If this document is ALREADY open in an existing tab, just switch to it!
+        // 1. If this document is ALREADY open in an existing tab, update it and switch to it!
         const existingTab = currentTabs.find(
             (t) => (resolvedDocId && t.documentId === resolvedDocId) ||
                    (t.filename && t.filename.toLowerCase() === name.toLowerCase())
@@ -1651,13 +1706,32 @@ Date:          ${dateStr}
             activeTabIdRef.current = existingTab.id;
             isProgrammaticUpdateRef.current = true;
             if (editorRef.current) {
-                editorRef.current.setValue(existingTab.code || safeCode);
+                editorRef.current.setValue(safeCode);
             }
             setTimeout(() => {
                 isProgrammaticUpdateRef.current = false;
             }, 300);
-            if (updatedAt) setLastAutosavedAt(updatedAt);
-            toast.success(`Switched to open tab "${existingTab.filename || existingTab.title}"`, { icon: '📄' });
+
+            const updatedTabs = currentTabs.map((t) =>
+                t.id === existingTab.id
+                    ? {
+                          ...t,
+                          filename: name,
+                          title: name.replace(/\.(py|sql)$/i, ''),
+                          language: docLang || t.language,
+                          code: safeCode,
+                          documentId: resolvedDocId || t.documentId,
+                          folderId: folderId || t.folderId,
+                          createdAt: t.createdAt || fileCreatedAt,
+                          lastSavedAt: fileUpdatedAt,
+                          isDirty: false
+                      }
+                    : t
+            );
+            tabsRef.current = updatedTabs;
+            setTabs(updatedTabs);
+            triggerSaveWorkspace(updatedTabs, existingTab.id);
+            toast.success(`Loaded open tab "${existingTab.filename || existingTab.title}" ${savedTimeStr}`, { icon: '📄' });
             return;
         }
 
@@ -1681,8 +1755,6 @@ Date:          ${dateStr}
                 isProgrammaticUpdateRef.current = false;
             }, 300);
 
-            if (updatedAt) setLastAutosavedAt(updatedAt);
-
             const updatedTabs = currentTabs.map((t) =>
                 t.id === activeTabObj.id
                     ? {
@@ -1693,7 +1765,8 @@ Date:          ${dateStr}
                           code: safeCode,
                           documentId: resolvedDocId || t.documentId,
                           folderId: folderId || t.folderId,
-                          lastSavedAt: updatedAt || new Date().toISOString(),
+                          createdAt: fileCreatedAt,
+                          lastSavedAt: fileUpdatedAt,
                           isDirty: false,
                           metadata: {
                               ...t.metadata,
@@ -1722,15 +1795,25 @@ Date:          ${dateStr}
         newTab.code = safeCode;
         newTab.documentId = resolvedDocId;
         newTab.folderId = folderId || newTab.folderId;
-        newTab.metadata.title = newTab.title;
-        newTab.lastSavedAt = updatedAt || new Date().toISOString();
+        newTab.createdAt = fileCreatedAt;
+        newTab.lastSavedAt = fileUpdatedAt;
         newTab.isDirty = false;
+        newTab.metadata.title = newTab.title;
 
         const updatedTabs = [...currentTabs, newTab];
         tabsRef.current = updatedTabs;
         setTabs(updatedTabs);
         setActiveTabId(newId);
         activeTabIdRef.current = newId;
+
+        isProgrammaticUpdateRef.current = true;
+        if (editorRef.current) {
+            editorRef.current.setValue(safeCode);
+        }
+        setTimeout(() => {
+            isProgrammaticUpdateRef.current = false;
+        }, 300);
+
         triggerSaveWorkspace(updatedTabs, newId);
         toast.success(`Opened "${name}" in new tab ${savedTimeStr}`, { icon: '📄' });
     };
@@ -1974,7 +2057,7 @@ Date:          ${dateStr}
                             <div
                                 key={tab.id}
                                 data-tab-id={tab.id}
-                                onClick={() => setActiveTabId(tab.id)}
+                                onClick={() => handleSelectTab(tab.id)}
                                 onDoubleClick={(e) => {
                                     if (inspectingStudentId) return;
                                     e.stopPropagation();
@@ -2196,6 +2279,90 @@ Date:          ${dateStr}
                             }`}>
                                 {activeTab.language === 'plsql' ? 'PL/SQL' : activeTab.language?.toUpperCase() || 'CODE'}
                             </span>
+
+                            {/* File Datetime & Sync Information Tooltip */}
+                            <div className="relative group/fileinfo">
+                                <button
+                                    type="button"
+                                    data-testid="file-info-btn"
+                                    className={`p-1 rounded-md text-xs transition cursor-pointer flex items-center justify-center ${
+                                        isLightMode
+                                            ? 'text-slate-500 hover:text-amber-700 hover:bg-slate-200/70'
+                                            : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'
+                                    }`}
+                                    title="View file creation & update timestamps"
+                                    aria-label="View file creation and update timestamps"
+                                >
+                                    <Info className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Tooltip Card */}
+                                <div className="absolute left-0 top-full mt-1.5 hidden group-hover/fileinfo:flex flex-col z-50 w-72 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl text-[11px] text-slate-700 dark:text-slate-200 pointer-events-none animate-in fade-in duration-150">
+                                    <div className="font-bold text-xs text-slate-900 dark:text-white truncate border-b border-slate-100 dark:border-slate-800 pb-1.5 mb-2 flex items-center gap-1.5">
+                                        <FileCode className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                        <span className="truncate">{activeTab.filename || `${activeTab.title}.${activeTab.language === 'sql' ? 'sql' : 'py'}`}</span>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between text-[10px]">
+                                            <span className="text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                                                <Calendar className="w-3 h-3 text-slate-400" />
+                                                Created:
+                                            </span>
+                                            <span className="font-medium text-slate-800 dark:text-slate-200">
+                                                {activeTab.createdAt
+                                                    ? new Date(activeTab.createdAt).toLocaleString(undefined, {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                          second: '2-digit'
+                                                      })
+                                                    : (activeTab.lastSavedAt
+                                                          ? new Date(activeTab.lastSavedAt).toLocaleString(undefined, {
+                                                                month: 'short',
+                                                                day: 'numeric',
+                                                                hour: '2-digit',
+                                                                minute: '2-digit',
+                                                                second: '2-digit'
+                                                            })
+                                                          : 'Initial Session')}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex items-center justify-between text-[10px]">
+                                            <span className="text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                                                <Clock className="w-3 h-3 text-slate-400" />
+                                                Last Updated:
+                                            </span>
+                                            <span className="font-medium text-slate-800 dark:text-slate-200">
+                                                {activeTab.lastSavedAt
+                                                    ? new Date(activeTab.lastSavedAt).toLocaleString(undefined, {
+                                                          month: 'short',
+                                                          day: 'numeric',
+                                                          hour: '2-digit',
+                                                          minute: '2-digit',
+                                                          second: '2-digit'
+                                                      })
+                                                    : (activeTab.isDirty ? 'Unsaved changes' : 'Not yet modified')}
+                                            </span>
+                                        </div>
+
+                                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px]">
+                                            <span className="text-slate-400">Sync Status:</span>
+                                            <span className={`font-semibold px-1.5 py-0.5 rounded text-[9px] ${
+                                                activeTab.isDirty
+                                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                                                    : activeTab.documentId
+                                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                            }`}>
+                                                {activeTab.isDirty ? '● Unsaved edits' : activeTab.documentId ? '✓ Saved to Documents' : 'Draft Script'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Flashing Autosave Transient Notice (appears on autosave, disappears after 2.5s) */}
                             <div

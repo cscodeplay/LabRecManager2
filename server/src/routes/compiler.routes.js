@@ -696,7 +696,8 @@ router.get('/students-inspection', authenticate, asyncHandler(async (req, res) =
     }
 
     const schoolId = req.user?.schoolId;
-    const inspectionList = await studentCodeReviewService.getStudentsInspectionList({ schoolId });
+    const classId = req.query?.classId;
+    const inspectionList = await studentCodeReviewService.getStudentsInspectionList({ schoolId, classId });
 
     return res.json({
         success: true,

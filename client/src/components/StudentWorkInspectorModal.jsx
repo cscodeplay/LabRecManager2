@@ -177,24 +177,28 @@ export default function StudentWorkInspectorModal({
 
     // Filter Students
     const uniqueClasses = useMemo(() => {
-        const clsSet = new Set(students.map(s => s.className).filter(Boolean));
-        return Array.from(clsSet);
+        if (!Array.isArray(students)) return [];
+        const clsSet = new Set(students.map(s => s?.className).filter(Boolean));
+        return Array.from(clsSet).sort();
     }, [students]);
 
     const filteredStudents = useMemo(() => {
+        if (!Array.isArray(students)) return [];
         return students.filter(st => {
-            // Search query filter
-            if (searchQuery.trim()) {
-                const q = searchQuery.toLowerCase();
-                const matchName = st.name.toLowerCase().includes(q);
+            if (!st) return false;
+
+            // Search query filter (matches student name, roll number, admission number, email username)
+            if (searchQuery && searchQuery.trim()) {
+                const q = searchQuery.trim().toLowerCase();
+                const matchName = (st.name || '').toLowerCase().includes(q);
                 const matchAdm = (st.admissionNumber || '').toLowerCase().includes(q);
-                const matchEmail = (st.email || '').toLowerCase().includes(q);
+                const matchEmail = (st.email ? st.email.split('@')[0].toLowerCase().includes(q) : false);
                 const matchRoll = (st.rollNumber || '').toLowerCase().includes(q);
                 if (!matchName && !matchAdm && !matchEmail && !matchRoll) return false;
             }
 
             // Class filter
-            if (classFilter !== 'ALL' && st.className !== classFilter) {
+            if (classFilter !== 'ALL' && (st.className || '') !== classFilter) {
                 return false;
             }
 
@@ -208,6 +212,18 @@ export default function StudentWorkInspectorModal({
             return true;
         });
     }, [students, searchQuery, classFilter, statusFilter]);
+
+    // Keep selected student in sync with filtered list
+    useEffect(() => {
+        if (filteredStudents.length > 0) {
+            const isCurrentlySelectedInList = filteredStudents.some(s => s.id === selectedStudentId);
+            if (!isCurrentlySelectedInList) {
+                setSelectedStudentId(filteredStudents[0].id);
+            }
+        } else {
+            setSelectedStudentId(null);
+        }
+    }, [filteredStudents, selectedStudentId]);
 
     // Active Tab in Workspace
     const activeTab = useMemo(() => {
@@ -480,9 +496,19 @@ export default function StudentWorkInspectorModal({
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search student or roll no..."
-                                    className={`w-full pl-8 pr-3 py-1.5 rounded-lg border text-xs ${inputBg}`}
+                                    placeholder="Search student, roll, or class..."
+                                    className={`w-full pl-8 pr-7 py-1.5 rounded-lg border text-xs ${inputBg}`}
                                 />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery('')}
+                                        className="absolute right-2 top-2 text-slate-400 hover:text-white transition cursor-pointer"
+                                        title="Clear search"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
 
                             {/* Class & Status Filters */}
@@ -492,7 +518,7 @@ export default function StudentWorkInspectorModal({
                                     onChange={(e) => setClassFilter(e.target.value)}
                                     className={`w-full px-2 py-1 rounded-lg border ${inputBg}`}
                                 >
-                                    <option value="ALL">All Classes</option>
+                                    <option value="ALL">All Classes ({uniqueClasses.length})</option>
                                     {uniqueClasses.map(c => (
                                         <option key={c} value={c}>{c}</option>
                                     ))}
@@ -512,7 +538,7 @@ export default function StudentWorkInspectorModal({
                                 </select>
                             </div>
 
-                            {/* Bulk Select All Toolbar */}
+                            {/* Filter Summary & Bulk Select Toolbar */}
                             <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
                                 <label
                                     onClick={toggleSelectAll}
@@ -523,11 +549,11 @@ export default function StudentWorkInspectorModal({
                                     ) : (
                                         <Square className="w-3.5 h-3.5 text-slate-500" />
                                     )}
-                                    <span>Select All ({filteredStudents.length})</span>
+                                    <span>Select All</span>
                                 </label>
 
-                                <span className="text-[10px] text-slate-500">
-                                    {selectedForBulk.size} selected
+                                <span className="text-[10px] text-slate-400">
+                                    {filteredStudents.length} of {students.length} students
                                 </span>
                             </div>
                         </div>
@@ -552,6 +578,7 @@ export default function StudentWorkInspectorModal({
                                     return (
                                         <div
                                             key={st.id}
+                                            data-student-row={st.id}
                                             onClick={() => setSelectedStudentId(st.id)}
                                             className={`p-3 transition cursor-pointer flex items-start gap-2.5 ${
                                                 isSelected
@@ -575,15 +602,15 @@ export default function StudentWorkInspectorModal({
                                             <div className="flex-1 min-w-0 space-y-1">
                                                 <div className="flex items-center justify-between">
                                                     <span className="font-bold text-xs truncate">
-                                                        {st.name}
+                                                        {st.name || 'Unnamed Student'}
                                                     </span>
-                                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider ${getStatusStyle(st.reviewStatus)}`}>
-                                                        {st.reviewStatus.replace('_', ' ')}
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider ${getStatusStyle(st.reviewStatus || 'unreviewed')}`}>
+                                                        {String(st.reviewStatus || 'unreviewed').replace('_', ' ')}
                                                     </span>
                                                 </div>
 
                                                 <div className="flex items-center justify-between text-[11px] text-slate-400">
-                                                    <span className="truncate">{st.className} • Roll {st.rollNumber}</span>
+                                                    <span className="truncate">{st.className || 'General'} • Roll {st.rollNumber || 'N/A'}</span>
                                                     {st.latestRating && (
                                                         <span className="text-amber-400 font-bold flex items-center gap-0.5">
                                                             ★ {st.latestRating}/5
@@ -600,12 +627,12 @@ export default function StudentWorkInspectorModal({
 
                                                     {/* Languages */}
                                                     <div className="flex items-center gap-1">
-                                                        {st.languages.includes('python') && (
+                                                        {Array.isArray(st.languages) && st.languages.includes('python') && (
                                                             <span className="px-1 rounded bg-blue-500/20 text-blue-300 font-mono text-[9px]">
                                                                 PY
                                                             </span>
                                                         )}
-                                                        {st.languages.includes('sql') && (
+                                                        {Array.isArray(st.languages) && st.languages.includes('sql') && (
                                                             <span className="px-1 rounded bg-amber-500/20 text-amber-300 font-mono text-[9px]">
                                                                 SQL
                                                             </span>
