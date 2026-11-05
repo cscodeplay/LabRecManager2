@@ -153,6 +153,23 @@ app.use('/audio', express.static(path.join(__dirname, '../uploads/audio')));
 app.use('/RAG', express.static(path.join(__dirname, '../../RAG')));
 app.use('/RAG', express.static(path.join(__dirname, '../../client/public/RAG')));
 
+// Root endpoint to inform users and prevent 404/CSP blocks
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    name: 'ULRMS Backend API',
+    status: 'online',
+    frontendUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+    version: '1.0.0'
+  });
+});
+
+// Chrome DevTools probe handler to prevent CSP warning in browser console
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json({});
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);

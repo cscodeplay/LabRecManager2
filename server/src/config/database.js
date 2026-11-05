@@ -18,6 +18,15 @@ if (process.env.ACTIVE_DB === 'new' && process.env.DATABASE_URL_NEW) {
 // Sanitize dbUrl: Neon pgBouncer pooler drops connections when channel_binding=require is present
 if (dbUrl) {
     dbUrl = dbUrl.replace(/([?&])channel_binding=[^&]+(&|$)/, '$1').replace(/[?&]$/, '');
+    // Ensure sufficient timeout for Neon compute wake-up (cold-starts can take 15-22s)
+    if (!dbUrl.includes('connect_timeout=')) {
+        const separator = dbUrl.includes('?') ? '&' : '?';
+        dbUrl = `${dbUrl}${separator}connect_timeout=25`;
+    }
+    if (!dbUrl.includes('pool_timeout=')) {
+        const separator = dbUrl.includes('?') ? '&' : '?';
+        dbUrl = `${dbUrl}${separator}pool_timeout=25`;
+    }
 }
 
 // Create a single instance of Prisma Client with query logging
@@ -94,7 +103,7 @@ prisma.$use(async (params, next) => {
     let result;
 
     let attempts = 0;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
         attempts++;
@@ -113,8 +122,8 @@ prisma.$use(async (params, next) => {
                 msg.includes("ETIMEDOUT") || msg.includes("socket hang up");
 
             if (isConnErr && attempts < maxAttempts) {
-                console.warn(`⚠️ Prisma connection error on ${params.model}.${params.action} (attempt ${attempts}/${maxAttempts}). Retrying in 1.2s for Neon DB wakeup...`);
-                await new Promise(r => setTimeout(r, 1200));
+                console.warn(`⚠️ Prisma connection error on ${params.model}.${params.action} (attempt ${attempts}/${maxAttempts}). Retrying in 2s for Neon DB wakeup...`);
+                await new Promise(r => setTimeout(r, 2000));
                 try {
                     await prisma.$connect();
                 } catch (cErr) {

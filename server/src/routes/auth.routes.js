@@ -816,6 +816,19 @@ router.post('/login-with-pin', asyncHandler(async (req, res) => {
         });
     });
 
+    // Generate tokens
+    const accessToken = jwt.sign(
+        { userId: user.id, role: user.role },
+        jwtConfig.secret,
+        { expiresIn: jwtConfig.expiresIn }
+    );
+
+    const refreshToken = jwt.sign(
+        { userId: user.id, type: 'refresh' },
+        jwtConfig.secret,
+        { expiresIn: jwtConfig.refreshExpiresIn }
+    );
+
     res.json({
         success: true,
         message: 'Password set and login successful',
