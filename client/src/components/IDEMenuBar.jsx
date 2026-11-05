@@ -380,7 +380,7 @@ export default function IDEMenuBar({
                             {CODE_SNIPPETS_LIST.python.map((snip, idx) => (
                                 <button
                                     key={`py-${idx}`}
-                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip.code))}
+                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip, 'python'))}
                                     className={itemBtnClass}
                                 >
                                     <span className="flex items-center gap-2 truncate">
@@ -399,7 +399,7 @@ export default function IDEMenuBar({
                             {CODE_SNIPPETS_LIST.sql.map((snip, idx) => (
                                 <button
                                     key={`sql-${idx}`}
-                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip.code))}
+                                    onClick={() => handleAction(() => onInsertSnippet && onInsertSnippet(snip, 'sql'))}
                                     className={itemBtnClass}
                                 >
                                     <span className="flex items-center gap-2 truncate">

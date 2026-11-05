@@ -31,6 +31,8 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     if (search) {
         conditions.push({ name: { contains: search, mode: 'insensitive' } });
         // When searching, we ignore parentId to search globally
+    } else if (req.query.all === 'true' || req.query.all === true || parentId === 'all') {
+        // Return all accessible folders without restricting parentId
     } else {
         conditions.push({ parentId: parentId || null });
     }
@@ -97,8 +99,24 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     };
 
     // Calculate sizes for all folders
+    // When querying all folders or brief mode, optimize with a single groupBy aggregation
+    const isBrief = req.query.brief === 'true' || req.query.all === 'true';
+    let docSizeByFolder = {};
+    if (isBrief) {
+        try {
+            const docSizes = await prisma.document.groupBy({
+                by: ['folderId'],
+                where: { schoolId: req.user.schoolId, deletedAt: null },
+                _sum: { fileSize: true }
+            });
+            docSizes.forEach((ds) => {
+                if (ds.folderId) docSizeByFolder[ds.folderId] = Number(ds._sum.fileSize || 0);
+            });
+        } catch (_) {}
+    }
+
     const foldersWithSize = await Promise.all(folders.map(async (f) => {
-        const totalSize = await calculateFolderSize(f.id);
+        const totalSize = isBrief ? (docSizeByFolder[f.id] || 0) : await calculateFolderSize(f.id);
 
         // Format share info for frontend display
         const shareInfo = (f.shares || []).map(share => {
@@ -204,6 +222,28 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
         }
     }
 
+    // Check if folder with the same name already exists under this parent
+    const existingFolder = await prisma.documentFolder.findFirst({
+        where: {
+            schoolId: req.user.schoolId,
+            parentId: parentId || null,
+            name: { equals: name.trim(), mode: 'insensitive' },
+            deletedAt: null,
+            ...(!['admin', 'principal'].includes(req.user.role) ? { createdById: req.user.id } : {})
+        },
+        include: {
+            createdBy: { select: { id: true, firstName: true, lastName: true } }
+        }
+    });
+
+    if (existingFolder) {
+        return res.status(200).json({
+            success: true,
+            message: 'Folder already exists',
+            data: { folder: existingFolder }
+        });
+    }
+
     const folder = await prisma.documentFolder.create({
         data: {
             schoolId: req.user.schoolId,
@@ -241,6 +281,25 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
 
     if (!['admin', 'principal'].includes(req.user.role) && folder.createdById !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Not authorized to modify this folder' });
+    }
+
+    if (name) {
+        const targetParentId = parentId !== undefined ? parentId : folder.parentId;
+        const conflict = await prisma.documentFolder.findFirst({
+            where: {
+                id: { not: folder.id },
+                schoolId: req.user.schoolId,
+                parentId: targetParentId || null,
+                name: { equals: name.trim(), mode: 'insensitive' },
+                deletedAt: null
+            }
+        });
+        if (conflict) {
+            return res.status(409).json({
+                success: false,
+                message: `A folder named "${name.trim()}" already exists in this location.`
+            });
+        }
     }
 
     // Prevent moving folder into itself or its descendants

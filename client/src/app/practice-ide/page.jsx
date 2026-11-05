@@ -255,6 +255,7 @@ function PracticeIDEPage() {
     const activeTabIdRef = useRef(activeTabId);
     activeTabIdRef.current = activeTabId;
     const isCommittingRenameRef = useRef(false);
+    const isSavingTabRef = useRef({});
     const isProgrammaticUpdateRef = useRef(false);
     const [showFindReplaceModal, setShowFindReplaceModal] = useState(false);
 
@@ -739,6 +740,12 @@ function PracticeIDEPage() {
             if (!tabToSave.code || !tabToSave.code.trim()) {
                 return null;
             }
+            // Prevent duplicate parallel save operations on the same tab
+            if (isSavingTabRef.current[tabToSave.id]) {
+                return null;
+            }
+            isSavingTabRef.current[tabToSave.id] = true;
+
             const isSql = isDatabaseLanguage(tabToSave.language);
             const targetSubfolderName = isSql ? 'SQL' : 'Python';
             const ext = isSql ? '.sql' : '.py';
@@ -749,7 +756,7 @@ function PracticeIDEPage() {
 
             try {
                 // 1. Resolve or Create Main Folder "Coding files" and Subfolder ("Python" or "SQL")
-                const foldersRes = await foldersAPI.getAll();
+                const foldersRes = await foldersAPI.getAll({ all: 'true' });
                 const rawFolders = foldersRes.data?.data;
                 const foldersList = Array.isArray(rawFolders)
                     ? rawFolders
@@ -806,8 +813,22 @@ function PracticeIDEPage() {
                 const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
                 const newDocId = savedDoc?.id || tabToSave.documentId;
 
-                // 3. Update tab with documentId in tabs state and storage without clobbering live code
+                // 3. Update tab with documentId in tabs state and storage immediately without clobbering live code
                 if (newDocId) {
+                    if (tabsRef.current) {
+                        tabsRef.current = tabsRef.current.map((t) =>
+                            t.id === tabToSave.id
+                                ? {
+                                      ...t,
+                                      filename: fileName,
+                                      documentId: newDocId,
+                                      folderId: targetFolder?.id,
+                                      isDirty: false
+                                  }
+                                : t
+                        );
+                    }
+
                     setTabs((prevTabs) => {
                         const nextTabs = prevTabs.map((t) =>
                             t.id === tabToSave.id
@@ -839,6 +860,8 @@ function PracticeIDEPage() {
             } catch (err) {
                 console.warn('[IDE] Auto-save program to folder warning:', err?.message);
                 return null;
+            } finally {
+                delete isSavingTabRef.current[tabToSave.id];
             }
         },
         [inspectingStudentId, loadExistingDocs, isAutosaveEnabled, editorTheme, outputThemeId, activeTabId]
@@ -1073,26 +1096,99 @@ Date:          ${dateStr}
         }
     };
 
-    const handleInsertSnippet = (snippetCode) => {
+    const handleInsertSnippet = (snippetOrCode, langHint, options = {}) => {
         setShowSnippetsMenu(false);
-        if (!editorRef.current) return;
-        const editor = editorRef.current;
-        const selection = editor.getSelection();
-        const model = editor.getModel();
-        const range = selection && !selection.isEmpty() ? selection : (model ? model.getFullModelRange() : null);
+        const isObject = typeof snippetOrCode === 'object' && snippetOrCode !== null;
+        const codeText = isObject ? snippetOrCode.code : snippetOrCode;
+        const snippetLabel = isObject ? snippetOrCode.label : (options.label || 'Snippet');
+        const isInlineOnly = options.inlineOnly || false;
 
-        if (range) {
-            editor.executeEdits('snippet', [
-                {
-                    range,
-                    text: snippetCode,
-                    forceMoveMarkers: true
+        const currentTabs = tabsRef.current || tabs;
+        const activeTabObj = currentTabs.find((t) => t.id === activeTabId) || activeTab;
+
+        // If explicitly inline or if user made a text selection in editor, insert into selection
+        const editor = editorRef.current;
+        const selection = editor ? editor.getSelection() : null;
+        const hasTextSelected = selection && !selection.isEmpty();
+
+        if (isInlineOnly || hasTextSelected) {
+            if (editor) {
+                const model = editor.getModel();
+                const range = hasTextSelected ? selection : (model ? model.getFullModelRange() : null);
+                if (range) {
+                    editor.executeEdits('snippet', [{ range, text: codeText, forceMoveMarkers: true }]);
+                    editor.focus();
+                    handleCodeChange(editor.getValue());
+                    toast.success('Inserted code snippet!');
                 }
-            ]);
-            editor.focus();
-            handleCodeChange(editor.getValue());
-            toast.success('Inserted code snippet!');
+            }
+            return;
         }
+
+        // If active tab is pristine empty initial tab, load snippet directly into active tab
+        const isPristineEmptyTab =
+            currentTabs.length === 1 &&
+            !activeTabObj?.documentId &&
+            !activeTabObj?.isDirty &&
+            (!activeTabObj?.code ||
+                activeTabObj.code.trim() === '' ||
+                activeTabObj.code.includes('Online Python & MySQL Practice Sandbox') ||
+                activeTabObj.code.includes('MySQL Practice Console'));
+
+        const targetLang = langHint || (codeText?.includes('CREATE TABLE') || codeText?.includes('SELECT') ? 'sql' : 'python');
+        const ext = targetLang === 'sql' ? '.sql' : '.py';
+        const cleanName = snippetLabel.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_').toLowerCase();
+        const snippetFileName = `${cleanName || 'snippet'}${ext}`;
+
+        if (isPristineEmptyTab) {
+            isProgrammaticUpdateRef.current = true;
+            if (editor) editor.setValue(codeText);
+            setTimeout(() => {
+                isProgrammaticUpdateRef.current = false;
+            }, 300);
+
+            const updatedTabs = currentTabs.map((t) =>
+                t.id === activeTabObj.id
+                    ? {
+                          ...t,
+                          title: snippetLabel,
+                          filename: snippetFileName,
+                          language: targetLang,
+                          code: codeText,
+                          isDirty: false,
+                          metadata: { ...t.metadata, title: snippetLabel }
+                      }
+                    : t
+            );
+            tabsRef.current = updatedTabs;
+            setTabs(updatedTabs);
+            triggerSaveWorkspace(updatedTabs, activeTabObj.id);
+            toast.success(`Loaded snippet "${snippetLabel}"!`, { icon: '✨' });
+            return;
+        }
+
+        // Otherwise ALWAYS open in a NEW TAB (preserving existing open program tab)
+        if (currentTabs.length >= 5) {
+            toast.error('Cannot open snippet in new tab: Maximum 5 tabs reached. Please close a tab first.');
+            return;
+        }
+
+        const newId = `tab_${Date.now()}`;
+        const newTab = createDefaultTab(newId, targetLang, studentIdentifier, studentDisplayName);
+        newTab.title = snippetLabel;
+        newTab.filename = snippetFileName;
+        newTab.code = codeText;
+        newTab.language = targetLang;
+        newTab.metadata.title = snippetLabel;
+        newTab.isDirty = false;
+
+        const updatedTabs = [...currentTabs, newTab];
+        tabsRef.current = updatedTabs;
+        setTabs(updatedTabs);
+        setActiveTabId(newId);
+        activeTabIdRef.current = newId;
+        triggerSaveWorkspace(updatedTabs, newId);
+        toast.success(`Opened "${snippetLabel}" in new tab!`, { icon: '✨' });
     };
 
     const handleCloseTab = (tabIdToClose, e) => {
@@ -1197,6 +1293,17 @@ Date:          ${dateStr}
                 return;
             }
 
+            // Reject duplicate tab name
+            const duplicateTab = currentTabs.find(
+                (t) => t.id !== tabId &&
+                       (t.filename?.toLowerCase() === newFilename.toLowerCase() ||
+                        t.title?.toLowerCase() === cleanTitle.toLowerCase())
+            );
+            if (duplicateTab) {
+                toast.error(`A tab with the name "${newFilename}" is already open.`);
+                return;
+            }
+
             // 1. Immediately update local tabs state
             const updatedTabs = currentTabs.map((t) => {
                 if (t.id !== tabId) return t;
@@ -1211,6 +1318,7 @@ Date:          ${dateStr}
                 };
             });
 
+            tabsRef.current = updatedTabs;
             setTabs(updatedTabs);
             triggerSaveWorkspace(updatedTabs);
             toast.success(`Renamed program to ${newFilename}`);
@@ -1225,6 +1333,9 @@ Date:          ${dateStr}
                     loadExistingDocs();
                 } catch (docErr) {
                     console.warn('[IDE] Non-blocking document rename sync:', docErr?.message);
+                    if (docErr?.response?.status === 409 || docErr?.response?.data?.message?.includes('already exists')) {
+                        toast.error(docErr?.response?.data?.message || `A document named "${newFilename}" already exists in this folder.`);
+                    }
                 }
             }
         } finally {
@@ -1405,7 +1516,7 @@ Date:          ${dateStr}
         try {
             // 1. Resolve or Create Main Folder "Coding files" and Subfolder ("Python" or "SQL")
             const targetFolderName = folderName || (language === 'sql' ? 'SQL' : 'Python');
-            const foldersRes = await foldersAPI.getAll();
+            const foldersRes = await foldersAPI.getAll({ all: 'true' });
             const rawFolders = foldersRes.data?.data;
             const foldersList = Array.isArray(rawFolders)
                 ? rawFolders
@@ -1485,6 +1596,7 @@ Date:          ${dateStr}
                       }
                     : t
             );
+            tabsRef.current = nextTabs;
             setTabs(nextTabs);
             triggerSaveWorkspace(nextTabs, activeTabId);
 
@@ -1519,54 +1631,60 @@ Date:          ${dateStr}
         });
     };
 
-    // 7. Open Document from Browser into Tab
+    // 7. Open Document from Browser into Tab (Switches to existing tab if already open, loads into pristine empty tab, or opens in a NEW tab)
     const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, updatedAt }) => {
         const resolvedDocId = docId || documentId || null;
         const currentTabs = tabsRef.current || tabs;
         const safeCode = typeof code === 'string' && code.length > 0 ? code : (docLang === 'sql' ? '-- SQL script\n' : '# Python script\n');
 
-        // Flag programmatic update so Monaco onChange does not trigger premature autosave
-        isProgrammaticUpdateRef.current = true;
-        if (editorRef.current) {
-            editorRef.current.setValue(safeCode);
-        }
-        setTimeout(() => {
-            isProgrammaticUpdateRef.current = false;
-        }, 300);
-
-        if (updatedAt) {
-            setLastAutosavedAt(updatedAt);
-        }
-
         const savedTimeStr = updatedAt
             ? `(Last saved: ${new Date(updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
             : '';
 
-        if (asNewTab) {
-            if (currentTabs.length >= 5) {
-                toast.error('Cannot open as new tab: Maximum 5 tabs reached.');
-                return;
+        // 1. If this document is ALREADY open in an existing tab, just switch to it!
+        const existingTab = currentTabs.find(
+            (t) => (resolvedDocId && t.documentId === resolvedDocId) ||
+                   (t.filename && t.filename.toLowerCase() === name.toLowerCase())
+        );
+        if (existingTab) {
+            setActiveTabId(existingTab.id);
+            activeTabIdRef.current = existingTab.id;
+            isProgrammaticUpdateRef.current = true;
+            if (editorRef.current) {
+                editorRef.current.setValue(existingTab.code || safeCode);
             }
-            const newId = `tab_${Date.now()}`;
-            const newTab = createDefaultTab(newId, docLang, studentIdentifier, studentDisplayName);
-            newTab.title = name.replace(/\.(py|sql)$/i, '');
-            newTab.filename = name;
-            newTab.code = safeCode;
-            newTab.documentId = resolvedDocId;
-            newTab.folderId = folderId || newTab.folderId;
-            newTab.metadata.title = newTab.title;
-            newTab.lastSavedAt = updatedAt || new Date().toISOString();
-            newTab.isDirty = false;
+            setTimeout(() => {
+                isProgrammaticUpdateRef.current = false;
+            }, 300);
+            if (updatedAt) setLastAutosavedAt(updatedAt);
+            toast.success(`Switched to open tab "${existingTab.filename || existingTab.title}"`, { icon: '📄' });
+            return;
+        }
 
-            const updatedTabs = [...currentTabs, newTab];
-            setTabs(updatedTabs);
-            setActiveTabId(newId);
-            triggerSaveWorkspace(updatedTabs, newId);
-            toast.success(`Opened "${name}" in new tab ${savedTimeStr}`, { icon: '📄' });
-        } else {
-            // Replace in active tab
+        // 2. Check if active tab is a pristine unmodified initial empty tab
+        const activeTabObj = currentTabs.find((t) => t.id === activeTabId) || activeTab;
+        const isPristineEmptyTab =
+            currentTabs.length === 1 &&
+            !activeTabObj?.documentId &&
+            !activeTabObj?.isDirty &&
+            (!activeTabObj?.code ||
+                activeTabObj.code.trim() === '' ||
+                activeTabObj.code.includes('Online Python & MySQL Practice Sandbox') ||
+                activeTabObj.code.includes('MySQL Practice Console'));
+
+        if (isPristineEmptyTab && !asNewTab) {
+            isProgrammaticUpdateRef.current = true;
+            if (editorRef.current) {
+                editorRef.current.setValue(safeCode);
+            }
+            setTimeout(() => {
+                isProgrammaticUpdateRef.current = false;
+            }, 300);
+
+            if (updatedAt) setLastAutosavedAt(updatedAt);
+
             const updatedTabs = currentTabs.map((t) =>
-                t.id === activeTabId
+                t.id === activeTabObj.id
                     ? {
                           ...t,
                           title: name.replace(/\.(py|sql)$/i, ''),
@@ -1584,10 +1702,37 @@ Date:          ${dateStr}
                       }
                     : t
             );
+            tabsRef.current = updatedTabs;
             setTabs(updatedTabs);
-            triggerSaveWorkspace(updatedTabs, activeTabId);
+            triggerSaveWorkspace(updatedTabs, activeTabObj.id);
             toast.success(`Loaded "${name}" ${savedTimeStr}`, { icon: '📄' });
+            return;
         }
+
+        // 3. Otherwise ALWAYS open in a NEW TAB (does NOT replace other open programs)
+        if (currentTabs.length >= 5) {
+            toast.error('Cannot open file: Maximum 5 tabs reached. Please close a tab first.');
+            return;
+        }
+
+        const newId = `tab_${Date.now()}`;
+        const newTab = createDefaultTab(newId, docLang, studentIdentifier, studentDisplayName);
+        newTab.title = name.replace(/\.(py|sql)$/i, '');
+        newTab.filename = name;
+        newTab.code = safeCode;
+        newTab.documentId = resolvedDocId;
+        newTab.folderId = folderId || newTab.folderId;
+        newTab.metadata.title = newTab.title;
+        newTab.lastSavedAt = updatedAt || new Date().toISOString();
+        newTab.isDirty = false;
+
+        const updatedTabs = [...currentTabs, newTab];
+        tabsRef.current = updatedTabs;
+        setTabs(updatedTabs);
+        setActiveTabId(newId);
+        activeTabIdRef.current = newId;
+        triggerSaveWorkspace(updatedTabs, newId);
+        toast.success(`Opened "${name}" in new tab ${savedTimeStr}`, { icon: '📄' });
     };
 
     // Reset Personal MySQL Sandbox Database (UI Dialog aligned)
@@ -1828,6 +1973,7 @@ Date:          ${dateStr}
                         return (
                             <div
                                 key={tab.id}
+                                data-tab-id={tab.id}
                                 onClick={() => setActiveTabId(tab.id)}
                                 onDoubleClick={(e) => {
                                     if (inspectingStudentId) return;
@@ -2684,7 +2830,7 @@ Date:          ${dateStr}
                                                                     type="button"
                                                                     onClick={() => {
                                                                         const ddlSnippet = `\n-- Create '${missingTableName}' Table\nCREATE TABLE ${missingTableName} (\n    id INT AUTO_INCREMENT PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n`;
-                                                                        handleInsertSnippet(ddlSnippet);
+                                                                        handleInsertSnippet(ddlSnippet, 'sql', { inlineOnly: true, label: `Create ${missingTableName}` });
                                                                         toast.success(`Inserted CREATE TABLE template for ${missingTableName}!`);
                                                                     }}
                                                                     className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"

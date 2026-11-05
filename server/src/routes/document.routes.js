@@ -682,9 +682,38 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         return res.status(403).json({ success: false, message: 'Not authorized to modify this document' });
     }
 
+    const targetFolderId = req.body.folderId !== undefined ? req.body.folderId : doc.folderId;
+    const targetName = name !== undefined ? name.trim() : doc.name;
+    const targetFileName = fileName !== undefined ? fileName.trim() : (req.file ? req.file.originalname : doc.fileName);
+
+    // Enforce uniqueness: Do not allow same file name in the same folder
+    const conflictWhere = {
+        schoolId: req.user.schoolId,
+        folderId: targetFolderId,
+        deletedAt: null,
+        id: { not: doc.id },
+        OR: [
+            { name: { equals: targetName, mode: 'insensitive' } },
+            { fileName: { equals: targetFileName, mode: 'insensitive' } }
+        ]
+    };
+    if (!['admin', 'principal'].includes(req.user.role)) {
+        conflictWhere.uploadedById = req.user.id;
+    }
+
+    const conflict = await prisma.document.findFirst({ where: conflictWhere });
+    if (conflict) {
+        return res.status(409).json({
+            success: false,
+            message: `A document named "${targetFileName}" already exists in this folder. Duplicate filenames are not allowed in the same folder.`,
+            messageHindi: `इस फ़ोल्डर में "${targetFileName}" नाम की फ़ाइल पहले से मौजूद है।`
+        });
+    }
+
     let updateData = {
-        name: name !== undefined ? name : doc.name,
-        fileName: fileName !== undefined ? fileName : (req.file ? req.file.originalname : doc.fileName),
+        name: targetName,
+        fileName: targetFileName,
+        folderId: targetFolderId,
         description: description !== undefined ? description : doc.description,
         category: category !== undefined ? category : doc.category,
         isPublic: isPublic !== undefined ? (isPublic === 'true' || isPublic === true) : doc.isPublic

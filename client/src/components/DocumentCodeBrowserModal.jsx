@@ -18,9 +18,12 @@ import {
     ArrowUp,
     ArrowDown,
     Calendar,
-    CalendarDays,
     SlidersHorizontal,
-    HardDrive
+    HardDrive,
+    Pencil,
+    Trash2,
+    AlertTriangle,
+    CheckCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { documentsAPI, foldersAPI } from '@/lib/api';
@@ -42,60 +45,58 @@ export default function DocumentCodeBrowserModal({
     const [sortField, setSortField] = useState('createdAt');
     const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
 
+    // Edit Document Dialog state
+    const [editingDoc, setEditingDoc] = useState(null);
+    const [editingName, setEditingName] = useState('');
+    const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+
+    // Delete Confirmation Dialog state
+    const [deletingDoc, setDeletingDoc] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
     // Fetch student's folders and code documents
+    const fetchDocs = async () => {
+        setLoading(true);
+        try {
+            // Fetch folders and code documents concurrently for fastest load
+            const [foldersRes, docsRes] = await Promise.all([
+                foldersAPI.getAll({ all: 'true' }),
+                documentsAPI.getAll({ category: 'code' })
+            ]);
+
+            const rawFolders = foldersRes.data?.data;
+            const fetchedFolders = Array.isArray(rawFolders)
+                ? rawFolders
+                : Array.isArray(rawFolders?.folders)
+                ? rawFolders.folders
+                : Array.isArray(foldersRes.data?.folders)
+                ? foldersRes.data.folders
+                : Array.isArray(foldersRes.data)
+                ? foldersRes.data
+                : [];
+            setFolders(fetchedFolders);
+
+            const rawDocs = docsRes.data?.data;
+            const fetchedDocs = Array.isArray(rawDocs)
+                ? rawDocs
+                : Array.isArray(rawDocs?.documents)
+                ? rawDocs.documents
+                : Array.isArray(docsRes.data?.documents)
+                ? docsRes.data.documents
+                : Array.isArray(docsRes.data)
+                ? docsRes.data
+                : [];
+            setDocuments(fetchedDocs);
+        } catch (err) {
+            console.error('Failed to load documents:', err);
+            toast.error('Could not load code documents from storage');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!isOpen) return;
-
-        async function fetchDocs() {
-            setLoading(true);
-            try {
-                // 1. Fetch folders
-                const foldersRes = await foldersAPI.getAll();
-                const rawFolders = foldersRes.data?.data;
-                const fetchedFolders = Array.isArray(rawFolders)
-                    ? rawFolders
-                    : Array.isArray(rawFolders?.folders)
-                    ? rawFolders.folders
-                    : Array.isArray(foldersRes.data?.folders)
-                    ? foldersRes.data.folders
-                    : Array.isArray(foldersRes.data)
-                    ? foldersRes.data
-                    : [];
-                setFolders(fetchedFolders);
-
-                // Find Python or SQL folder as default
-                const targetFolder = fetchedFolders.find((f) =>
-                    f.name?.toLowerCase() === defaultLanguage.toLowerCase()
-                );
-                if (targetFolder) {
-                    setSelectedFolderId(targetFolder.id);
-                } else {
-                    setSelectedFolderId('all');
-                }
-
-                // 2. Fetch code documents
-                const docsRes = await documentsAPI.getAll({
-                    category: 'code'
-                });
-                const rawDocs = docsRes.data?.data;
-                const fetchedDocs = Array.isArray(rawDocs)
-                    ? rawDocs
-                    : Array.isArray(rawDocs?.documents)
-                    ? rawDocs.documents
-                    : Array.isArray(docsRes.data?.documents)
-                    ? docsRes.data.documents
-                    : Array.isArray(docsRes.data)
-                    ? docsRes.data
-                    : [];
-                setDocuments(fetchedDocs);
-            } catch (err) {
-                console.error('Failed to load documents:', err);
-                toast.error('Could not load code documents from storage');
-            } finally {
-                setLoading(false);
-            }
-        }
-
         fetchDocs();
     }, [isOpen, defaultLanguage]);
 
@@ -126,7 +127,6 @@ export default function DocumentCodeBrowserModal({
             setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
         } else {
             setSortField(field);
-            // Default to newest first for dates/sizes, asc for names
             setSortOrder(field === 'name' || field === 'folder' ? 'asc' : 'desc');
         }
     };
@@ -181,12 +181,27 @@ export default function DocumentCodeBrowserModal({
         });
     }, [filteredDocs, sortField, sortOrder, folderMap]);
 
+    // Validation for Edit Modal: Ensure unique filename in the same folder
+    const editDuplicateConflict = useMemo(() => {
+        if (!editingDoc || !editingName.trim()) return null;
+        const targetClean = editingName.trim().toLowerCase();
+        const conflict = safeDocuments.find((d) => {
+            if (d.id === editingDoc.id) return false;
+            // Check same folder
+            if (d.folderId !== editingDoc.folderId) return false;
+            const docName = (d.name || '').trim().toLowerCase();
+            const docFileName = (d.fileName || '').trim().toLowerCase();
+            return docName === targetClean || docFileName === targetClean;
+        });
+        return conflict || null;
+    }, [editingDoc, editingName, safeDocuments]);
+
     if (!isOpen) return null;
 
-    const handleSelectDocument = async (doc, asNewTab = false) => {
+    // Handle Open Document (Always opens in new tab as requested)
+    const handleSelectDocument = async (doc, asNewTab = true) => {
         setOpeningDocId(doc.id);
         try {
-            // Fetch raw file text via authenticated api with layered fallbacks
             let codeText = '';
             try {
                 const response = await documentsAPI.getFileContent(doc.id);
@@ -195,9 +210,8 @@ export default function DocumentCodeBrowserModal({
                 console.warn('[DocModal] Primary getFileContent failed, attempting fallbacks:', apiErr.message);
             }
 
-            // If empty string returned from primary API or error, execute layered fallbacks
+            // Fallback 1: Direct fetch via doc.url
             if (!codeText || !codeText.trim()) {
-                // Fallback 1: Direct fetch via doc.url (local /uploads rewrites or remote Cloudinary https)
                 if (doc.url) {
                     try {
                         const directUrl = doc.url.startsWith('http') || doc.url.startsWith('/') ? doc.url : `/${doc.url}`;
@@ -208,27 +222,27 @@ export default function DocumentCodeBrowserModal({
                         }
                     } catch (_) {}
                 }
+            }
 
-                // Fallback 2: Stream via download endpoint
-                if (!codeText || !codeText.trim()) {
-                    try {
-                        const dlRes = await documentsAPI.download(doc.id);
-                        if (dlRes?.data) {
-                            const txt = typeof dlRes.data === 'string' ? dlRes.data : String(dlRes.data);
-                            if (txt && txt.trim()) codeText = txt;
-                        }
-                    } catch (_) {}
-                }
+            // Fallback 2: Stream via download endpoint
+            if (!codeText || !codeText.trim()) {
+                try {
+                    const dlRes = await documentsAPI.download(doc.id);
+                    if (dlRes?.data) {
+                        const txt = typeof dlRes.data === 'string' ? dlRes.data : String(dlRes.data);
+                        if (txt && txt.trim()) codeText = txt;
+                    }
+                } catch (_) {}
+            }
 
-                // Fallback 3: Provide a clean starter code template rather than opening completely blank
-                if (!codeText || !codeText.trim()) {
-                    const isSqlFile = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
-                    const cleanName = doc.name || doc.fileName || (isSqlFile ? 'query.sql' : 'program.py');
-                    codeText = isSqlFile
-                        ? `-- ===============================================================\n-- Script: ${cleanName}\n-- Created: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\n-- Ready for SQL queries\n-- ===============================================================\n\n`
-                        : `\"\"\"\n===============================================================\nScript: ${cleanName}\nCreated: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\nReady for Python code\n===============================================================\n\"\"\"\n\n`;
-                    toast(`Opened "${doc.name}" with starter template`, { icon: 'ℹ️' });
-                }
+            // Fallback 3: Provide a clean starter code template rather than opening completely blank
+            if (!codeText || !codeText.trim()) {
+                const isSqlFile = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
+                const cleanName = doc.name || doc.fileName || (isSqlFile ? 'query.sql' : 'program.py');
+                codeText = isSqlFile
+                    ? `-- ===============================================================\n-- Script: ${cleanName}\n-- Created: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\n-- Ready for SQL queries\n-- ===============================================================\n\n`
+                    : `\"\"\"\n===============================================================\nScript: ${cleanName}\nCreated: ${new Date(doc.createdAt || Date.now()).toLocaleDateString()}\nReady for Python code\n===============================================================\n\"\"\"\n\n`;
+                toast(`Opened "${doc.name}" with starter template`, { icon: 'ℹ️' });
             }
 
             const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
@@ -241,12 +255,9 @@ export default function DocumentCodeBrowserModal({
                 documentId: doc.id,
                 folderId: doc.folderId,
                 updatedAt: doc.updatedAt || doc.createdAt,
-                asNewTab
+                asNewTab: true
             });
 
-            if (!codeText.includes('Ready for Python code') && !codeText.includes('Ready for SQL queries')) {
-                toast.success(`Opened "${doc.name}" in editor`);
-            }
             onClose();
         } catch (err) {
             console.error('Error opening doc:', err);
@@ -256,41 +267,104 @@ export default function DocumentCodeBrowserModal({
         }
     };
 
+    // Handle Edit / Rename Document
+    const handleStartEdit = (doc, e) => {
+        if (e) e.stopPropagation();
+        setEditingDoc(doc);
+        setEditingName(doc.name || doc.fileName || '');
+    };
+
+    const handleSaveEdit = async (e) => {
+        if (e) e.preventDefault();
+        if (!editingDoc || !editingName.trim()) return;
+
+        if (editDuplicateConflict) {
+            toast.error(`A file named "${editingName.trim()}" already exists in this folder!`);
+            return;
+        }
+
+        setIsSubmittingEdit(true);
+        try {
+            const cleanName = editingName.trim();
+            const res = await documentsAPI.update(editingDoc.id, {
+                name: cleanName,
+                fileName: cleanName
+            });
+
+            const updatedDoc = res.data?.data?.document || res.data?.document;
+            setDocuments((prev) =>
+                prev.map((d) => (d.id === editingDoc.id ? { ...d, name: cleanName, fileName: cleanName, updatedAt: new Date().toISOString() } : d))
+            );
+
+            toast.success(`Renamed document to "${cleanName}"`);
+            setEditingDoc(null);
+            setEditingName('');
+        } catch (err) {
+            console.error('Rename error:', err);
+            toast.error(err.response?.data?.message || 'Failed to update document name');
+        } finally {
+            setIsSubmittingEdit(false);
+        }
+    };
+
+    // Handle Delete Document
+    const handleStartDelete = (doc, e) => {
+        if (e) e.stopPropagation();
+        setDeletingDoc(doc);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deletingDoc) return;
+        setIsDeleting(true);
+        try {
+            await documentsAPI.delete(deletingDoc.id);
+            setDocuments((prev) => prev.filter((d) => d.id !== deletingDoc.id));
+            toast.success(`Deleted "${deletingDoc.name || deletingDoc.fileName}"`);
+            setDeletingDoc(null);
+        } catch (err) {
+            console.error('Delete error:', err);
+            toast.error(err.response?.data?.message || 'Failed to delete document');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
     const renderSortArrow = (field) => {
         if (sortField !== field) {
-            return <ArrowUpDown className="w-3 h-3 text-slate-500 opacity-50 group-hover:opacity-100" />;
+            return <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 group-hover:opacity-100" />;
         }
         return sortOrder === 'asc' ? (
-            <ArrowUp className="w-3.5 h-3.5 text-amber-400 font-bold" />
+            <ArrowUp className="w-3.5 h-3.5 text-amber-600 font-bold" />
         ) : (
-            <ArrowDown className="w-3.5 h-3.5 text-amber-400 font-bold" />
+            <ArrowDown className="w-3.5 h-3.5 text-amber-600 font-bold" />
         );
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-xs animate-in fade-in">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl text-slate-100 overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
+            {/* Main Modal Container (Clean Light Theme) */}
+            <div data-modal="document-code-browser" className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col shadow-2xl text-slate-800 overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-900">
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 bg-slate-50/80">
                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                        <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700">
                             <FolderOpen className="w-4 h-4" />
                         </div>
                         <div>
-                            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                 Open Script from Documents
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400 font-medium font-mono">
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 border border-slate-300 text-slate-600 font-medium font-mono">
                                     {sortedDocs.length} {sortedDocs.length === 1 ? 'file' : 'files'}
                                 </span>
                             </h2>
-                            <p className="text-[11px] text-slate-400">
-                                Browse saved Python scripts and SQL queries from your cloud folders with instant column sorting
+                            <p className="text-[11px] text-slate-500">
+                                Open programs in a new tab, organize cloud files, edit filenames, or delete scripts
                             </p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 transition cursor-pointer"
                         title="Close modal (Esc)"
                     >
                         <X className="w-4 h-4" />
@@ -298,25 +372,25 @@ export default function DocumentCodeBrowserModal({
                 </div>
 
                 {/* Filter & Quick Sort Toolbar */}
-                <div className="p-3 sm:px-5 sm:py-3 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 bg-slate-950/50">
+                <div className="p-3 sm:px-5 sm:py-3 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
                     <div className="flex flex-wrap items-center gap-2.5">
-                        {/* Folder Type Select Filter */}
-                        <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs transition">
-                            <FolderOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <label htmlFor="folder-select-filter" className="text-[11px] text-slate-400 font-medium">Folder:</label>
+                        {/* Folder Select Filter */}
+                        <div className="flex items-center gap-2 bg-white border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 text-xs transition shadow-2xs">
+                            <FolderOpen className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <label htmlFor="folder-select-filter" className="text-[11px] text-slate-500 font-medium">Folder:</label>
                             <select
                                 id="folder-select-filter"
                                 value={selectedFolderId}
                                 onChange={(e) => setSelectedFolderId(e.target.value)}
-                                className="bg-transparent text-xs text-slate-100 font-medium focus:outline-none cursor-pointer pr-1"
+                                className="bg-transparent text-xs text-slate-800 font-medium focus:outline-none cursor-pointer pr-1"
                             >
-                                <option value="all" className="bg-slate-900 text-slate-100">
+                                <option value="all" className="bg-white text-slate-800">
                                     📁 All Folders ({safeDocuments.length})
                                 </option>
                                 {safeFolders.map((f) => {
                                     const count = safeDocuments.filter((d) => d.folderId === f.id).length;
                                     return (
-                                        <option key={f.id} value={f.id} className="bg-slate-900 text-slate-100">
+                                        <option key={f.id} value={f.id} className="bg-white text-slate-800">
                                             📁 {f.name} ({count})
                                         </option>
                                     );
@@ -325,9 +399,9 @@ export default function DocumentCodeBrowserModal({
                         </div>
 
                         {/* Quick Sort Dropdown */}
-                        <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-lg px-2.5 py-1.5 text-xs transition">
-                            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">Sort:</span>
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 hover:border-slate-300 rounded-lg px-2.5 py-1.5 text-xs transition shadow-2xs">
+                            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">Sort:</span>
                             <select
                                 value={`${sortField}-${sortOrder}`}
                                 onChange={(e) => {
@@ -335,14 +409,14 @@ export default function DocumentCodeBrowserModal({
                                     setSortField(f);
                                     setSortOrder(o);
                                 }}
-                                className="bg-transparent text-xs text-slate-100 font-medium focus:outline-none cursor-pointer pr-1"
+                                className="bg-transparent text-xs text-slate-800 font-medium focus:outline-none cursor-pointer pr-1"
                             >
-                                <option value="createdAt-desc" className="bg-slate-900 text-slate-100">Creation Date (Newest first)</option>
-                                <option value="createdAt-asc" className="bg-slate-900 text-slate-100">Creation Date (Oldest first)</option>
-                                <option value="name-asc" className="bg-slate-900 text-slate-100">Filename (A → Z)</option>
-                                <option value="name-desc" className="bg-slate-900 text-slate-100">Filename (Z → A)</option>
-                                <option value="updatedAt-desc" className="bg-slate-900 text-slate-100">Last Modified (Recent first)</option>
-                                <option value="fileSize-desc" className="bg-slate-900 text-slate-100">Size (Largest first)</option>
+                                <option value="createdAt-desc" className="bg-white text-slate-800">Creation Date (Newest first)</option>
+                                <option value="createdAt-asc" className="bg-white text-slate-800">Creation Date (Oldest first)</option>
+                                <option value="name-asc" className="bg-white text-slate-800">Filename (A → Z)</option>
+                                <option value="name-desc" className="bg-white text-slate-800">Filename (Z → A)</option>
+                                <option value="updatedAt-desc" className="bg-white text-slate-800">Last Modified (Recent first)</option>
+                                <option value="fileSize-desc" className="bg-white text-slate-800">Size (Largest first)</option>
                             </select>
                         </div>
                     </div>
@@ -355,17 +429,17 @@ export default function DocumentCodeBrowserModal({
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search scripts..."
-                            className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-amber-500 placeholder-slate-500 transition"
+                            className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-amber-500 placeholder-slate-400 transition shadow-2xs"
                         />
                     </div>
                 </div>
 
-                {/* Table Header Row for Easy Sorting */}
-                <div className="grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-950 border-b border-slate-800 text-[11px] font-semibold text-slate-400 select-none">
-                    {/* Filename Column Header (col-span-3, reduced to view filesize column) */}
+                {/* Table Header Row */}
+                <div className="grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 select-none">
+                    {/* Filename Column Header */}
                     <button
                         onClick={() => handleColumnSort('name')}
-                        className="col-span-12 sm:col-span-3 flex items-center gap-1.5 hover:text-white transition group text-left cursor-pointer"
+                        className="col-span-12 sm:col-span-4 flex items-center gap-1.5 hover:text-slate-900 transition group text-left cursor-pointer"
                         title="Click to sort by filename"
                     >
                         <span>Filename / Script</span>
@@ -375,7 +449,7 @@ export default function DocumentCodeBrowserModal({
                     {/* Folder / Type Column Header */}
                     <button
                         onClick={() => handleColumnSort('folder')}
-                        className="hidden sm:flex col-span-2 items-center gap-1.5 hover:text-white transition group cursor-pointer"
+                        className="hidden sm:flex col-span-2 items-center gap-1.5 hover:text-slate-900 transition group cursor-pointer"
                         title="Click to sort by folder/type"
                     >
                         <span>Folder / Type</span>
@@ -386,52 +460,40 @@ export default function DocumentCodeBrowserModal({
                     <button
                         onClick={() => handleColumnSort('createdAt')}
                         className={`hidden sm:flex col-span-2 items-center gap-1.5 transition group cursor-pointer ${
-                            sortField === 'createdAt' ? 'text-amber-400 font-bold' : 'hover:text-white'
+                            sortField === 'createdAt' ? 'text-amber-700 font-bold' : 'hover:text-slate-900'
                         }`}
                         title="Click to sort creation datewise"
                     >
-                        <Calendar className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
+                        <Calendar className="w-3 h-3 text-slate-500 group-hover:text-amber-700" />
                         <span>Created Date</span>
                         {renderSortArrow('createdAt')}
                     </button>
 
-                    {/* Last Modified Column Header */}
-                    <button
-                        onClick={() => handleColumnSort('updatedAt')}
-                        className={`hidden md:flex col-span-2 items-center gap-1.5 transition group cursor-pointer ${
-                            sortField === 'updatedAt' ? 'text-amber-400 font-bold' : 'hover:text-white'
-                        }`}
-                        title="Click to sort by last modified date"
-                    >
-                        <Clock className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
-                        <span>Last Modified</span>
-                        {renderSortArrow('updatedAt')}
-                    </button>
-
-                    {/* File Size Column Header (col-span-2, increased so file size is clearly visible!) */}
+                    {/* File Size Column Header */}
                     <button
                         onClick={() => handleColumnSort('fileSize')}
-                        className={`hidden sm:flex col-span-2 items-center gap-1.5 hover:text-white transition group cursor-pointer justify-end pr-2 ${
-                            sortField === 'fileSize' ? 'text-amber-400 font-bold' : 'hover:text-white'
+                        className={`hidden md:flex col-span-2 items-center gap-1.5 hover:text-slate-900 transition group cursor-pointer justify-end pr-2 ${
+                            sortField === 'fileSize' ? 'text-amber-700 font-bold' : 'hover:text-slate-900'
                         }`}
                         title="Click to sort by file size"
                     >
-                        <HardDrive className="w-3 h-3 text-slate-400 group-hover:text-amber-400" />
-                        <span>File Size</span>
+                        <HardDrive className="w-3 h-3 text-slate-500 group-hover:text-amber-700" />
+                        <span>Size</span>
                         {renderSortArrow('fileSize')}
                     </button>
 
-                    <div className="col-span-12 sm:col-span-1 flex items-center justify-end text-slate-500 font-normal">
-                        <span>Action</span>
+                    {/* Actions Column Header */}
+                    <div className="col-span-12 sm:col-span-2 flex items-center justify-end text-slate-600 font-bold pr-1">
+                        <span>Actions</span>
                     </div>
                 </div>
 
                 {/* Documents List */}
-                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5 divide-y divide-slate-800/40">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-4 space-y-1.5">
                     {loading ? (
-                        <div className="py-14 flex flex-col items-center justify-center text-slate-500 gap-2">
-                            <RefreshCw className="w-7 h-7 animate-spin text-amber-400" />
-                            <span className="text-xs">Fetching your documents...</span>
+                        <div className="py-14 flex flex-col items-center justify-center text-slate-400 gap-2">
+                            <RefreshCw className="w-7 h-7 animate-spin text-amber-500" />
+                            <span className="text-xs text-slate-500 font-medium">Fetching documents...</span>
                         </div>
                     ) : sortedDocs.length > 0 ? (
                         sortedDocs.map((doc) => {
@@ -444,130 +506,245 @@ export default function DocumentCodeBrowserModal({
                             return (
                                 <div
                                     key={doc.id}
-                                    className="grid grid-cols-12 gap-3 items-center p-2.5 sm:px-3 bg-slate-950/70 hover:bg-slate-800/60 border border-slate-800/70 hover:border-slate-700 rounded-xl transition group"
+                                    data-doc-row={doc.id}
+                                    className="grid grid-cols-12 gap-3 items-center p-2.5 sm:px-3 bg-white hover:bg-amber-50/40 border border-slate-200/90 hover:border-amber-300/80 rounded-xl transition-all shadow-2xs group"
                                 >
-                                    {/* Filename & Icon (col-span-3) */}
-                                    <div className="col-span-12 sm:col-span-3 flex items-center gap-2.5 min-w-0">
+                                    {/* Filename & Icon (col-span-4) */}
+                                    <div className="col-span-12 sm:col-span-4 flex items-center gap-2.5 min-w-0">
                                         <div
                                             className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] flex-shrink-0 ${
                                                 isSql
-                                                    ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                                                    : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                                    ? 'bg-sky-100 text-sky-700 border border-sky-300'
+                                                    : 'bg-amber-100 text-amber-800 border border-amber-300'
                                             }`}
                                         >
                                             {isSql ? 'SQL' : 'PY'}
                                         </div>
                                         <div className="min-w-0">
                                             <p
-                                                className="text-xs font-semibold text-slate-200 truncate group-hover:text-amber-300 transition cursor-pointer"
-                                                onClick={() => handleSelectDocument(doc, false)}
-                                                title={`Click to open ${doc.name || doc.fileName}`}
+                                                className="text-xs font-bold text-slate-800 truncate group-hover:text-amber-700 transition cursor-pointer"
+                                                onClick={() => handleSelectDocument(doc, true)}
+                                                title={`Click to open ${doc.name || doc.fileName} in new tab`}
                                             >
                                                 {doc.name || doc.fileName}
                                             </p>
                                             {/* Mobile-only secondary info */}
-                                            <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                                <span className="text-amber-400/90 font-medium">{folderName}</span>
+                                            <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                                                <span className="text-amber-700 font-medium">{folderName}</span>
                                                 <span>•</span>
                                                 <span>{created.date}</span>
                                                 <span>•</span>
-                                                <span className="font-mono text-slate-500">{formatFileSize(doc.fileSize)}</span>
+                                                <span className="font-mono text-slate-600">{formatFileSize(doc.fileSize)}</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* Folder / Type */}
+                                    {/* Folder / Type (col-span-2) */}
                                     <div className="hidden sm:flex col-span-2 items-center gap-1.5 min-w-0">
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium border ${
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
                                             isSql
-                                                ? 'bg-sky-500/10 text-sky-300 border-sky-500/20'
-                                                : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                                ? 'bg-sky-50 text-sky-800 border-sky-200'
+                                                : 'bg-amber-50 text-amber-800 border-amber-200'
                                         }`}>
                                             {folderName}
                                         </span>
                                     </div>
 
-                                    {/* Created Date */}
+                                    {/* Created Date (col-span-2) */}
                                     <div className="hidden sm:flex col-span-2 flex-col justify-center text-[11px] min-w-0">
-                                        <span className="text-slate-200 font-medium">{created.date}</span>
-                                        <span className="text-[10px] text-slate-500">{created.time}</span>
+                                        <span className="text-slate-800 font-medium">{created.date}</span>
+                                        <span className="text-[10px] text-slate-400">{created.time}</span>
                                     </div>
 
-                                    {/* Last Modified */}
-                                    <div className="hidden md:flex col-span-2 flex-col justify-center text-[11px] min-w-0">
-                                        <span className="text-slate-300">{updated.date !== '—' ? updated.date : created.date}</span>
-                                        <span className="text-[10px] text-emerald-400/80 font-mono">
-                                            {updated.time || created.time}
-                                        </span>
-                                    </div>
-
-                                    {/* File Size (col-span-2: clear, prominent badge) */}
-                                    <div className="hidden sm:flex col-span-2 justify-end pr-2 items-center">
-                                        <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-emerald-400 font-semibold shadow-xs">
+                                    {/* File Size (col-span-2) */}
+                                    <div className="hidden md:flex col-span-2 justify-end pr-2 items-center">
+                                        <span className="font-mono text-xs px-2 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 font-semibold shadow-2xs">
                                             {formatFileSize(doc.fileSize)}
                                         </span>
                                     </div>
 
-                                    {/* Actions (col-span-1) */}
-                                    <div className="col-span-12 sm:col-span-1 flex items-center justify-end gap-1.5">
+                                    {/* Action Buttons: Open, Edit, Delete (col-span-2) */}
+                                    <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1.5">
+                                        {/* Edit Button */}
                                         <button
-                                            onClick={() => handleSelectDocument(doc, false)}
+                                            onClick={(e) => handleStartEdit(doc, e)}
+                                            className="p-1.5 rounded-md text-slate-600 hover:text-amber-700 bg-slate-100 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition cursor-pointer"
+                                            title="Rename or edit document"
+                                            aria-label="Edit document"
+                                        >
+                                            <Pencil className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        {/* Delete Button */}
+                                        <button
+                                            onClick={(e) => handleStartDelete(doc, e)}
+                                            className="p-1.5 rounded-md text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100/70 border border-rose-200 hover:border-rose-300 transition cursor-pointer"
+                                            title="Delete document"
+                                            aria-label="Delete document"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+
+                                        {/* Open in New Tab Button */}
+                                        <button
+                                            onClick={() => handleSelectDocument(doc, true)}
                                             disabled={isOpening}
-                                            className="px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition disabled:opacity-50 flex items-center gap-1 cursor-pointer shadow-xs"
-                                            title="Load script into current editor tab"
+                                            className="px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 flex items-center gap-1 cursor-pointer shadow-xs"
+                                            title="Open script in new tab"
                                         >
                                             {isOpening ? (
                                                 <RefreshCw className="w-3 h-3 animate-spin" />
                                             ) : (
                                                 <ExternalLink className="w-3 h-3" />
                                             )}
-                                            <span className="hidden sm:inline">Open</span>
-                                            <span className="sm:hidden">Open in Editor</span>
-                                        </button>
-
-                                        <button
-                                            onClick={() => handleSelectDocument(doc, true)}
-                                            disabled={isOpening}
-                                            className="p-1 rounded-md text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 transition disabled:opacity-50 cursor-pointer hidden sm:flex items-center justify-center"
-                                            title="Open in a new tab (Max 5 tabs)"
-                                        >
-                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>Open</span>
                                         </button>
                                     </div>
                                 </div>
                             );
                         })
                     ) : (
-                        <div className="py-14 flex flex-col items-center justify-center text-slate-500 text-center">
-                            <FileCode className="w-10 h-10 mb-2 stroke-1 text-slate-600" />
-                            <p className="text-xs font-semibold text-slate-400">
+                        <div className="py-14 flex flex-col items-center justify-center text-slate-400 text-center">
+                            <FileCode className="w-10 h-10 mb-2 stroke-1 text-slate-300" />
+                            <p className="text-xs font-bold text-slate-700">
                                 No code documents found
                             </p>
                             <p className="text-[11px] text-slate-500 max-w-xs mt-1">
-                                {searchQuery ? 'No scripts match your search.' : 'Save your scripts from the IDE to have them appear in your Documents folder!'}
+                                {searchQuery ? 'No scripts match your search.' : 'Save scripts from the IDE to have them appear in your cloud folders!'}
                             </p>
                         </div>
                     )}
                 </div>
 
                 {/* Footer with Summary & Help */}
-                <div className="px-5 py-2.5 border-t border-slate-800 bg-slate-950 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                <div className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                     <div className="flex items-center gap-2 text-[11px]">
                         <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
                         <span>
-                            Currently sorted by: <strong className="text-amber-400 font-semibold">
+                            Sorted by: <strong className="text-slate-800 font-semibold">
                                 {sortField === 'createdAt' ? 'Creation Date' : sortField === 'name' ? 'Filename' : sortField === 'updatedAt' ? 'Last Modified' : sortField === 'fileSize' ? 'Size' : 'Folder'}
                             </strong> ({sortOrder === 'asc' ? 'Ascending' : 'Descending'})
                         </span>
                     </div>
                     <button
                         onClick={onClose}
-                        className="px-3.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition text-xs font-medium cursor-pointer"
+                        className="px-3.5 py-1 rounded-md bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 hover:text-slate-900 transition text-xs font-medium cursor-pointer shadow-2xs"
                     >
                         Close
                     </button>
                 </div>
             </div>
+
+            {/* EDIT / RENAME DOCUMENT MODAL */}
+            {editingDoc && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-2xs animate-in fade-in">
+                    <div className="bg-white border border-slate-200 rounded-xl w-full max-w-md shadow-2xl p-5 text-slate-800">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700">
+                                    <Pencil className="w-3.5 h-3.5" />
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900">Rename Script</h3>
+                            </div>
+                            <button
+                                onClick={() => setEditingDoc(null)}
+                                className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveEdit} className="mt-4 space-y-3">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                    Filename:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editingName}
+                                    onChange={(e) => setEditingName(e.target.value)}
+                                    placeholder="Enter filename..."
+                                    className={`w-full px-3 py-2 text-xs rounded-lg border bg-white focus:outline-none transition ${
+                                        editDuplicateConflict
+                                            ? 'border-rose-400 text-rose-800 focus:border-rose-500 bg-rose-50/30'
+                                            : 'border-slate-300 text-slate-800 focus:border-amber-500'
+                                    }`}
+                                    autoFocus
+                                />
+                            </div>
+
+                            {/* Duplicate Warning */}
+                            {editDuplicateConflict && (
+                                <div className="flex items-start gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                                    <span>
+                                        A file named <strong>&quot;{editingName.trim()}&quot;</strong> already exists in this folder. Duplicate filenames are not allowed in the same folder.
+                                    </span>
+                                </div>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingDoc(null)}
+                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmittingEdit || !editingName.trim() || !!editDuplicateConflict}
+                                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                >
+                                    {isSubmittingEdit ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                                    <span>Save Changes</span>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* DELETE CONFIRMATION DIALOG */}
+            {deletingDoc && (
+                <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-2xs animate-in fade-in">
+                    <div className="bg-white border border-slate-200 rounded-xl w-full max-w-sm shadow-2xl p-5 text-slate-800">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="w-9 h-9 rounded-full bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                                <Trash2 className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-slate-900">Delete Script?</h3>
+                                <p className="text-xs text-slate-500">This will remove the file from your Documents.</p>
+                            </div>
+                        </div>
+
+                        <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs font-mono text-slate-700 truncate mb-4">
+                            📄 {deletingDoc.name || deletingDoc.fileName}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setDeletingDoc(null)}
+                                disabled={isDeleting}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmDelete}
+                                disabled={isDeleting}
+                                className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            >
+                                {isDeleting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                <span>Delete Script</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
