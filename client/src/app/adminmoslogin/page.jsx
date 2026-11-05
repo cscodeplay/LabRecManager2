@@ -158,7 +158,7 @@ export default function AdminMosLoginPage() {
             setLoadingYears(true);
             const [yearsRes, schoolRes] = await Promise.allSettled([
                 axios.get('/api/schools/academic-years'),
-                axios.get('/api/schools/profile')
+                axios.get('/api/schools/branding')
             ]);
 
             let years = [];

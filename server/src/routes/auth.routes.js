@@ -81,17 +81,6 @@ router.post('/login', loginValidation, asyncHandler(async (req, res) => {
         });
     }
 
-    // Disallow administrative logins from standard /login endpoint
-    if (['admin', 'principal'].includes(user.role)) {
-        return res.status(403).json({
-            success: false,
-            isAdminRestricted: true,
-            message: 'Administrative accounts must log in via the dedicated Administrator Portal (/adminmoslogin).',
-            messageHindi: 'प्रशासनिक लॉगिन केवल समर्पित व्यवस्थापक पोर्टल (/adminmoslogin) के माध्यम से अनुमत हैं।',
-            adminLoginUrl: '/adminmoslogin'
-        });
-    }
-
     // Verify password or active default/reset PIN
     let isMatch = await bcrypt.compare(password, user.passwordHash);
     let matchedViaPin = false;

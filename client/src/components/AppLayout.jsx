@@ -56,8 +56,17 @@ export default function AppLayout({ children }) {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    // Don't show layout on login/register pages
-    const isAuthPage = pathname === '/login' || pathname === '/register';
+    // Ensure hydration is acknowledged client-side to prevent infinite spinner
+    const [mounted, setMounted] = useState(false);
+    useEffect(() => {
+        setMounted(true);
+        if (!useAuthStore.getState()._hasHydrated) {
+            useAuthStore.getState().setHasHydrated(true);
+        }
+    }, []);
+
+    // Don't show layout on public auth pages
+    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/adminmoslogin' || pathname === '/reset-password-pin';
 
     // Load sidebar collapsed state from localStorage
     useEffect(() => {
@@ -88,8 +97,8 @@ export default function AppLayout({ children }) {
         return <>{children}</>;
     }
 
-    // Wait for hydration
-    if (!_hasHydrated) {
+    // Wait for hydration (with mounted safety fallback)
+    if (!_hasHydrated && !mounted) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-50">
                 <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>

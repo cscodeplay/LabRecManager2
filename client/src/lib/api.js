@@ -64,6 +64,7 @@ api.interceptors.response.use(
         // NEVER attempt token refresh on auth endpoints (login, register, pin-login, refresh itself, logout, pin reset)
         const isAuthEndpoint =
             url.includes('/auth/login') ||
+            url.includes('/auth/admin-login') ||
             url.includes('/auth/refresh') ||
             url.includes('/auth/register') ||
             url.includes('/auth/login-with-pin') ||
@@ -80,7 +81,7 @@ api.interceptors.response.use(
 
             // If no refresh token exists, do not attempt to call refresh
             if (!refreshToken) {
-                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register' && window.location.pathname !== '/adminmoslogin') {
                     useAuthStore.getState().logout();
                     window.location.href = '/login';
                 }
@@ -132,8 +133,8 @@ api.interceptors.response.use(
                 processQueue(refreshError, null);
                 useAuthStore.getState().logout();
 
-                // Only redirect to login if not already on the login or register page
-                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+                // Only redirect to login if not already on the login, register, or admin login page
+                if (typeof window !== 'undefined' && window.location.pathname !== '/login' && window.location.pathname !== '/register' && window.location.pathname !== '/adminmoslogin') {
                     window.location.href = '/login';
                 }
                 return Promise.reject(refreshError);

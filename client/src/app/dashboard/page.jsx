@@ -72,34 +72,48 @@ export default function DashboardPage() {
         ] : [])
     ];
 
+    const [mounted, setMounted] = useState(false);
+
     useEffect(() => {
-        if (!_hasHydrated) return;
+        setMounted(true);
+        if (!useAuthStore.getState()._hasHydrated) {
+            useAuthStore.getState().setHasHydrated(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!mounted && !_hasHydrated) return;
         if (!isAuthenticated) {
             router.push('/login');
             return;
         }
         loadDashboardData();
-    }, [isAuthenticated, _hasHydrated, selectedSessionId]);
+    }, [isAuthenticated, _hasHydrated, mounted, selectedSessionId]);
 
     const loadDashboardData = async () => {
         setLoading(true);
+        const safetyTimer = setTimeout(() => {
+            setLoading(false);
+        }, 5000);
+
         try {
             const requests = [
-                dashboardAPI.getStats(),
-                dashboardAPI.getDeadlines(),
+                dashboardAPI.getStats().catch(() => ({ data: { data: { stats: {} } } })),
+                dashboardAPI.getDeadlines().catch(() => ({ data: { data: { upcomingDeadlines: [] } } })),
                 dashboardAPI.getSiteUpdate().catch(() => null)
             ];
             if (user?.role === 'student') {
                 requests.push(dashboardAPI.getStudentProfile().catch(() => null));
             }
             const [statsRes, deadlinesRes, siteUpdateRes, studentProfileRes] = await Promise.all(requests);
-            setStats(statsRes.data.data.stats);
-            setDeadlines(deadlinesRes.data.data.upcomingDeadlines || []);
+            if (statsRes?.data?.data?.stats) setStats(statsRes.data.data.stats);
+            if (deadlinesRes?.data?.data?.upcomingDeadlines) setDeadlines(deadlinesRes.data.data.upcomingDeadlines);
             if (siteUpdateRes?.data?.data) setSiteUpdate(siteUpdateRes.data.data);
             if (studentProfileRes?.data?.data) setStudentProfile(studentProfileRes.data.data);
         } catch (error) {
             console.error('Failed to load dashboard:', error);
         } finally {
+            clearTimeout(safetyTimer);
             setLoading(false);
         }
     };
