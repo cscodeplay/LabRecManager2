@@ -13,6 +13,7 @@ const { synthesizeDiagram } = require('../utils/diagramSynthesizer');
 const practiceDatabaseService = require('../services/practiceDatabase.service');
 const studentCodeReviewService = require('../services/studentCodeReview.service');
 const { generateProjectBundleZip } = require('../utils/projectBundleExporter');
+const { tracePythonExecution } = require('../utils/pythonDebuggerTracer');
 
 const WORKSPACES_ROOT = path.join(__dirname, '../../storage/workspaces/students');
 
@@ -1090,6 +1091,26 @@ router.post('/export-bundle', authenticate, asyncHandler(async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadZipName)}"`);
     res.setHeader('Content-Length', zipBuffer.length);
     return res.send(zipBuffer);
+}));
+
+/**
+ * @route   POST /api/compiler/debug-trace
+ * @desc    Execute Python code line-by-line with sys.settrace to inspect variables and evaluate watches
+ * @access  Private
+ */
+router.post('/debug-trace', authenticate, asyncHandler(async (req, res) => {
+    const { code = '', stdin = '', watchExpressions = [] } = req.body;
+
+    const result = await tracePythonExecution({
+        code,
+        stdin,
+        watchExpressions
+    });
+
+    return res.json({
+        success: result.success !== false,
+        data: result
+    });
 }));
 
 module.exports = router;

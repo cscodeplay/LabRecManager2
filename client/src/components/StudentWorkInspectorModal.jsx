@@ -53,6 +53,7 @@ export default function StudentWorkInspectorModal({
     isOpen,
     onClose,
     isDarkMode = true,
+    editorTheme = 'vs',
     initialStudentId = null,
     onOpenInIDE = null
 }) {
@@ -98,8 +99,27 @@ export default function StudentWorkInspectorModal({
     useEffect(() => {
         if (isOpen) {
             loadStudentDirectory();
+            if (window.monaco?.editor && editorTheme) {
+                window.monaco.editor.setTheme(editorTheme);
+            }
         }
-    }, [isOpen]);
+        return () => {
+            if (window.monaco?.editor && editorTheme) {
+                window.monaco.editor.setTheme(editorTheme);
+            }
+        };
+    }, [isOpen, editorTheme]);
+
+    // Close on Escape key
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape' && isOpen) {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
 
     // Set initial student when directory loads
     useEffect(() => {
@@ -794,7 +814,7 @@ export default function StudentWorkInspectorModal({
                                             height="100%"
                                             language={activeTab?.language === 'sql' ? 'sql' : 'python'}
                                             value={activeTab?.code || '# No code in this tab'}
-                                            theme="vs-dark"
+                                            theme={editorTheme || (isDarkMode ? 'vs-dark' : 'vs')}
                                             options={{
                                                 readOnly: true,
                                                 minimap: { enabled: false },

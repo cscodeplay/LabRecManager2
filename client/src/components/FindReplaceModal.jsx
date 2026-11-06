@@ -26,8 +26,8 @@ export default function FindReplaceModal({
 }) {
     const [findText, setFindText] = useState('');
     const [replaceText, setReplaceText] = useState('');
-    const [matchCase, setMatchCase] = useState(false); // false = Ignore Case (default), true = Exact Match
-    const [matchWholeWord, setMatchWholeWord] = useState(false);
+    const [ignoreCase, setIgnoreCase] = useState(true); // true = case-insensitive, false = case-sensitive
+    const [exactMatch, setExactMatch] = useState(false); // false = partial/substring match allowed, true = whole-word only
     const [useRegex, setUseRegex] = useState(false);
     const [findInSelection, setFindInSelection] = useState(false);
 
@@ -134,12 +134,13 @@ export default function FindReplaceModal({
                 if (sel && !sel.isEmpty()) searchRange = sel;
             }
 
+            const WORD_SEPARATORS = "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/? \t\r\n";
             const results = model.findMatches(
                 searchText,
                 searchRange || true,
                 useRegex,
-                matchCase,
-                matchWholeWord ? 'word' : null,
+                !ignoreCase,
+                exactMatch ? WORD_SEPARATORS : null,
                 false
             );
 
@@ -179,7 +180,7 @@ export default function FindReplaceModal({
         if (isOpen) {
             performSearch(findText);
         }
-    }, [findText, matchCase, matchWholeWord, useRegex, findInSelection, isOpen]);
+    }, [findText, ignoreCase, exactMatch, useRegex, findInSelection, isOpen]);
 
     const highlightAndRevealMatch = (match, resultsList = matches, idx = currentMatchIndex) => {
         if (!editorRef?.current || !match) return;
@@ -386,25 +387,25 @@ export default function FindReplaceModal({
                         <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
                             <button
                                 type="button"
-                                onClick={() => setMatchCase(!matchCase)}
+                                onClick={() => setIgnoreCase(!ignoreCase)}
                                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition cursor-pointer ${
-                                    matchCase
+                                    ignoreCase
                                         ? 'bg-amber-500 text-slate-950 shadow-xs'
                                         : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                 }`}
-                                title={`Match Case (Alt+C): ${matchCase ? 'ON (Exact Match)' : 'OFF (Ignoring Case)'}`}
+                                title={`Ignore Case (Alt+C): ${ignoreCase ? 'ON (Case-Insensitive)' : 'OFF (Case-Sensitive)'}`}
                             >
                                 Aa
                             </button>
                             <button
                                 type="button"
-                                onClick={() => setMatchWholeWord(!matchWholeWord)}
+                                onClick={() => setExactMatch(!exactMatch)}
                                 className={`p-1 rounded text-[10px] font-bold transition cursor-pointer ${
-                                    matchWholeWord
+                                    exactMatch
                                         ? 'bg-amber-500 text-slate-950 shadow-xs'
                                         : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                 }`}
-                                title={`Match Whole Word (Alt+W): ${matchWholeWord ? 'ON' : 'OFF'}`}
+                                title={`Exact Match (Alt+W): ${exactMatch ? 'ON (Whole Word Only)' : 'OFF (Partial Matches Allowed)'}`}
                             >
                                 <WholeWord className="w-3.5 h-3.5" />
                             </button>
@@ -454,45 +455,36 @@ export default function FindReplaceModal({
                     </div>
                 </div>
 
-                {/* Explicit Case Mode Selector & Options */}
-                <div className="flex items-center justify-between text-[11px] px-0.5">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Case:</span>
-                        <div className="inline-flex rounded-md p-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
-                            <button
-                                type="button"
-                                onClick={() => setMatchCase(false)}
-                                className={`px-2 py-0.5 text-[10px] rounded transition cursor-pointer ${
-                                    !matchCase
-                                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold shadow-xs'
-                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-                                }`}
-                                title="Ignore Case (Case-Insensitive search)"
-                            >
-                                Ignore Case
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setMatchCase(true)}
-                                className={`px-2 py-0.5 text-[10px] rounded transition cursor-pointer flex items-center gap-1 ${
-                                    matchCase
-                                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
-                                }`}
-                                title="Exact Match (Case-Sensitive search)"
-                            >
-                                <span className="font-mono font-bold">Aa</span>
-                                <span>Exact Match</span>
-                            </button>
-                        </div>
+                {/* Explicit Search Options Checkboxes */}
+                <div className="flex items-center justify-between text-xs px-0.5 pt-0.5">
+                    <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium select-none hover:text-amber-600 dark:hover:text-amber-400 transition">
+                            <input
+                                type="checkbox"
+                                checked={ignoreCase}
+                                onChange={(e) => setIgnoreCase(e.target.checked)}
+                                className="rounded text-amber-500 focus:ring-amber-400 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>Ignore Case</span>
+                        </label>
+
+                        <label className="flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-slate-300 font-medium select-none hover:text-amber-600 dark:hover:text-amber-400 transition">
+                            <input
+                                type="checkbox"
+                                checked={exactMatch}
+                                onChange={(e) => setExactMatch(e.target.checked)}
+                                className="rounded text-amber-500 focus:ring-amber-400 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>Exact Match</span>
+                        </label>
                     </div>
 
-                    <label className="flex items-center gap-1 cursor-pointer text-slate-600 dark:text-slate-400">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-slate-600 dark:text-slate-400 font-medium select-none hover:text-amber-600 dark:hover:text-amber-400 transition">
                         <input
                             type="checkbox"
                             checked={findInSelection}
                             onChange={(e) => setFindInSelection(e.target.checked)}
-                            className="rounded text-amber-600 focus:ring-0 w-3 h-3 cursor-pointer"
+                            className="rounded text-amber-500 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
                         />
                         <span>In selection</span>
                     </label>

@@ -304,7 +304,8 @@ export const compilerAPI = {
     generateStudentAiReview: (studentId, data) => api.post(`/compiler/student-workspace/${studentId}/ai-review`, data),
     bulkAiReview: (data) => api.post('/compiler/students-bulk-ai-review', data),
     getMyReview: () => api.get('/compiler/my-review'),
-    exportBundle: (data) => api.post('/compiler/export-bundle', data, { responseType: 'blob' })
+    exportBundle: (data) => api.post('/compiler/export-bundle', data, { responseType: 'blob' }),
+    debugTrace: (data) => api.post('/compiler/debug-trace', data)
 };
 
 export const assignmentsAPI = {

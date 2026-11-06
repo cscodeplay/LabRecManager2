@@ -3694,6 +3694,7 @@ Date:          ${dateStr}
                 isOpen={showInspectorModal}
                 onClose={() => setShowInspectorModal(false)}
                 isDarkMode={!isLightMode}
+                editorTheme={editorTheme}
                 initialStudentId={inspectingStudentId}
                 onOpenInIDE={(stId) => {
                     setInspectingStudentId(stId);
@@ -3723,6 +3724,7 @@ Date:          ${dateStr}
                 isOpen={showDebugModal}
                 onClose={() => setShowDebugModal(false)}
                 editorRef={editorRef}
+                activeTab={activeTab}
                 code={editorRef.current ? editorRef.current.getValue() : (activeTab.code || '')}
                 language={activeTab.language}
                 isLightMode={isLightMode}
