@@ -63,6 +63,9 @@ async function generateProjectBundleZip({
         const pdfDoc = new PDFDocument({ margin: 40, size: 'A4' });
         const chunks = [];
         pdfDoc.on('data', (c) => chunks.push(c));
+        pdfDoc.on('error', (err) => {
+            console.warn('[PDFExporter] PDFkit render warning:', err.message);
+        });
 
         // Header
         pdfDoc.fillColor('#0f172a').fontSize(18).text(schoolName, { bold: true });

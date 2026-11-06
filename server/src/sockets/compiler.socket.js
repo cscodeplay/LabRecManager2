@@ -28,6 +28,7 @@ function getStudentDbPath(userId) {
 /**
  * Interactive Python wrapper injected at the top of the executed script.
  * Overrides builtins.input() to communicate step-by-step with the socket runner.
+ * Empty inputs or whitespace are ignored and the program continues waiting until a non-empty value is received.
  */
 const INTERACTIVE_INPUT_WRAPPER = `
 import sys, builtins, json, base64
@@ -37,13 +38,17 @@ def _interactive_input(prompt=""):
     try:
         req = json.dumps({"prompt": str(prompt)})
         b64 = base64.b64encode(req.encode("utf-8")).decode("ascii")
-        sys.stdout.flush()
-        sys.stdout.write(f"\\n__ULRMS_PROMPT__:{b64}\\n")
-        sys.stdout.flush()
-        line = sys.stdin.readline()
-        if not line:
-            raise EOFError("EOF when reading a line")
-        return line.rstrip("\\r\\n")
+        while True:
+            sys.stdout.flush()
+            sys.stdout.write(f"\\n__ULRMS_PROMPT__:{b64}\\n")
+            sys.stdout.flush()
+            line = sys.stdin.readline()
+            if not line:
+                continue
+            cleaned = line.rstrip("\\r\\n")
+            # Empty input or whitespace-only inputs should not be processed; wait for a valid value
+            if cleaned and cleaned.strip():
+                return cleaned.strip()
     except Exception as e:
         if isinstance(e, EOFError):
             raise
@@ -288,7 +293,11 @@ function registerCompilerSocket(io, socket) {
         if (session && session.child && !session.child.killed) {
             try {
                 const textToSend = typeof value === 'string' ? value : '';
-                session.child.stdin.write(textToSend + '\n');
+                // Empty string or whitespace-only inputs should not be processed; keep process waiting
+                if (!textToSend || !textToSend.trim()) {
+                    return;
+                }
+                session.child.stdin.write(textToSend.trim() + '\n');
             } catch (err) {
                 console.error('[compiler.socket] Failed to write stdin:', err.message);
             }

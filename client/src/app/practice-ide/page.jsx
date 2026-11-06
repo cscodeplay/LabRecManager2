@@ -427,6 +427,16 @@ function PracticeIDEPage() {
     const [showFeedbackDrawer, setShowFeedbackDrawer] = useState(false);
     const [latestStudentReview, setLatestStudentReview] = useState(null);
 
+    // Debugger Gutter Breakpoints (Line numbers)
+    const [debuggerBreakpoints, setDebuggerBreakpoints] = useState([6]);
+    const handleToggleBreakpoint = (line) => {
+        const lineNum = typeof line === 'number' ? line : parseInt(line, 10);
+        if (isNaN(lineNum) || lineNum < 1) return;
+        setDebuggerBreakpoints((prev) =>
+            prev.includes(lineNum) ? prev.filter((l) => l !== lineNum) : [...prev, lineNum].sort((a, b) => a - b)
+        );
+    };
+
     // Major Code Editor Features
     const [isWordWrapOn, setIsWordWrapOn] = useState(true);
     const [isLineNumbersOn, setIsLineNumbersOn] = useState(true);
@@ -1715,7 +1725,14 @@ Date:          ${dateStr}
         if (e) e.preventDefault();
         if (!activePrompt || !socketRef.current) return;
 
-        const val = promptValue;
+        const rawVal = promptValue;
+        // Do not process empty string or whitespace-only inputs; program waits until a non-empty value is received
+        if (!rawVal || !rawVal.trim()) {
+            toast('Please enter a value (empty inputs or spaces are ignored)', { icon: '⏳', duration: 1500 });
+            return;
+        }
+
+        const val = rawVal.trim();
         const sId = activePrompt.sessionId;
         const promptText = activePrompt.prompt || '';
 
@@ -2822,7 +2839,9 @@ Date:          ${dateStr}
 
                             {/* Debugger & Variable Monitoring Overlay Button */}
                             <button
+                                data-debugger-btn="true"
                                 onClick={() => setShowDebugModal(true)}
+                                title="Debug & Variable Inspector (Ctrl+Shift+D)"
                                 className={`w-8 h-8 rounded-full border transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative ${
                                     showDebugModal
                                         ? 'border-rose-500 bg-rose-500/20 text-rose-500 shadow-xs'
@@ -2886,6 +2905,17 @@ Date:          ${dateStr}
                                         column: e.position.column
                                     });
                                 });
+
+                                // Gutter click to toggle red dot breakpoints (Code::Blocks style)
+                                editor.onMouseDown((e) => {
+                                    if (e.target.type === 2 || e.target.type === 3 || // GUTTER_GLYPH_MARGIN or GUTTER_LINE_NUMBERS
+                                        e.target.element?.classList?.contains('line-numbers')) {
+                                        const line = e.target.position?.lineNumber;
+                                        if (line) {
+                                            handleToggleBreakpoint(line);
+                                        }
+                                    }
+                                });
                             }}
                             options={{
                                 fontSize: fontSize,
@@ -2893,6 +2923,7 @@ Date:          ${dateStr}
                                 minimap: { enabled: isMinimapOn },
                                 scrollBeyondLastLine: false,
                                 automaticLayout: true,
+                                glyphMargin: true,
                                 tabSize: isDatabaseLanguage(activeTab.language) ? 2 : 4,
                                 insertSpaces: true,
                                 wordWrap: isWordWrapOn ? 'on' : 'off',
@@ -3176,7 +3207,7 @@ Date:          ${dateStr}
                                                                         setPromptValue((prev) => prev + '\t');
                                                                     }
                                                                 }}
-                                                                placeholder="type value & press Enter ↵..."
+                                                                placeholder="type value & press Enter ↵ (empty input ignored)..."
                                                                 autoFocus
                                                                 className="flex-1 bg-transparent border-0 border-b border-dashed border-amber-400/80 focus:border-emerald-500 focus:outline-none text-emerald-500 dark:text-emerald-400 font-bold text-xs font-mono py-0.5 px-1 transition-colors"
                                                             />
@@ -3716,6 +3747,7 @@ Date:          ${dateStr}
                 onClose={() => setShowExportBundleModal(false)}
                 activeTab={activeTab}
                 flowchartData={activeTab.flowchartData}
+                editorRef={editorRef}
                 isLightMode={isLightMode}
             />
 
@@ -3729,6 +3761,8 @@ Date:          ${dateStr}
                 language={activeTab.language}
                 isLightMode={isLightMode}
                 onRunCode={handleExecuteCode}
+                externalBreakpoints={debuggerBreakpoints}
+                onToggleBreakpoint={handleToggleBreakpoint}
             />
         </div>
     );

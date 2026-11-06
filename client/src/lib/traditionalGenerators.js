@@ -214,6 +214,112 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
         };
     };
 
+    /**
+     * Decomposes a list of statements into discrete standard ISO 5807 flowchart nodes
+     * (parallelograms for input/output, rectangles for processes/assignments, subroutines for calls)
+     * and links them in sequence.
+     */
+    const buildSequentialStatementNodes = (stmtsList, startX, startY, defaultWidth = 175) => {
+        let curY = startY;
+        const createdNodes = [];
+        const createdConns = [];
+        let prevNodeId = null;
+        let firstNodeId = null;
+
+        let sIdx = 0;
+        while (sIdx < stmtsList.length) {
+            const sItem = stmtsList[sIdx];
+            const sText = typeof sItem === 'string' ? sItem : (sItem.text || '');
+            const sKind = classify(sText);
+
+            let nodeType = 'process';
+            let nodeText = sText.replace(/;\s*$/, '');
+            let nodeColor = '#ffffff';
+            let nodeBorderColor = '#64748b';
+            let nodeTextColor = '#0f172a';
+            let nodeWidth = defaultWidth;
+            let nodeHeight = 52;
+
+            if (sKind === 'input') {
+                nodeType = 'io';
+                nodeText = cleanInput(sText);
+                nodeColor = '#dbeafe';
+                nodeBorderColor = '#2563eb';
+                nodeTextColor = '#1e3a8a';
+            } else if (sKind === 'output') {
+                nodeType = 'io';
+                nodeText = `Display ${cleanOutput(sText)}`;
+                nodeColor = '#dbeafe';
+                nodeBorderColor = '#2563eb';
+                nodeTextColor = '#1e3a8a';
+            } else if (sKind === 'call') {
+                const callInfo = isFunctionCall(sText);
+                nodeType = 'predefined_process';
+                nodeText = callInfo?.assignedVar
+                    ? `${callInfo.assignedVar} = Call ${callInfo.fnName}(${callInfo.args.trim()})`
+                    : `Call ${callInfo?.fnName || sText}(${callInfo?.args?.trim() || ''})`;
+                nodeColor = '#f5f3ff';
+                nodeBorderColor = '#7c3aed';
+                nodeTextColor = '#4c1d95';
+                nodeHeight = 54;
+            } else {
+                // Group consecutive assignments at same scope
+                const group = [sText.replace(/^(int|float|double|long|char|auto)\s+/, '').replace(/;\s*$/, '')];
+                while (sIdx + 1 < stmtsList.length) {
+                    const nextItem = stmtsList[sIdx + 1];
+                    const nextText = typeof nextItem === 'string' ? nextItem : (nextItem.text || '');
+                    if (classify(nextText) === 'assign') {
+                        group.push(nextText.replace(/^(int|float|double|long|char|auto)\s+/, '').replace(/;\s*$/, ''));
+                        sIdx++;
+                    } else {
+                        break;
+                    }
+                }
+                nodeText = group.join('\n');
+                nodeHeight = Math.max(52, 28 + group.length * 16);
+            }
+
+            const nId = makeId(nodeType);
+            if (!firstNodeId) firstNodeId = nId;
+
+            createdNodes.push({
+                id: nId,
+                type: nodeType,
+                text: nodeText,
+                x: startX - nodeWidth / 2,
+                y: curY,
+                width: nodeWidth,
+                height: nodeHeight,
+                color: nodeColor,
+                borderColor: nodeBorderColor,
+                textColor: nodeTextColor
+            });
+
+            if (prevNodeId) {
+                createdConns.push({
+                    id: makeConnId(),
+                    from: prevNodeId,
+                    fromPort: 'bottom',
+                    to: nId,
+                    toPort: 'top',
+                    label: ''
+                });
+            }
+
+            prevNodeId = nId;
+            curY += nodeHeight + 35;
+            sIdx++;
+        }
+
+        return {
+            firstNodeId,
+            lastNodeId: prevNodeId,
+            nextY: curY,
+            createdNodes,
+            createdConns
+        };
+    };
+
     while (idx < statements.length) {
         const item = statements[idx];
         const kind = classify(item.text);
@@ -378,70 +484,57 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 const trueStmts = decisionBranches[0].statements;
                 const elseStmts = elseBranch ? elseBranch.statements : [];
 
-                let trueNodeId = null;
-                let elseNodeId = null;
-                const tWidth = 175;
-                const eWidth = 175;
+                let trueFirstId = null;
+                let trueLastId = null;
+                let elseFirstId = null;
+                let elseLastId = null;
+                let maxY = yCursor;
+
+                const trueX = elseStmts.length > 0 ? xCenter - 110 : xCenter;
+                const elseX = xCenter + 110;
 
                 if (trueStmts.length > 0) {
-                    trueNodeId = makeId('branch_action');
-                    const tHeight = Math.max(54, 30 + trueStmts.length * 16);
-                    const style = getBranchActionStyle(trueStmts);
-                    nodes.push({
-                        id: trueNodeId,
-                        type: style.type,
-                        text: formatStmtsText(trueStmts),
-                        x: elseStmts.length > 0 ? xCenter - tWidth - 25 : xCenter - tWidth / 2,
-                        y: yCursor,
-                        width: tWidth,
-                        height: tHeight,
-                        color: style.color,
-                        borderColor: style.borderColor,
-                        textColor: style.textColor
-                    });
+                    const seqTrue = buildSequentialStatementNodes(trueStmts, trueX, yCursor, 175);
+                    nodes.push(...seqTrue.createdNodes);
+                    connectors.push(...seqTrue.createdConns);
+                    trueFirstId = seqTrue.firstNodeId;
+                    trueLastId = seqTrue.lastNodeId;
+                    if (seqTrue.nextY > maxY) maxY = seqTrue.nextY;
+
                     connectors.push({
                         id: makeConnId(),
                         from: ifNodeId,
                         fromPort: 'bottom',
-                        to: trueNodeId,
+                        to: trueFirstId,
                         toPort: 'top',
                         label: 'Yes'
                     });
                 }
 
                 if (elseStmts.length > 0) {
-                    elseNodeId = makeId('branch_action');
-                    const eHeight = Math.max(54, 30 + elseStmts.length * 16);
-                    const style = getBranchActionStyle(elseStmts);
-                    nodes.push({
-                        id: elseNodeId,
-                        type: style.type,
-                        text: formatStmtsText(elseStmts),
-                        x: xCenter + 25,
-                        y: yCursor,
-                        width: eWidth,
-                        height: eHeight,
-                        color: style.color,
-                        borderColor: style.borderColor,
-                        textColor: style.textColor
-                    });
+                    const seqElse = buildSequentialStatementNodes(elseStmts, elseX, yCursor, 175);
+                    nodes.push(...seqElse.createdNodes);
+                    connectors.push(...seqElse.createdConns);
+                    elseFirstId = seqElse.firstNodeId;
+                    elseLastId = seqElse.lastNodeId;
+                    if (seqElse.nextY > maxY) maxY = seqElse.nextY;
+
                     connectors.push({
                         id: makeConnId(),
                         from: ifNodeId,
                         fromPort: 'right',
-                        to: elseNodeId,
+                        to: elseFirstId,
                         toPort: 'top',
                         label: 'No'
                     });
                 }
 
-                const maxH = Math.max(54, trueStmts.length * 16, elseStmts.length * 16);
-                yCursor += maxH + 45;
+                yCursor = maxY + 15;
 
                 incomingSources = [];
-                if (trueNodeId) incomingSources.push({ nodeId: trueNodeId, port: 'bottom', label: '' });
-                if (elseNodeId) {
-                    incomingSources.push({ nodeId: elseNodeId, port: 'bottom', label: '' });
+                if (trueLastId) incomingSources.push({ nodeId: trueLastId, port: 'bottom', label: '' });
+                if (elseLastId) {
+                    incomingSources.push({ nodeId: elseLastId, port: 'bottom', label: '' });
                 } else {
                     incomingSources.push({ nodeId: ifNodeId, port: 'right', label: 'No' });
                 }
@@ -499,35 +592,22 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 for (let i = 0; i < decisionBranches.length; i++) {
                     const stmts = decisionBranches[i].statements;
                     if (stmts.length > 0) {
-                        const aId = makeId('branch_action');
-                        const aHeight = Math.max(54, 30 + stmts.length * 16);
-                        if (aHeight > maxActionHeight) maxActionHeight = aHeight;
-                        const colX = xStart + i * colWidth;
-                        const style = getBranchActionStyle(stmts);
-
-                        nodes.push({
-                            id: aId,
-                            type: style.type,
-                            text: formatStmtsText(stmts),
-                            x: colX + (colWidth - aWidth) / 2,
-                            y: row2Y,
-                            width: aWidth,
-                            height: aHeight,
-                            color: style.color,
-                            borderColor: style.borderColor,
-                            textColor: style.textColor
-                        });
+                        const colCenterX = xStart + i * colWidth + colWidth / 2;
+                        const seq = buildSequentialStatementNodes(stmts, colCenterX, row2Y, aWidth);
+                        nodes.push(...seq.createdNodes);
+                        connectors.push(...seq.createdConns);
+                        if (seq.nextY - row2Y > maxActionHeight) maxActionHeight = seq.nextY - row2Y;
 
                         connectors.push({
                             id: makeConnId(),
                             from: decisionNodeIds[i],
                             fromPort: 'bottom',
-                            to: aId,
+                            to: seq.firstNodeId,
                             toPort: 'top',
                             label: 'Yes'
                         });
 
-                        actionSources.push({ nodeId: aId, port: 'bottom', label: '' });
+                        actionSources.push({ nodeId: seq.lastNodeId, port: 'bottom', label: '' });
                     } else {
                         // Empty branch connects directly from decision bottom
                         actionSources.push({ nodeId: decisionNodeIds[i], port: 'bottom', label: 'Yes' });
@@ -539,37 +619,24 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
                 if (elseBranch) {
                     const eStmts = elseBranch.statements;
                     const elseColIndex = decisionBranches.length;
-                    const colX = xStart + elseColIndex * colWidth;
+                    const colCenterX = xStart + elseColIndex * colWidth + colWidth / 2;
 
                     if (eStmts.length > 0) {
-                        const elseNodeId = makeId('branch_action');
-                        const eHeight = Math.max(54, 30 + eStmts.length * 16);
-                        if (eHeight > maxActionHeight) maxActionHeight = eHeight;
-                        const style = getBranchActionStyle(eStmts);
-
-                        nodes.push({
-                            id: elseNodeId,
-                            type: style.type,
-                            text: formatStmtsText(eStmts),
-                            x: colX + (colWidth - aWidth) / 2,
-                            y: row2Y,
-                            width: aWidth,
-                            height: eHeight,
-                            color: style.color,
-                            borderColor: style.borderColor,
-                            textColor: style.textColor
-                        });
+                        const seqElse = buildSequentialStatementNodes(eStmts, colCenterX, row2Y, aWidth);
+                        nodes.push(...seqElse.createdNodes);
+                        connectors.push(...seqElse.createdConns);
+                        if (seqElse.nextY - row2Y > maxActionHeight) maxActionHeight = seqElse.nextY - row2Y;
 
                         connectors.push({
                             id: makeConnId(),
                             from: lastDecisionId,
                             fromPort: 'right',
-                            to: elseNodeId,
+                            to: seqElse.firstNodeId,
                             toPort: 'top',
                             label: 'No'
                         });
 
-                        actionSources.push({ nodeId: elseNodeId, port: 'bottom', label: '' });
+                        actionSources.push({ nodeId: seqElse.lastNodeId, port: 'bottom', label: '' });
                     } else {
                         actionSources.push({ nodeId: lastDecisionId, port: 'right', label: 'No' });
                     }
@@ -609,52 +676,37 @@ export function generateFlowchartFromCode(code = '', language = 'python') {
             // Collect loop body statements (statements belonging inside the loop)
             const bodyStmts = [];
             while (idx < statements.length && statements[idx].indent > loopIndent) {
-                const cleanStmt = statements[idx].text
-                    .replace(/^(int|float|double|long|char|auto)\s+/, '')
-                    .replace(/;\s*$/, '');
-                bodyStmts.push(cleanStmt);
+                bodyStmts.push(statements[idx]);
                 idx++;
             }
 
             if (bodyStmts.length > 0) {
-                const bodyNodeId = makeId('process');
-                const bodyWidth = 180;
-                const bodyHeight = Math.max(54, 30 + bodyStmts.length * 16);
+                // Decompose loop body statements into discrete standard ISO symbols
+                const seq = buildSequentialStatementNodes(bodyStmts, xCenter, yCursor, 180);
+                nodes.push(...seq.createdNodes);
+                connectors.push(...seq.createdConns);
 
-                nodes.push({
-                    id: bodyNodeId,
-                    type: 'process',
-                    text: bodyStmts.join('\n'),
-                    x: xCenter - bodyWidth / 2,
-                    y: yCursor,
-                    width: bodyWidth,
-                    height: bodyHeight,
-                    color: '#ffffff',
-                    borderColor: '#64748b',
-                    textColor: '#0f172a'
-                });
-
-                // 'Yes' connector from loop decision to loop body
+                // 'Yes' connector from loop decision to first loop body statement
                 connectors.push({
                     id: makeConnId(),
                     from: loopNodeId,
                     fromPort: 'bottom',
-                    to: bodyNodeId,
+                    to: seq.firstNodeId,
                     toPort: 'top',
                     label: 'Yes'
                 });
 
-                // Loopback connector returning from loop body left port back to loop condition
+                // Loopback connector returning from last loop body statement left port back to loop condition
                 connectors.push({
                     id: makeConnId(),
-                    from: bodyNodeId,
+                    from: seq.lastNodeId,
                     fromPort: 'left',
                     to: loopNodeId,
                     toPort: 'left',
                     label: 'Loop'
                 });
 
-                yCursor += bodyHeight + 40;
+                yCursor = seq.nextY + 15;
             }
 
             // The loop decision's False branch connects to the subsequent statement outside loop

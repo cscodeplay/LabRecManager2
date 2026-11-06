@@ -26,17 +26,39 @@ function tracePythonExecution({
             .map(w => typeof w === 'string' ? w.trim() : (w?.expr || '').trim())
             .filter(Boolean);
 
+        const rawStdinLines = (typeof stdin === 'string' ? stdin : '')
+            .split('\n')
+            .map(l => l.trim())
+            .filter(Boolean);
+
         const tracerScript = `
-import sys, json, io
+import sys, json, io, builtins
 
 code_str = ${JSON.stringify(code)}
 watch_exprs = ${JSON.stringify(validWatches)}
+raw_stdin_lines = ${JSON.stringify(rawStdinLines)}
 MAX_STEPS = ${Math.min(maxSteps, 500)}
 
 steps = []
 prev_vars = {}
 captured_out = io.StringIO()
 orig_stdout = sys.stdout
+
+# Resilient Standard Input handler (empty inputs/spaces ignored, program waits for input)
+stdin_iter = iter(raw_stdin_lines)
+def _tracer_safe_input(prompt=""):
+    if prompt:
+        captured_out.write(str(prompt))
+    while True:
+        try:
+            val = next(stdin_iter)
+            if val and val.strip():
+                return val.strip()
+        except StopIteration:
+            # Safe non-empty fallback value if input runs out, preventing EOFError crash
+            return "10"
+
+builtins.input = _tracer_safe_input
 
 def tracer(frame, event, arg):
     if len(steps) >= MAX_STEPS:
@@ -77,9 +99,22 @@ def tracer(frame, event, arg):
                 except Exception:
                     watches[expr] = "<undefined>"
 
+            # Inspect active Call Stack hierarchy
+            stack_frames = []
+            cur_f = frame
+            while cur_f:
+                if cur_f.f_code.co_filename == "<user_code>":
+                    stack_frames.append({
+                        "function": cur_f.f_code.co_name,
+                        "line": cur_f.f_lineno
+                    })
+                cur_f = cur_f.f_back
+            stack_frames.reverse()
+
             steps.append({
                 "lineNumber": lineno,
                 "functionName": frame.f_code.co_name,
+                "callStack": stack_frames,
                 "variables": var_list,
                 "watches": watches,
                 "stdout": captured_out.getvalue()

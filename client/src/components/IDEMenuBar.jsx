@@ -291,6 +291,7 @@ export default function IDEMenuBar({
                             </button>
 
                             <button
+                                data-export-bundle-btn="true"
                                 onClick={() => handleAction(onExportBundle)}
                                 className={itemBtnClass}
                             >
