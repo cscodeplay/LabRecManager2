@@ -50,6 +50,11 @@ export default function DocumentCodeBrowserModal({
     const [editingName, setEditingName] = useState('');
     const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
 
+    // Inline Rename state for file browser
+    const [inlineEditingDocId, setInlineEditingDocId] = useState(null);
+    const [inlineRenameText, setInlineRenameText] = useState('');
+    const [isInlineSaving, setIsInlineSaving] = useState(false);
+
     // Delete Confirmation Dialog state
     const [deletingDoc, setDeletingDoc] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -132,7 +137,19 @@ export default function DocumentCodeBrowserModal({
     };
 
     // Filter & Sort
-    const safeDocuments = Array.isArray(documents) ? documents : [];
+    const rawSafeDocs = Array.isArray(documents) ? documents : [];
+    const safeDocuments = useMemo(() => {
+        const seen = new Map();
+        const result = [];
+        for (const doc of rawSafeDocs) {
+            const key = `${doc.folderId || 'root'}::${(doc.name || doc.fileName || '').trim().toLowerCase()}`;
+            if (!seen.has(key)) {
+                seen.set(key, true);
+                result.push(doc);
+            }
+        }
+        return result;
+    }, [rawSafeDocs]);
     const safeFolders = Array.isArray(folders) ? folders : [];
 
     const folderMap = useMemo(() => {
@@ -196,6 +213,22 @@ export default function DocumentCodeBrowserModal({
         return conflict || null;
     }, [editingDoc, editingName, safeDocuments]);
 
+    // Live validation for Inline Rename in the table
+    const inlineDuplicateConflict = useMemo(() => {
+        if (!inlineEditingDocId || !inlineRenameText.trim()) return null;
+        const targetDoc = safeDocuments.find((d) => d.id === inlineEditingDocId);
+        if (!targetDoc) return null;
+        const targetClean = inlineRenameText.trim().toLowerCase();
+        const conflict = safeDocuments.find((d) => {
+            if (d.id === targetDoc.id) return false;
+            if (d.folderId !== targetDoc.folderId) return false;
+            const docName = (d.name || '').trim().toLowerCase();
+            const docFileName = (d.fileName || '').trim().toLowerCase();
+            return docName === targetClean || docFileName === targetClean;
+        });
+        return conflict || null;
+    }, [inlineEditingDocId, inlineRenameText, safeDocuments]);
+
     if (!isOpen) return null;
 
     // Handle Open Document (Always opens in new tab as requested)
@@ -203,16 +236,35 @@ export default function DocumentCodeBrowserModal({
         setOpeningDocId(doc.id);
         try {
             let codeText = '';
-            try {
-                const response = await documentsAPI.getFileContent(doc.id);
-                codeText = typeof response.data === 'string' ? response.data : String(response.data || '');
-            } catch (apiErr) {
-                console.warn('[DocModal] Primary getFileContent failed, attempting fallbacks:', apiErr.message);
+
+            // Fast path: Immediately decode PostgreSQL data URL if present
+            if (doc.url && doc.url.startsWith('data:')) {
+                try {
+                    const commaIdx = doc.url.indexOf(',');
+                    const header = doc.url.substring(0, commaIdx);
+                    const rawData = doc.url.substring(commaIdx + 1);
+                    const isBase64 = header.includes(';base64');
+                    const txt = isBase64 ? atob(rawData) : decodeURIComponent(rawData);
+                    if (txt && txt.trim()) {
+                        codeText = txt;
+                    }
+                } catch (decodeErr) {
+                    console.warn('[DocModal] Data URL direct decode error:', decodeErr.message);
+                }
+            }
+
+            if (!codeText || !codeText.trim()) {
+                try {
+                    const response = await documentsAPI.getFileContent(doc.id);
+                    codeText = typeof response.data === 'string' ? response.data : String(response.data || '');
+                } catch (apiErr) {
+                    console.warn('[DocModal] Primary getFileContent failed, attempting fallbacks:', apiErr.message);
+                }
             }
 
             // Fallback 1: Direct fetch via doc.url
             if (!codeText || !codeText.trim()) {
-                if (doc.url) {
+                if (doc.url && !doc.url.startsWith('data:')) {
                     try {
                         const directUrl = doc.url.startsWith('http') || doc.url.startsWith('/') ? doc.url : `/${doc.url}`;
                         const directRes = await fetch(directUrl);
@@ -254,6 +306,7 @@ export default function DocumentCodeBrowserModal({
                 language: lang,
                 documentId: doc.id,
                 folderId: doc.folderId,
+                description: doc.description,
                 createdAt: doc.createdAt,
                 updatedAt: doc.updatedAt || doc.createdAt,
                 asNewTab: true
@@ -279,14 +332,20 @@ export default function DocumentCodeBrowserModal({
         if (e) e.preventDefault();
         if (!editingDoc || !editingName.trim()) return;
 
+        const cleanName = editingName.trim();
+        if (cleanName === (editingDoc.name || editingDoc.fileName)) {
+            setEditingDoc(null);
+            setEditingName('');
+            return;
+        }
+
         if (editDuplicateConflict) {
-            toast.error(`A file named "${editingName.trim()}" already exists in this folder!`);
+            toast.error(`A file named "${cleanName}" already exists in this folder!`);
             return;
         }
 
         setIsSubmittingEdit(true);
         try {
-            const cleanName = editingName.trim();
             const res = await documentsAPI.update(editingDoc.id, {
                 name: cleanName,
                 fileName: cleanName
@@ -305,6 +364,60 @@ export default function DocumentCodeBrowserModal({
             toast.error(err.response?.data?.message || 'Failed to update document name');
         } finally {
             setIsSubmittingEdit(false);
+        }
+    };
+
+    // Handle Inline Rename in Document Browser
+    const handleStartInlineRename = (doc, e) => {
+        if (e) e.stopPropagation();
+        setInlineEditingDocId(doc.id);
+        setInlineRenameText(doc.name || doc.fileName || '');
+    };
+
+    const handleCancelInlineRename = (e) => {
+        if (e) e.stopPropagation();
+        setInlineEditingDocId(null);
+        setInlineRenameText('');
+    };
+
+    const handleSaveInlineRename = async (doc, e) => {
+        if (e) e.stopPropagation();
+        if (!inlineRenameText.trim()) {
+            toast.error('Filename cannot be empty');
+            return;
+        }
+
+        const cleanName = inlineRenameText.trim();
+        if (cleanName === (doc.name || doc.fileName)) {
+            setInlineEditingDocId(null);
+            setInlineRenameText('');
+            return;
+        }
+
+        if (inlineDuplicateConflict) {
+            toast.error(`A file named "${cleanName}" already exists in this folder!`);
+            return;
+        }
+
+        setIsInlineSaving(true);
+        try {
+            await documentsAPI.update(doc.id, {
+                name: cleanName,
+                fileName: cleanName
+            });
+
+            setDocuments((prev) =>
+                prev.map((d) => (d.id === doc.id ? { ...d, name: cleanName, fileName: cleanName, updatedAt: new Date().toISOString() } : d))
+            );
+
+            toast.success(`Renamed file to "${cleanName}"`);
+            setInlineEditingDocId(null);
+            setInlineRenameText('');
+        } catch (err) {
+            console.error('Inline rename error:', err);
+            toast.error(err.response?.data?.message || 'Failed to update document name');
+        } finally {
+            setIsInlineSaving(false);
         }
     };
 
@@ -520,7 +633,11 @@ export default function DocumentCodeBrowserModal({
                                 <div
                                     key={doc.id}
                                     data-doc-row={doc.id}
-                                    className="grid grid-cols-12 gap-2 sm:gap-3 items-center p-2.5 sm:px-3 bg-white hover:bg-amber-50/40 border border-slate-200/90 hover:border-amber-300/80 rounded-xl transition-all shadow-2xs group"
+                                    onClick={(e) => {
+                                        if (e.target.closest('button, input')) return;
+                                        handleSelectDocument(doc, true);
+                                    }}
+                                    className="grid grid-cols-12 gap-2 sm:gap-3 items-center p-2.5 sm:px-3 bg-white hover:bg-amber-50/40 border border-slate-200/90 hover:border-amber-300/80 rounded-xl transition-all shadow-2xs group cursor-pointer"
                                 >
                                     {/* Filename & Icon (col-span-12 sm:col-span-3) */}
                                     <div className="col-span-12 sm:col-span-3 flex items-center gap-2.5 min-w-0">
@@ -533,23 +650,82 @@ export default function DocumentCodeBrowserModal({
                                         >
                                             {isSql ? 'SQL' : 'PY'}
                                         </div>
-                                        <div className="min-w-0">
-                                            <p
-                                                className="text-xs font-bold text-slate-800 truncate group-hover:text-amber-700 transition cursor-pointer"
-                                                onClick={() => handleSelectDocument(doc, true)}
-                                                title={`Click to open ${doc.name || doc.fileName} in new tab`}
-                                            >
-                                                {doc.name || doc.fileName}
-                                            </p>
-                                            {/* Mobile-only secondary info */}
-                                            <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-500 mt-0.5">
-                                                <span className="text-amber-700 font-medium">{folderName}</span>
-                                                <span>•</span>
-                                                <span>{created.date}</span>
-                                                <span>•</span>
-                                                <span className="font-mono text-slate-600">{formatFileSize(doc.fileSize)}</span>
+                                        {inlineEditingDocId === doc.id ? (
+                                            <div className="min-w-0 flex-1" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="text"
+                                                        value={inlineRenameText}
+                                                        onChange={(e) => setInlineRenameText(e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') handleSaveInlineRename(doc, e);
+                                                            if (e.key === 'Escape') handleCancelInlineRename(e);
+                                                        }}
+                                                        autoFocus
+                                                        className={`w-full text-xs font-bold px-2 py-1 rounded border bg-white focus:outline-none focus:ring-2 ${
+                                                            inlineDuplicateConflict
+                                                                ? 'border-rose-400 focus:ring-rose-200 text-rose-700'
+                                                                : 'border-amber-400 focus:ring-amber-200 text-slate-900'
+                                                        }`}
+                                                        placeholder="Filename..."
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        disabled={isInlineSaving || !!inlineDuplicateConflict || !inlineRenameText.trim()}
+                                                        onClick={(e) => handleSaveInlineRename(doc, e)}
+                                                        className="p-1 text-emerald-700 hover:bg-emerald-100 rounded disabled:opacity-40 transition cursor-pointer"
+                                                        title="Save rename (Enter)"
+                                                        aria-label="Save rename"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleCancelInlineRename(e)}
+                                                        className="p-1 text-slate-500 hover:bg-slate-200 rounded transition cursor-pointer"
+                                                        title="Cancel (Esc)"
+                                                        aria-label="Cancel rename"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                                {inlineDuplicateConflict && (
+                                                    <p className="text-[10px] font-semibold text-rose-600 mt-0.5 flex items-center gap-1">
+                                                        <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                                        Duplicate name in folder
+                                                    </p>
+                                                )}
                                             </div>
-                                        </div>
+                                        ) : (
+                                            <div className="min-w-0 flex-1 flex flex-col justify-center">
+                                                <div className="flex items-center gap-1.5 group/fname">
+                                                    <p
+                                                        className="text-xs font-bold text-slate-800 truncate group-hover:text-amber-700 transition cursor-pointer"
+                                                        onClick={() => handleSelectDocument(doc, true)}
+                                                        title={`Click to open ${doc.name || doc.fileName} in new tab`}
+                                                    >
+                                                        {doc.name || doc.fileName}
+                                                    </p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleStartInlineRename(doc, e)}
+                                                        className="p-1 text-slate-400 hover:text-amber-700 rounded transition opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-amber-100/70 cursor-pointer"
+                                                        title="Rename file inline"
+                                                        aria-label="Rename file inline"
+                                                    >
+                                                        <Pencil className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                                {/* Mobile-only secondary info */}
+                                                <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                                                    <span className="text-amber-700 font-medium">{folderName}</span>
+                                                    <span>•</span>
+                                                    <span>{created.date}</span>
+                                                    <span>•</span>
+                                                    <span className="font-mono text-slate-600">{formatFileSize(doc.fileSize)}</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Folder / Type (col-span-2) */}
@@ -582,18 +758,8 @@ export default function DocumentCodeBrowserModal({
                                         </span>
                                     </div>
 
-                                    {/* Action Buttons: Open, Edit, Delete (col-span-2) */}
+                                    {/* Action Buttons: Delete, Open (col-span-2) */}
                                     <div className="col-span-12 sm:col-span-2 flex items-center justify-end gap-1.5">
-                                        {/* Edit Button */}
-                                        <button
-                                            onClick={(e) => handleStartEdit(doc, e)}
-                                            className="p-1.5 rounded-md text-slate-600 hover:text-amber-700 bg-slate-100 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 transition cursor-pointer"
-                                            title="Rename or edit document"
-                                            aria-label="Edit document"
-                                        >
-                                            <Pencil className="w-3.5 h-3.5" />
-                                        </button>
-
                                         {/* Delete Button */}
                                         <button
                                             onClick={(e) => handleStartDelete(doc, e)}

@@ -61,7 +61,7 @@ import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import { useAuthStore } from '@/lib/store';
 import { compilerAPI, documentsAPI, foldersAPI } from '@/lib/api';
-import { generateRelationalErDiagram, generateErDiagramFromSql, generateRelationalErDiagramFromSql } from '@/lib/traditionalGenerators';
+import { generateFlowchartFromCode, generateRelationalErDiagram, generateErDiagramFromSql, generateRelationalErDiagramFromSql } from '@/lib/traditionalGenerators';
 import IDEMenuBar from '@/components/IDEMenuBar';
 import FlowchartVisualCanvas from '@/components/FlowchartVisualCanvas';
 import DocumentCodeBrowserModal from '@/components/DocumentCodeBrowserModal';
@@ -228,6 +228,31 @@ const createDefaultTab = (id, lang = 'python', studentId = 'STU', studentName = 
     };
 };
 
+const getOrCreateDiagramForTab = (tab, liveCode) => {
+    const code = liveCode !== undefined ? liveCode : (tab?.code || '');
+    if (tab?.flowchartData && Array.isArray(tab.flowchartData.nodes) && tab.flowchartData.nodes.length > 0) {
+        return tab.flowchartData;
+    }
+    if (!code || !code.trim()) {
+        return { nodes: [], connectors: [] };
+    }
+    try {
+        const lang = tab?.language || 'python';
+        if (isDatabaseLanguage(lang)) {
+            const rel = generateRelationalErDiagramFromSql(code);
+            if (rel?.nodes?.length > 0) return rel;
+            const chen = generateErDiagramFromSql(code);
+            if (chen?.nodes?.length > 0) return chen;
+        } else {
+            const fc = generateFlowchartFromCode(code, lang);
+            if (fc?.nodes?.length > 0) return fc;
+        }
+    } catch (e) {
+        console.warn('[IDE] Auto diagram generation warning:', e.message);
+    }
+    return { nodes: [], connectors: [] };
+};
+
 function PracticeIDEPage() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -283,6 +308,21 @@ function PracticeIDEPage() {
     // Document Browser & Save As Modals
     const [showDocBrowserModal, setShowDocBrowserModal] = useState(false);
     const [showSaveAsModal, setShowSaveAsModal] = useState(false);
+
+    // File Datetime Info Popover State
+    const [showFileInfoPopover, setShowFileInfoPopover] = useState(false);
+    const fileInfoPopoverRef = useRef(null);
+
+    useEffect(() => {
+        if (!showFileInfoPopover) return;
+        const handleClickOutside = (e) => {
+            if (fileInfoPopoverRef.current && !fileInfoPopoverRef.current.contains(e.target)) {
+                setShowFileInfoPopover(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showFileInfoPopover]);
     const [existingDocs, setExistingDocs] = useState([]);
 
     // Inline Tab Rename State
@@ -582,7 +622,10 @@ function PracticeIDEPage() {
                             ws.tabs.map(async (tab) => {
                                 if (tab.documentId) {
                                     try {
-                                        const docRes = await documentsAPI.getFileContent(tab.documentId);
+                                        const docRes = await Promise.race([
+                                            documentsAPI.getFileContent(tab.documentId),
+                                            new Promise((_, reject) => setTimeout(() => reject(new Error('fetch_timeout')), 2500))
+                                        ]);
                                         const fileContent = typeof docRes.data === 'string' ? docRes.data : String(docRes.data || '');
                                         if (fileContent && fileContent.trim().length > 0) {
                                             return { ...tab, code: fileContent, isDirty: false };
@@ -642,6 +685,11 @@ function PracticeIDEPage() {
                             }
                         }
 
+                        finalTabs = finalTabs.map((t) => ({
+                            ...t,
+                            flowchartData: getOrCreateDiagramForTab(t, t.code)
+                        }));
+
                         setTabs(finalTabs);
                     } else if (ws.pythonCode || ws.sqlCode) {
                         // Legacy single-code upgrade
@@ -671,6 +719,9 @@ function PracticeIDEPage() {
             } finally {
                 if (isMounted) {
                     setIsLoadingWorkspace(false);
+                    if (typeof window !== 'undefined') {
+                        window.__workspaceHydrated = true;
+                    }
                 }
             }
         }
@@ -722,6 +773,7 @@ function PracticeIDEPage() {
                         code: codeText || (isSql ? '-- SQL script\n' : '# Python script\n'),
                         language: lang,
                         documentId: urlDocId,
+                        description: docData?.description,
                         updatedAt: docUpdatedAt,
                         asNewTab: false
                     });
@@ -803,9 +855,21 @@ function PracticeIDEPage() {
                 const fileBlob = new Blob([tabToSave.code || ''], { type: 'text/plain;charset=utf-8' });
                 const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
 
+                const tabDiagram = getOrCreateDiagramForTab(tabToSave, tabToSave.code);
+                const metaPayload = {
+                    summary: `${tabToSave.title || fileName} - Auto-saved program`.trim(),
+                    problemTitle: tabToSave.metadata?.title || tabToSave.title || fileName,
+                    problemDescription: tabToSave.metadata?.description || '',
+                    flowchartData: tabDiagram,
+                    output: tabToSave.output || null,
+                    stdin: tabToSave.stdin || '',
+                    rightPanelMode: rightPanelMode || 'output',
+                    language: tabToSave.language || 'python'
+                };
+
                 const uploadRes = await documentsAPI.upload(fileObj, {
                     name: fileName,
-                    description: `${tabToSave.title || fileName} - Auto-saved program`.trim(),
+                    description: JSON.stringify(metaPayload),
                     category: 'code',
                     folderId: targetFolder?.id,
                     overwrite: true,
@@ -818,17 +882,36 @@ function PracticeIDEPage() {
                 // 3. Update tab with documentId in tabs state and storage immediately without clobbering live code
                 const saveTimestamp = new Date().toISOString();
                 if (newDocId) {
+                    const currentActiveId = activeTabIdRef.current || activeTabId;
+                    const liveCodeNow = (editorRef.current && currentActiveId === tabToSave.id)
+                        ? editorRef.current.getValue()
+                        : ((tabsRef.current || []).find((t) => t.id === tabToSave.id)?.code ?? tabToSave.code);
+                    const userTypedMore = liveCodeNow !== tabToSave.code;
+                    const finalCode = userTypedMore ? liveCodeNow : tabToSave.code;
+
+                    if (userTypedMore && isAutosaveEnabled) {
+                        if (tabAutosaveTimersRef.current[tabToSave.id]) {
+                            clearTimeout(tabAutosaveTimersRef.current[tabToSave.id]);
+                        }
+                        tabAutosaveTimersRef.current[tabToSave.id] = setTimeout(() => {
+                            triggerSaveWorkspace();
+                            delete tabAutosaveTimersRef.current[tabToSave.id];
+                        }, 1200);
+                    }
+
                     if (tabsRef.current) {
                         tabsRef.current = tabsRef.current.map((t) =>
                             t.id === tabToSave.id
                                 ? {
                                       ...t,
                                       filename: fileName,
+                                      code: finalCode,
                                       documentId: newDocId,
                                       folderId: targetFolder?.id,
+                                      flowchartData: tabDiagram,
                                       createdAt: t.createdAt || saveTimestamp,
                                       lastSavedAt: saveTimestamp,
-                                      isDirty: false
+                                      isDirty: userTypedMore
                                   }
                                 : t
                         );
@@ -840,11 +923,13 @@ function PracticeIDEPage() {
                                 ? {
                                       ...t,
                                       filename: fileName,
+                                      code: finalCode,
                                       documentId: newDocId,
                                       folderId: targetFolder?.id,
+                                      flowchartData: tabDiagram,
                                       createdAt: t.createdAt || saveTimestamp,
                                       lastSavedAt: saveTimestamp,
-                                      isDirty: false
+                                      isDirty: userTypedMore
                                   }
                                 : t
                         );
@@ -898,62 +983,110 @@ function PracticeIDEPage() {
                     outputTheme: outputThemeId
                 });
 
-                // 2. If the active tab has a linked document in Documents, auto-sync document file directly when dirty
+                // 2. Auto-sync dirty tabs with linked documents directly to PostgreSQL
+                let documentSyncFailed = false;
                 const currentActiveTab = (tabsRef.current || tabsToSave).find((t) => t.id === activeIdToSave);
-                const liveCode = editorRef.current ? editorRef.current.getValue() : currentActiveTab?.code;
+                const activeLiveCode = (editorRef.current && activeIdToSave === (activeTabIdRef.current || activeTabId))
+                    ? editorRef.current.getValue()
+                    : currentActiveTab?.code;
 
-                if (currentActiveTab?.documentId && currentActiveTab?.isDirty && liveCode && liveCode.trim()) {
-                    try {
-                        const fileBlob = new Blob([liveCode], { type: 'text/plain;charset=utf-8' });
-                        const fileObj = new File([fileBlob], currentActiveTab.filename || 'script.txt', { type: 'text/plain' });
-                        const uploadRes = await documentsAPI.upload(fileObj, {
-                            name: currentActiveTab.filename,
-                            description: `${currentActiveTab.metadata?.title || ''} - ${currentActiveTab.metadata?.description || ''}`.trim(),
-                            category: 'code',
-                            folderId: currentActiveTab.folderId,
-                            overwrite: true,
-                            existingDocumentId: currentActiveTab.documentId
-                        });
+                for (const tab of tabsToSave) {
+                    const isTabActive = tab.id === activeIdToSave;
+                    const tabCode = isTabActive ? activeLiveCode : tab.code;
 
-                        const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
-                        const resolvedDocId = savedDoc?.id || currentActiveTab.documentId;
-                        
-                        // Update tab metadata and code without replacing active code in state to prevent cursor jump!
-                        if (tabsRef.current) {
-                            tabsRef.current = tabsRef.current.map((t) =>
-                                t.id === currentActiveTab.id
-                                    ? { ...t, code: liveCode, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
+                    if (tab.documentId && (tab.isDirty || (isTabActive && tabCode !== tab.code)) && tabCode && tabCode.trim()) {
+                        if (isSavingTabRef.current[tab.id]) continue;
+                        isSavingTabRef.current[tab.id] = true;
+                        try {
+                            const fileBlob = new Blob([tabCode], { type: 'text/plain;charset=utf-8' });
+                            const fileObj = new File([fileBlob], tab.filename || 'script.txt', { type: 'text/plain' });
+                            const tabDiagram = getOrCreateDiagramForTab(tab, tabCode);
+                            const metaPayload = {
+                                summary: `${tab.metadata?.title || tab.title || tab.filename} - Auto-saved program`.trim(),
+                                problemTitle: tab.metadata?.title || tab.title || '',
+                                problemDescription: tab.metadata?.description || '',
+                                flowchartData: tabDiagram,
+                                output: tab.output || null,
+                                stdin: tab.stdin || '',
+                                rightPanelMode: rightPanelMode || 'output',
+                                language: tab.language || 'python'
+                            };
+
+                            const uploadRes = await documentsAPI.upload(fileObj, {
+                                name: tab.filename,
+                                description: JSON.stringify(metaPayload),
+                                category: 'code',
+                                folderId: tab.folderId,
+                                overwrite: true,
+                                existingDocumentId: tab.documentId
+                            });
+
+                            const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
+                            const resolvedDocId = savedDoc?.id || tab.documentId;
+
+                            const liveCodeNow = (editorRef.current && (activeTabIdRef.current || activeTabId) === tab.id)
+                                ? editorRef.current.getValue()
+                                : ((tabsRef.current || []).find((t) => t.id === tab.id)?.code ?? tabCode);
+                            const userTypedMore = liveCodeNow !== tabCode;
+                            const finalCode = userTypedMore ? liveCodeNow : tabCode;
+
+                            if (userTypedMore && isAuto) {
+                                if (tabAutosaveTimersRef.current[tab.id]) {
+                                    clearTimeout(tabAutosaveTimersRef.current[tab.id]);
+                                }
+                                tabAutosaveTimersRef.current[tab.id] = setTimeout(() => {
+                                    triggerSaveWorkspace();
+                                    delete tabAutosaveTimersRef.current[tab.id];
+                                }, 1200);
+                            }
+
+                            if (tabsRef.current) {
+                                tabsRef.current = tabsRef.current.map((t) =>
+                                    t.id === tab.id
+                                    ? { ...t, code: finalCode, documentId: resolvedDocId, flowchartData: tabDiagram, isDirty: userTypedMore, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
                                     : t
+                                );
+                            }
+                            setTabs((prevTabs) =>
+                                prevTabs.map((t) =>
+                                    t.id === tab.id
+                                    ? { ...t, code: finalCode, documentId: resolvedDocId, flowchartData: tabDiagram, isDirty: userTypedMore, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
+                                    : t
+                                )
                             );
+                        } catch (docSyncErr) {
+                            console.warn('[Autosave] Document sync error:', docSyncErr.message);
+                            documentSyncFailed = true;
+                        } finally {
+                            delete isSavingTabRef.current[tab.id];
                         }
-                        setTabs((prevTabs) =>
-                            prevTabs.map((t) =>
-                                t.id === currentActiveTab.id
-                                    ? { ...t, code: liveCode, documentId: resolvedDocId, isDirty: false, lastSavedAt: nowIso, createdAt: t.createdAt || nowIso }
-                                    : t
-                            )
-                        );
-
-                        loadExistingDocs();
-                    } catch (docSyncErr) {
-                        console.warn('[Autosave] Document sync notice:', docSyncErr.message);
+                    } else if (isTabActive && !tab.documentId && tabCode && tabCode.trim() && isAuto) {
+                        await saveProgramToAppropriateFolder({ ...tab, code: tabCode });
                     }
-                } else if (currentActiveTab && !currentActiveTab.documentId && liveCode && liveCode.trim()) {
-                    // Automatically save new program to folder if it has no linked document
-                    await saveProgramToAppropriateFolder({ ...currentActiveTab, code: liveCode });
                 }
 
-                setLastAutosavedAt(nowIso);
-                setAutosaveStatus('saved');
-                setAutosaveFlash({ visible: true, status: 'saved', text: 'Autosaved' });
+                loadExistingDocs();
+
+                if (!documentSyncFailed) {
+                    setLastAutosavedAt(nowIso);
+                    setAutosaveStatus('saved');
+                    setAutosaveFlash({ visible: true, status: 'saved', text: 'Autosaved' });
+                } else {
+                    setAutosaveStatus('error');
+                    setAutosaveFlash({ visible: true, status: 'error', text: 'Save failed' });
+                }
                 if (autosaveFlashTimerRef.current) clearTimeout(autosaveFlashTimerRef.current);
                 autosaveFlashTimerRef.current = setTimeout(() => {
                     setAutosaveFlash({ visible: false, status: 'saved', text: '' });
                 }, 2500);
             } catch (e) {
                 console.warn('[Autosave] Workspace save notice:', e.message);
-                setAutosaveStatus('saved');
-                setAutosaveFlash({ visible: false, status: 'saved', text: '' });
+                setAutosaveStatus('error');
+                setAutosaveFlash({ visible: true, status: 'error', text: 'Save error' });
+                if (autosaveFlashTimerRef.current) clearTimeout(autosaveFlashTimerRef.current);
+                autosaveFlashTimerRef.current = setTimeout(() => {
+                    setAutosaveFlash({ visible: false, status: 'saved', text: '' });
+                }, 2500);
             }
         },
         [isAutosaveEnabled, editorTheme, outputThemeId, user?.id, inspectingStudentId, loadExistingDocs, saveProgramToAppropriateFolder]
@@ -1065,8 +1198,19 @@ Date:          ${dateStr}
         newTab.filename = `program ${nextNum}.${isSql ? 'sql' : 'py'}`;
 
         const updatedTabs = [...currentTabs, newTab];
+        tabsRef.current = updatedTabs;
         setTabs(updatedTabs);
         setActiveTabId(newId);
+        activeTabIdRef.current = newId;
+
+        if (editorRef.current) {
+            isProgrammaticUpdateRef.current = true;
+            editorRef.current.setValue(newTab.code || '');
+            setTimeout(() => {
+                isProgrammaticUpdateRef.current = false;
+            }, 100);
+        }
+
         triggerSaveWorkspace(updatedTabs, newId);
         toast.success(`Created program ${nextNum} (${isSql ? 'SQL' : 'Python'})`);
     };
@@ -1211,8 +1355,9 @@ Date:          ${dateStr}
         toast.success(`Opened "${snippetLabel}" in new tab!`, { icon: '✨' });
     };
 
-    const handleCloseTab = (tabIdToClose, e) => {
+    const handleCloseTab = async (tabIdToClose, e) => {
         if (e) e.stopPropagation();
+        console.log('[handleCloseTab] Starting close for tabId:', tabIdToClose);
         const currentTabs = tabsRef.current || tabs;
         if (currentTabs.length <= 1) {
             toast.error('At least one tab must remain open.');
@@ -1220,11 +1365,67 @@ Date:          ${dateStr}
         }
 
         const tabToClose = currentTabs.find((t) => t.id === tabIdToClose);
-        if (tabToClose?.isDirty && !isAutosaveEnabled) {
+        if (!tabToClose) {
+            console.warn('[handleCloseTab] tabToClose not found in currentTabs:', tabIdToClose, currentTabs.map(t => t.id));
+            return;
+        }
+
+        if (tabToClose.isDirty && !isAutosaveEnabled) {
+            console.log('[handleCloseTab] Tab is dirty without autosave. Showing confirmation.');
             setTabToCloseConfirm(tabToClose);
             return;
         }
 
+        // Cancel pending debounced timer for this tab
+        if (tabAutosaveTimersRef.current[tabIdToClose]) {
+            clearTimeout(tabAutosaveTimersRef.current[tabIdToClose]);
+            delete tabAutosaveTimersRef.current[tabIdToClose];
+        }
+
+        const curActiveId = activeTabIdRef.current || activeTabId;
+        // Get latest editor code if closing active tab
+        const liveCode = (curActiveId === tabIdToClose && editorRef.current)
+            ? editorRef.current.getValue()
+            : (tabToClose.code || '');
+
+        // Persist code before closing tab so changes are never lost
+        if (tabToClose.documentId && liveCode && liveCode.trim()) {
+            try {
+                console.log('[handleCloseTab] Syncing document before close:', tabToClose.filename);
+                const fileBlob = new Blob([liveCode], { type: 'text/plain;charset=utf-8' });
+                const fileObj = new File([fileBlob], tabToClose.filename || 'script.txt', { type: 'text/plain' });
+                const tabDiagram = getOrCreateDiagramForTab(tabToClose, liveCode);
+                const metaPayload = {
+                    summary: `${tabToClose.metadata?.title || tabToClose.title || tabToClose.filename} - Auto-saved program`.trim(),
+                    problemTitle: tabToClose.metadata?.title || tabToClose.title || '',
+                    problemDescription: tabToClose.metadata?.description || '',
+                    flowchartData: tabDiagram,
+                    output: tabToClose.output || null,
+                    stdin: tabToClose.stdin || '',
+                    rightPanelMode: rightPanelMode || 'output',
+                    language: tabToClose.language || 'python'
+                };
+                await documentsAPI.upload(fileObj, {
+                    name: tabToClose.filename,
+                    description: JSON.stringify(metaPayload),
+                    category: 'code',
+                    folderId: tabToClose.folderId,
+                    overwrite: true,
+                    existingDocumentId: tabToClose.documentId
+                });
+            } catch (err) {
+                console.warn('[handleCloseTab] Failed to sync document before closing:', err.message);
+            }
+        } else if (!tabToClose.documentId && liveCode && liveCode.trim() && isAutosaveEnabled) {
+            try {
+                console.log('[handleCloseTab] Saving program to folder before close:', tabToClose.filename);
+                await saveProgramToAppropriateFolder({ ...tabToClose, code: liveCode });
+            } catch (err) {
+                console.warn('[handleCloseTab] Failed to save program to folder before closing:', err.message);
+            }
+        }
+
+        console.log('[handleCloseTab] Now calling executeCloseTab for:', tabIdToClose);
         executeCloseTab(tabIdToClose);
     };
 
@@ -1251,10 +1452,12 @@ Date:          ${dateStr}
     };
 
     const executeCloseTab = (tabIdToClose) => {
+        console.log('[executeCloseTab] Closing tabId:', tabIdToClose);
         const currentTabs = tabsRef.current || tabs;
         const updatedTabs = currentTabs.filter((t) => t.id !== tabIdToClose);
-        let nextActiveId = activeTabId;
-        if (activeTabId === tabIdToClose) {
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        let nextActiveId = currentActiveId;
+        if (currentActiveId === tabIdToClose) {
             nextActiveId = updatedTabs[0]?.id || '';
             setActiveTabId(nextActiveId);
             activeTabIdRef.current = nextActiveId;
@@ -1453,13 +1656,15 @@ Date:          ${dateStr}
                 const resData = response.data.data;
 
                 // Update active tab output (and stdin if overridden)
-                setTabs((prevTabs) =>
-                    prevTabs.map((t) => ((t.id === currentActiveId || t.id === activeTab.id) ? {
+                setTabs((prevTabs) => {
+                    const nextTabs = prevTabs.map((t) => ((t.id === currentActiveId || t.id === activeTab.id) ? {
                         ...t,
                         stdin: typeof overrideStdin === 'string' ? overrideStdin : t.stdin,
                         output: resData
-                    } : t))
-                );
+                    } : t));
+                    tabsRef.current = nextTabs;
+                    return nextTabs;
+                });
 
                 if (resData.existingTables) {
                     setExistingTables(resData.existingTables);
@@ -1473,8 +1678,8 @@ Date:          ${dateStr}
             }
         } catch (err) {
             const errMsg = err.response?.data?.message || err.message || 'Execution failed';
-            setTabs((prevTabs) =>
-                prevTabs.map((t) =>
+            setTabs((prevTabs) => {
+                const nextTabs = prevTabs.map((t) =>
                     (t.id === currentActiveId || t.id === activeTab.id)
                         ? {
                               ...t,
@@ -1482,8 +1687,10 @@ Date:          ${dateStr}
                               output: { stdout: '', stderr: errMsg, exitCode: 1, durationMs: 0 }
                           }
                         : t
-                )
-            );
+                );
+                tabsRef.current = nextTabs;
+                return nextTabs;
+            });
             toast.error(errMsg);
         } finally {
             setIsExecuting(false);
@@ -1565,6 +1772,27 @@ Date:          ${dateStr}
     const executeSaveToDocuments = async ({ fileName, folderName, language, problemTitle, problemDescription }) => {
         const toastId = toast.loading(`Saving "${fileName}" to Documents...`);
 
+        // Synchronously capture target tab, tab ID, and live code BEFORE any async network yields
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        const currentTabs = tabsRef.current || tabs;
+        const targetTab = currentTabs.find((t) => t.id === currentActiveId) || activeTab;
+        const targetTabId = targetTab?.id;
+        const currentCode = (editorRef.current && (activeTabIdRef.current || activeTabId) === targetTabId)
+            ? editorRef.current.getValue()
+            : (targetTab?.code ?? '');
+
+        if (targetTabId) {
+            if (tabAutosaveTimersRef.current[targetTabId]) {
+                clearTimeout(tabAutosaveTimersRef.current[targetTabId]);
+                delete tabAutosaveTimersRef.current[targetTabId];
+            }
+            if (isSavingTabRef.current[targetTabId]) {
+                toast.error('A save operation is already in progress for this file.', { id: toastId });
+                return null;
+            }
+            isSavingTabRef.current[targetTabId] = true;
+        }
+
         try {
             // 1. Resolve or Create Main Folder "Coding files" and Subfolder ("Python" or "SQL")
             const targetFolderName = folderName || (language === 'sql' ? 'SQL' : 'Python');
@@ -1609,82 +1837,118 @@ Date:          ${dateStr}
                 }
             }
 
-            // 2. Upload file
-            const currentCode = (editorRef.current ? editorRef.current.getValue() : null) ?? activeTab.code ?? '';
+            // 2. Upload file with captured code and full associated IDE bundle (diagram, output, stdin)
             const fileBlob = new Blob([currentCode], { type: 'text/plain;charset=utf-8' });
             const fileObj = new File([fileBlob], fileName, { type: 'text/plain' });
 
+            const tabDiagram = getOrCreateDiagramForTab(targetTab, currentCode);
+            const metaPayload = {
+                summary: `${problemTitle || ''} - ${problemDescription || ''}`.trim(),
+                problemTitle: problemTitle || targetTab?.metadata?.title || targetTab?.title || '',
+                problemDescription: problemDescription !== undefined ? problemDescription : targetTab?.metadata?.description || '',
+                flowchartData: tabDiagram,
+                output: targetTab?.output || null,
+                stdin: targetTab?.stdin || '',
+                rightPanelMode: rightPanelMode || 'output',
+                language: language || targetTab?.language || 'python'
+            };
+
             const uploadRes = await documentsAPI.upload(fileObj, {
                 name: fileName,
-                description: `${problemTitle || ''} - ${problemDescription || ''}`.trim(),
+                description: JSON.stringify(metaPayload),
                 category: 'code',
                 folderId: targetFolder?.id,
                 overwrite: true,
-                existingDocumentId: activeTab.documentId || undefined
+                existingDocumentId: targetTab?.documentId || undefined
             });
 
             const savedDoc = uploadRes.data?.data?.document || uploadRes.data?.data;
-            const newDocId = savedDoc?.id || activeTab.documentId;
+            const newDocId = savedDoc?.id || targetTab?.documentId;
 
-            // 3. Mark active tab clean and update metadata
-            const currentTabs = tabsRef.current || tabs;
-            const nextTabs = currentTabs.map((t) =>
-                t.id === activeTabId
+            // 3. Mark active tab clean and update metadata using captured targetTabId without clobbering faster live typing
+            const liveCodeNow = (editorRef.current && (activeTabIdRef.current || activeTabId) === targetTabId)
+                ? editorRef.current.getValue()
+                : ((tabsRef.current || []).find((t) => t.id === targetTabId)?.code ?? currentCode);
+            const userTypedMore = liveCodeNow !== currentCode;
+            const finalCode = userTypedMore ? liveCodeNow : currentCode;
+
+            if (userTypedMore && isAutosaveEnabled) {
+                if (tabAutosaveTimersRef.current[targetTabId]) {
+                    clearTimeout(tabAutosaveTimersRef.current[targetTabId]);
+                }
+                tabAutosaveTimersRef.current[targetTabId] = setTimeout(() => {
+                    triggerSaveWorkspace();
+                    delete tabAutosaveTimersRef.current[targetTabId];
+                }, 1200);
+            }
+
+            const nowTabs = tabsRef.current || tabs;
+            const nextTabs = nowTabs.map((t) =>
+                t.id === targetTabId
                     ? {
                           ...t,
                           filename: fileName,
                           language: language || t.language,
                           title: problemTitle || t.title,
-                          code: currentCode,
+                          code: finalCode,
                           documentId: newDocId,
                           folderId: targetFolder?.id,
+                          flowchartData: tabDiagram,
                           metadata: {
                               ...t.metadata,
                               title: problemTitle || t.metadata?.title || '',
                               description: problemDescription !== undefined ? problemDescription : t.metadata?.description || ''
                           },
-                          isDirty: false,
+                          isDirty: userTypedMore,
                           lastSavedAt: new Date().toISOString()
                       }
                     : t
             );
             tabsRef.current = nextTabs;
             setTabs(nextTabs);
-            triggerSaveWorkspace(nextTabs, activeTabId);
+            await triggerSaveWorkspace(nextTabs, activeTabIdRef.current || activeTabId);
 
             toast.success(`Saved to Documents / ${targetFolderName} / ${fileName}!`, { id: toastId });
             loadExistingDocs();
+            return savedDoc;
         } catch (err) {
             console.error('Save to documents error:', err);
             toast.error('Failed to save to Documents: ' + (err.response?.data?.message || err.message), { id: toastId });
             throw err;
+        } finally {
+            if (targetTabId) {
+                delete isSavingTabRef.current[targetTabId];
+            }
         }
     };
 
-    const handleSaveToDocuments = (openAsDialog = false) => {
+    const handleSaveToDocuments = async (openAsDialog = false) => {
         loadExistingDocs();
+        const currentActiveId = activeTabIdRef.current || activeTabId;
+        const currentTab = (tabsRef.current || tabs).find((t) => t.id === currentActiveId) || activeTab;
+
         // If explicitly requested via Save As or if no filename exists
-        if (openAsDialog || !activeTab.filename) {
+        if (openAsDialog || !currentTab?.filename) {
             setShowSaveAsModal(true);
-            return;
+            return null;
         }
 
         // Direct quick-save with existing filename
-        const ext = activeTab.language === 'sql' ? 'sql' : 'py';
-        const folder = activeTab.language === 'sql' ? 'SQL' : 'Python';
-        const fileName = activeTab.filename.endsWith(`.${ext}`) ? activeTab.filename : `${activeTab.filename}.${ext}`;
+        const ext = currentTab.language === 'sql' ? 'sql' : 'py';
+        const folder = currentTab.language === 'sql' ? 'SQL' : 'Python';
+        const fileName = currentTab.filename.endsWith(`.${ext}`) ? currentTab.filename : `${currentTab.filename}.${ext}`;
 
-        executeSaveToDocuments({
+        return await executeSaveToDocuments({
             fileName,
             folderName: folder,
-            language: activeTab.language,
-            problemTitle: activeTab.title || activeTab.filename,
-            problemDescription: activeTab.metadata?.description || ''
+            language: currentTab.language,
+            problemTitle: currentTab.title || currentTab.filename,
+            problemDescription: currentTab.metadata?.description || ''
         });
     };
 
     // 7. Open Document from Browser into Tab (Switches to existing tab if already open, loads into pristine empty tab, or opens in a NEW tab)
-    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, createdAt, updatedAt }) => {
+    const handleOpenDocumentContent = ({ name, code, language: docLang, asNewTab, docId, documentId, folderId, description, createdAt, updatedAt }) => {
         const resolvedDocId = docId || documentId || null;
         const currentTabs = tabsRef.current || tabs;
         const safeCode = typeof code === 'string' && code.length > 0 ? code : (docLang === 'sql' ? '-- SQL script\n' : '# Python script\n');
@@ -1695,6 +1959,48 @@ Date:          ${dateStr}
         const savedTimeStr = updatedAt
             ? `(Last saved: ${new Date(updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at ${new Date(updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`
             : '';
+
+        // Parse saved metadata bundle from document description if present
+        let metaObj = null;
+        if (description) {
+            try {
+                const parsed = typeof description === 'string' ? JSON.parse(description) : description;
+                if (parsed && typeof parsed === 'object') {
+                    metaObj = parsed;
+                }
+            } catch (_) {}
+        }
+
+        // 1. Resolve flowchart / ER diagram: use saved diagram, or auto-generate if missing
+        let resolvedFlowchart = metaObj?.flowchartData || null;
+        if (!resolvedFlowchart || !Array.isArray(resolvedFlowchart.nodes) || resolvedFlowchart.nodes.length === 0) {
+            if (safeCode && safeCode.trim()) {
+                try {
+                    if (docLang === 'sql' || isDatabaseLanguage(docLang)) {
+                        resolvedFlowchart = generateRelationalErDiagramFromSql(safeCode);
+                        if (!resolvedFlowchart?.nodes?.length) {
+                            resolvedFlowchart = generateErDiagramFromSql(safeCode);
+                        }
+                    } else {
+                        resolvedFlowchart = generateFlowchartFromCode(safeCode, docLang || 'python');
+                    }
+                } catch (genErr) {
+                    console.warn('[IDE] Diagram auto-generation fallback warning:', genErr.message);
+                }
+            }
+        }
+        if (!resolvedFlowchart || !Array.isArray(resolvedFlowchart.nodes)) {
+            resolvedFlowchart = { nodes: [], connectors: [] };
+        }
+
+        // 2. Resolve output and stdin
+        const resolvedOutput = metaObj?.output || null;
+        const resolvedStdin = metaObj?.stdin !== undefined ? metaObj.stdin : '';
+        const resolvedPanelMode = metaObj?.rightPanelMode || (resolvedFlowchart.nodes.length > 0 ? 'diagram' : 'output');
+
+        if (resolvedPanelMode) {
+            setRightPanelMode(resolvedPanelMode);
+        }
 
         // 1. If this document is ALREADY open in an existing tab, update it and switch to it!
         const existingTab = currentTabs.find(
@@ -1724,6 +2030,9 @@ Date:          ${dateStr}
                           folderId: folderId || t.folderId,
                           createdAt: t.createdAt || fileCreatedAt,
                           lastSavedAt: fileUpdatedAt,
+                          flowchartData: resolvedFlowchart.nodes.length > 0 ? resolvedFlowchart : (t.flowchartData || { nodes: [], connectors: [] }),
+                          output: resolvedOutput !== null ? resolvedOutput : t.output,
+                          stdin: resolvedStdin !== '' ? resolvedStdin : t.stdin,
                           isDirty: false
                       }
                     : t
@@ -1767,10 +2076,14 @@ Date:          ${dateStr}
                           folderId: folderId || t.folderId,
                           createdAt: fileCreatedAt,
                           lastSavedAt: fileUpdatedAt,
+                          flowchartData: resolvedFlowchart,
+                          output: resolvedOutput,
+                          stdin: resolvedStdin,
                           isDirty: false,
                           metadata: {
                               ...t.metadata,
-                              title: name.replace(/\.(py|sql)$/i, '')
+                              title: metaObj?.problemTitle || name.replace(/\.(py|sql)$/i, ''),
+                              description: metaObj?.problemDescription || t.metadata?.description || ''
                           }
                       }
                     : t
@@ -1797,8 +2110,12 @@ Date:          ${dateStr}
         newTab.folderId = folderId || newTab.folderId;
         newTab.createdAt = fileCreatedAt;
         newTab.lastSavedAt = fileUpdatedAt;
+        newTab.flowchartData = resolvedFlowchart;
+        newTab.output = resolvedOutput;
+        newTab.stdin = resolvedStdin;
         newTab.isDirty = false;
-        newTab.metadata.title = newTab.title;
+        newTab.metadata.title = metaObj?.problemTitle || newTab.title;
+        newTab.metadata.description = metaObj?.problemDescription || '';
 
         const updatedTabs = [...currentTabs, newTab];
         tabsRef.current = updatedTabs;
@@ -1961,7 +2278,7 @@ Date:          ${dateStr}
             {/* 1. TOP DESKTOP-GRADE IDE MENU BAR */}
             <IDEMenuBar
                 activeTab={activeTab}
-                onNewTab={() => handleAddTab()}
+                onNewTab={(lang) => handleAddTab(lang)}
                 onOpenFromDocuments={() => setShowDocBrowserModal(true)}
                 onSaveToDocuments={() => handleSaveToDocuments(false)}
                 onSaveAs={() => handleSaveToDocuments(true)}
@@ -2158,39 +2475,6 @@ Date:          ${dateStr}
                             </div>
                         );
                     })}
-
-                    {/* Add New Tab Buttons (Python and SQL) */}
-                    {tabs.length < 5 ? (
-                        <div className="flex items-center gap-1.5 ml-2">
-                            <button
-                                onClick={() => handleAddTab('python')}
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer border ${
-                                    isLightMode
-                                        ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 shadow-xs'
-                                        : 'bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border-amber-700/60'
-                                }`}
-                                title="Open New Python Script (.py)"
-                            >
-                                <Plus className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                                <span>+ Python</span>
-                            </button>
-
-                            <button
-                                onClick={() => handleAddTab('sql')}
-                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition cursor-pointer border ${
-                                    isLightMode
-                                        ? 'bg-sky-100 hover:bg-sky-200 text-sky-900 border-sky-300 shadow-xs'
-                                        : 'bg-sky-950/60 hover:bg-sky-900/80 text-sky-300 border-sky-700/60'
-                                }`}
-                                title="Open New SQL Database Query (.sql)"
-                            >
-                                <Plus className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                                <span>+ SQL</span>
-                            </button>
-                        </div>
-                    ) : (
-                        <span className="text-[10px] text-slate-400 ml-2 italic">Max 5 Tabs Open</span>
-                    )}
                 </div>
             </div>
 
@@ -2269,9 +2553,9 @@ Date:          ${dateStr}
                         : 'hidden lg:flex lg:h-full lg:border-r'
                 } ${isLightMode ? 'bg-white border-slate-200' : 'bg-slate-950 border-slate-800'}`}>
                     {/* ERGONOMIC SUB-TOOLBAR DIRECTLY ABOVE EDITOR */}
-                    <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full overflow-hidden ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
+                    <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full relative z-20 overflow-visible ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         {/* Left: Language Badge & Autosave Status */}
-                        <div className="flex items-center gap-2 min-w-0 flex-1 truncate">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 relative overflow-visible">
                             <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
                                 isLightMode
                                     ? 'bg-slate-100 border-slate-300 text-slate-700'
@@ -2281,26 +2565,41 @@ Date:          ${dateStr}
                             </span>
 
                             {/* File Datetime & Sync Information Tooltip */}
-                            <div className="relative group/fileinfo">
+                            <div className="relative group/fileinfo" ref={fileInfoPopoverRef}>
                                 <button
                                     type="button"
                                     data-testid="file-info-btn"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowFileInfoPopover((v) => !v);
+                                    }}
                                     className={`p-1 rounded-md text-xs transition cursor-pointer flex items-center justify-center ${
-                                        isLightMode
+                                        showFileInfoPopover
+                                            ? isLightMode
+                                                ? 'text-amber-800 bg-amber-100/90 border border-amber-300'
+                                                : 'text-amber-300 bg-slate-800 border border-amber-600/40'
+                                            : isLightMode
                                             ? 'text-slate-500 hover:text-amber-700 hover:bg-slate-200/70'
                                             : 'text-slate-400 hover:text-amber-400 hover:bg-slate-800'
                                     }`}
-                                    title="View file creation & update timestamps"
+                                    title="Click or hover to view file creation & update timestamps"
                                     aria-label="View file creation and update timestamps"
                                 >
                                     <Info className="w-3.5 h-3.5" />
                                 </button>
 
-                                {/* Tooltip Card */}
-                                <div className="absolute left-0 top-full mt-1.5 hidden group-hover/fileinfo:flex flex-col z-50 w-72 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl text-[11px] text-slate-700 dark:text-slate-200 pointer-events-none animate-in fade-in duration-150">
-                                    <div className="font-bold text-xs text-slate-900 dark:text-white truncate border-b border-slate-100 dark:border-slate-800 pb-1.5 mb-2 flex items-center gap-1.5">
-                                        <FileCode className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                        <span className="truncate">{activeTab.filename || `${activeTab.title}.${activeTab.language === 'sql' ? 'sql' : 'py'}`}</span>
+                                {/* Tooltip / Popover Card */}
+                                <div className={`absolute left-0 top-full mt-1.5 z-50 w-76 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl text-[11px] text-slate-700 dark:text-slate-200 animate-in fade-in duration-150 ${
+                                    showFileInfoPopover ? 'flex flex-col' : 'hidden group-hover/fileinfo:flex flex-col'
+                                }`}>
+                                    <div className="font-bold text-xs text-slate-900 dark:text-white truncate border-b border-slate-100 dark:border-slate-800 pb-1.5 mb-2 flex items-center justify-between gap-1.5">
+                                        <div className="flex items-center gap-1.5 min-w-0">
+                                            <FileCode className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                            <span className="truncate">{activeTab.filename || `${activeTab.title}.${activeTab.language === 'sql' ? 'sql' : 'py'}`}</span>
+                                        </div>
+                                        <span className="text-[9px] font-mono text-slate-400 shrink-0">
+                                            {activeTab.language === 'sql' ? 'SQL' : 'Python'}
+                                        </span>
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -3147,20 +3446,23 @@ Date:          ${dateStr}
                     {rightPanelMode === 'diagram' && (
                         <div className="flex-1 h-full w-full overflow-hidden">
                             <FlowchartVisualCanvas
+                                key={activeTab.id}
                                 initialData={activeTab.flowchartData}
                                 onChange={(canvasState) => {
-                                    setTabs((prevTabs) =>
-                                        prevTabs.map((t) =>
-                                            t.id === activeTabId
+                                    setTabs((prevTabs) => {
+                                        const nextTabs = prevTabs.map((t) =>
+                                            t.id === (activeTabIdRef.current || activeTabId)
                                                 ? { ...t, flowchartData: canvasState }
                                                 : t
-                                        )
-                                    );
+                                        );
+                                        tabsRef.current = nextTabs;
+                                        return nextTabs;
+                                    });
                                 }}
                                 readOnly={Boolean(inspectingStudentId)}
                                 theme={isLightMode ? 'light' : 'dark'}
                                 language={activeTab.language}
-                                activeCode={activeTab.code || ''}
+                                activeCode={(editorRef.current && activeTabId === activeTab.id) ? editorRef.current.getValue() : (activeTab.code || '')}
                                 onInsertSqlDdl={(sqlCode) => {
                                     if (isDatabaseLanguage(activeTab.language)) {
                                         const newCode = activeTab.code?.trim() ? `${activeTab.code.trim()}\n\n${sqlCode}` : sqlCode;

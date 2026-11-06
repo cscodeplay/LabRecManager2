@@ -234,6 +234,7 @@ export default function FlowchartVisualCanvas({
     const [selectedNodeIds, setSelectedNodeIds] = useState([]);
     const selectedNodeId = selectedNodeIds[0] || null; // Primary selected node
     const [selectedConnectorId, setSelectedConnectorId] = useState(null);
+    const [hoveredConnectorId, setHoveredConnectorId] = useState(null);
     const [hoveredNodeId, setHoveredNodeId] = useState(null);
     const [hoveredPortInfo, setHoveredPortInfo] = useState(null); // { nodeId, port }
 
@@ -319,11 +320,9 @@ export default function FlowchartVisualCanvas({
             isLocalUpdateRef.current = false;
             return;
         }
-        if (initialData && Array.isArray(initialData.nodes)) {
-            setNodes(initialData.nodes);
-        }
-        if (initialData && Array.isArray(initialData.connectors)) {
-            setConnectors(initialData.connectors);
+        if (initialData) {
+            setNodes(Array.isArray(initialData.nodes) ? initialData.nodes : []);
+            setConnectors(Array.isArray(initialData.connectors) ? initialData.connectors : []);
         }
     }, [initialData]);
 
@@ -1033,13 +1032,14 @@ export default function FlowchartVisualCanvas({
         notifyChange(nextNodes, connectors);
     };
 
-    // Double-click connector pill to edit label
-    const handleConnectorPillDoubleClick = (e, conn) => {
+    // Click or double-click connector pill to edit label
+    const handleConnectorPillClick = (e, conn) => {
         e.stopPropagation();
         if (readOnly) return;
         setEditingConnectorId(conn.id);
         setEditingConnectorLabel(conn.label || '');
     };
+    const handleConnectorPillDoubleClick = handleConnectorPillClick;
 
     const handleSaveConnectorLabel = () => {
         if (!editingConnectorId) return;
@@ -1051,15 +1051,16 @@ export default function FlowchartVisualCanvas({
         notifyChange(nodes, nextConns);
     };
 
-    // Quick tag cardinality on selected connector
-    const handleSetConnectorCardinality = (tag) => {
-        if (!selectedConnectorId) return;
+    // Quick tag label/cardinality on connector
+    const handleSetConnectorCardinality = (tag, targetId = null) => {
+        const idToUpdate = targetId || editingConnectorId || selectedConnectorId;
+        if (!idToUpdate) return;
         const nextConns = connectors.map((c) =>
-            c.id === selectedConnectorId ? { ...c, label: tag } : c
+            c.id === idToUpdate ? { ...c, label: tag } : c
         );
         setConnectors(nextConns);
         notifyChange(nodes, nextConns);
-        toast.success(`Set cardinality to "${tag}"`);
+        toast.success(`Set connector label to "${tag}"`);
     };
 
     // Clear entire canvas (Trigger styled modal)
@@ -1755,8 +1756,8 @@ export default function FlowchartVisualCanvas({
                 </div>
             </div>
 
-            {/* Sub-Bar: Selected Connector Cardinality Quick-Tagger */}
-            {selectedConnectorId && (
+            {/* Sub-Bar: Selected Connector Cardinality Quick-Tagger (ER Diagram Mode Only - Hidden in Flowchart Designer) */}
+            {selectedConnectorId && isErMode && (
                 <div
                     className={`px-3 py-1.5 border-b flex flex-wrap items-center justify-between text-xs z-10 ${
                         isLight ? 'bg-amber-50/90 border-amber-200 text-amber-900' : 'bg-amber-950/60 border-amber-800 text-amber-200'
@@ -2011,7 +2012,12 @@ export default function FlowchartVisualCanvas({
                             const data = getConnectorPathData(conn);
                             if (!data) return null;
                             const isSelected = selectedConnectorId === conn.id;
+                            const isHovered = hoveredConnectorId === conn.id;
                             const showArrow = !isErMode || Boolean(conn.label);
+                            const shouldShowPill = Boolean(conn.label) || isHovered || isSelected;
+                            const isPlaceholder = !conn.label;
+                            const labelText = conn.label || (isErMode ? '+ Tag' : '+ Label');
+                            const pillWidth = conn.label ? Math.max(conn.label.length * 8 + 18, 44) : 54;
 
                             return (
                                 <g
@@ -2026,6 +2032,8 @@ export default function FlowchartVisualCanvas({
                                         setSelectedConnectorId(conn.id);
                                         setSelectedNodeIds([]);
                                     }}
+                                    onMouseEnter={() => setHoveredConnectorId(conn.id)}
+                                    onMouseLeave={() => setHoveredConnectorId((prev) => (prev === conn.id ? null : prev))}
                                     onContextMenu={(e) => handleContextMenu(e, 'connector', conn.id)}
                                     className="cursor-pointer group"
                                 >
@@ -2067,17 +2075,18 @@ export default function FlowchartVisualCanvas({
                                         className="group-hover:stroke-amber-400 transition-colors"
                                     />
 
-                                    {/* Midpoint Cardinality / Label Pill */}
-                                    {conn.label && (
+                                    {/* Midpoint Label Pill - Appears on Hover, Selection, or when Label exists; Editable on Click */}
+                                    {shouldShowPill && (
                                         <g
                                             transform={`translate(${data.midX}, ${data.midY})`}
+                                            onClick={(e) => handleConnectorPillClick(e, conn)}
                                             onDoubleClick={(e) => handleConnectorPillDoubleClick(e, conn)}
-                                            className="cursor-pointer"
+                                            className="cursor-pointer group/pill"
                                         >
                                             <rect
-                                                x={-(conn.label.length * 4.5 + 10)}
+                                                x={-(pillWidth / 2)}
                                                 y={-11}
-                                                width={conn.label.length * 9 + 20}
+                                                width={pillWidth}
                                                 height={22}
                                                 rx={11}
                                                 ry={11}
@@ -2086,6 +2095,10 @@ export default function FlowchartVisualCanvas({
                                                         ? isLight
                                                             ? '#fef9c3'
                                                             : '#713f12'
+                                                        : isPlaceholder
+                                                        ? isLight
+                                                            ? '#f8fafc'
+                                                            : '#1e293b'
                                                         : isLight
                                                         ? '#ffffff'
                                                         : '#1e293b'
@@ -2093,12 +2106,17 @@ export default function FlowchartVisualCanvas({
                                                 stroke={
                                                     isSelected
                                                         ? '#eab308'
+                                                        : isPlaceholder
+                                                        ? isLight
+                                                            ? '#94a3b8'
+                                                            : '#64748b'
                                                         : isLight
                                                         ? '#cbd5e1'
                                                         : '#475569'
                                                 }
                                                 strokeWidth={1.5}
-                                                className="drop-shadow-sm group-hover:stroke-amber-400 transition-colors"
+                                                strokeDasharray={isPlaceholder ? '3,2' : undefined}
+                                                className="drop-shadow-sm group-hover/pill:stroke-amber-500 transition-colors"
                                             />
                                             <text
                                                 textAnchor="middle"
@@ -2108,15 +2126,19 @@ export default function FlowchartVisualCanvas({
                                                         ? isLight
                                                             ? '#854d0e'
                                                             : '#fef08a'
+                                                        : isPlaceholder
+                                                        ? isLight
+                                                            ? '#64748b'
+                                                            : '#94a3b8'
                                                         : isLight
                                                         ? '#0f172a'
                                                         : '#f8fafc'
                                                 }
-                                                fontSize={11}
-                                                fontWeight="700"
+                                                fontSize={isPlaceholder ? 10 : 11}
+                                                fontWeight={isPlaceholder ? '600' : '700'}
                                                 fontFamily="monospace"
                                             >
-                                                {conn.label}
+                                                {labelText}
                                             </text>
                                         </g>
                                     )}
@@ -2174,6 +2196,7 @@ export default function FlowchartVisualCanvas({
                             return (
                                 <g
                                     key={node.id}
+                                    data-node-id={node.id}
                                     transform={`translate(${node.x}, ${node.y})`}
                                     onPointerDown={(e) => handleNodePointerDown(e, node)}
                                     onContextMenu={(e) => handleContextMenu(e, 'node', node.id)}
@@ -2403,8 +2426,9 @@ export default function FlowchartVisualCanvas({
                     const data = getConnectorPathData(conn);
                     if (!data) return null;
 
-                    const screenX = pan.x + data.midX * zoom - 40;
-                    const screenY = pan.y + data.midY * zoom - 15;
+                    const screenX = pan.x + data.midX * zoom - 60;
+                    const screenY = pan.y + data.midY * zoom - 22;
+                    const quickOptions = isErMode ? ['1:1', '1:N', 'M:N'] : ['Yes', 'No', 'True', 'False'];
 
                     return (
                         <div
@@ -2412,11 +2436,10 @@ export default function FlowchartVisualCanvas({
                                 position: 'absolute',
                                 left: `${screenX}px`,
                                 top: `${screenY}px`,
-                                width: '80px',
-                                height: '30px',
+                                width: '124px',
                                 pointerEvents: 'auto'
                             }}
-                            className="z-30 flex items-center justify-center"
+                            className="z-40 flex flex-col items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-xl shadow-2xl border border-purple-300 dark:border-purple-700 ring-2 ring-purple-500/30"
                             onMouseDown={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                             onTouchStart={(e) => e.stopPropagation()}
@@ -2431,12 +2454,33 @@ export default function FlowchartVisualCanvas({
                                     if (e.key === 'Enter') handleSaveConnectorLabel();
                                     if (e.key === 'Escape') setEditingConnectorId(null);
                                 }}
-                                onBlur={handleSaveConnectorLabel}
-                                placeholder="1:N / Yes"
-                                className={`w-full text-center px-1 py-0.5 rounded-full text-xs font-bold font-mono focus:outline-none shadow-2xl ring-2 ring-purple-500/40 border-2 border-purple-500 ${
-                                    isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'
+                                onBlur={(e) => {
+                                    if (!e.relatedTarget || !e.relatedTarget.closest('.quick-chip-btn')) {
+                                        handleSaveConnectorLabel();
+                                    }
+                                }}
+                                placeholder={isErMode ? '1:N...' : 'Yes / No...'}
+                                className={`w-full text-center px-1.5 py-0.5 rounded-md text-xs font-bold font-mono focus:outline-none border ${
+                                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-800 border-slate-700 text-white'
                                 }`}
                             />
+                            <div className="flex flex-wrap items-center justify-center gap-1 w-full pt-0.5">
+                                {quickOptions.map((opt) => (
+                                    <button
+                                        key={opt}
+                                        type="button"
+                                        className="quick-chip-btn px-1.5 py-0.5 text-[10px] font-bold rounded bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/60 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition cursor-pointer"
+                                        onMouseDown={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            handleSetConnectorCardinality(opt, conn.id);
+                                            setEditingConnectorId(null);
+                                        }}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     );
                 })()}

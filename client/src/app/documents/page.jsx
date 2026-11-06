@@ -113,6 +113,17 @@ const openDocumentInApp = (doc, router) => {
     }
 };
 
+const getCleanDocDescription = (desc) => {
+    if (!desc) return '';
+    if (typeof desc === 'string' && desc.startsWith('{') && (desc.includes('"summary"') || desc.includes('"problemTitle"'))) {
+        try {
+            const parsed = JSON.parse(desc);
+            return parsed.summary || parsed.problemTitle || '';
+        } catch (_) {}
+    }
+    return desc;
+};
+
 export default function DocumentsPage() {
     const router = useRouter();
     const confirm = useConfirm();
@@ -1938,7 +1949,7 @@ export default function DocumentsPage() {
                                                         )}
                                                         <div>
                                                             <p className="font-medium text-slate-700">{doc.name}</p>
-                                                            {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                                            {getCleanDocDescription(doc.description) && <p className="text-xs text-slate-500 truncate max-w-xs">{getCleanDocDescription(doc.description)}</p>}
                                                         </div>
                                                     </div>
                                                 </td>
@@ -2651,8 +2662,8 @@ export default function DocumentsPage() {
                                         </div>
                                     </div>
 
-                                    {doc.description && (
-                                        <p className="text-sm text-slate-600 mt-3 line-clamp-2">{doc.description}</p>
+                                    {getCleanDocDescription(doc.description) && (
+                                        <p className="text-sm text-slate-600 mt-3 line-clamp-2">{getCleanDocDescription(doc.description)}</p>
                                     )}
 
                                     {/* Share info for my documents */}
@@ -2945,7 +2956,7 @@ export default function DocumentsPage() {
                                                         )}
                                                         <div>
                                                             <p onClick={() => openDocumentInApp(doc, router)} className="font-medium text-slate-900 cursor-pointer hover:text-primary-600 transition" title="Open in Application">{doc.name}</p>
-                                                            {doc.description && <p className="text-xs text-slate-500 truncate max-w-xs">{doc.description}</p>}
+                                                            {getCleanDocDescription(doc.description) && <p className="text-xs text-slate-500 truncate max-w-xs">{getCleanDocDescription(doc.description)}</p>}
                                                         </div>
                                                     </div>
                                                 </td>
@@ -3158,7 +3169,7 @@ export default function DocumentsPage() {
                                                         <span>•</span>
                                                         <span>{formatDate(shareInfo ? shareInfo.sharedAt : doc.createdAt)}</span>
                                                     </div>
-                                                    {doc.description && <p className="text-xs text-slate-500 truncate mt-1">{doc.description}</p>}
+                                                    {getCleanDocDescription(doc.description) && <p className="text-xs text-slate-500 truncate mt-1">{getCleanDocDescription(doc.description)}</p>}
                                                 </div>
                                             </div>
 

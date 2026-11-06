@@ -451,11 +451,56 @@ router.get('/workspace', authenticate, asyncHandler(async (req, res) => {
         outputTheme: 'classic'
     };
 
+    // Check PostgreSQL database first to ensure cross-device and cross-login synchronization
+    let dbWorkspaceData = null;
+    try {
+        const dbDoc = await prisma.document.findFirst({
+            where: {
+                uploadedById: targetUserId,
+                category: 'ide_workspace_state',
+                deletedAt: null
+            },
+            orderBy: { updatedAt: 'desc' }
+        });
+        if (dbDoc) {
+            let parsed = null;
+            if (dbDoc.description) {
+                try { parsed = JSON.parse(dbDoc.description); } catch (_) {}
+            }
+            if (!parsed && dbDoc.url && dbDoc.url.startsWith('data:')) {
+                try {
+                    const raw = decodeURIComponent(dbDoc.url.replace(/^data:[^,]+,/, ''));
+                    parsed = JSON.parse(raw);
+                } catch (_) {}
+            }
+            if (parsed) {
+                dbWorkspaceData = { ...parsed, dbUpdatedAt: dbDoc.updatedAt };
+            }
+        }
+    } catch (dbErr) {
+        console.warn('[WorkspaceDB] Read error:', dbErr.message);
+    }
+
     if (fs.existsSync(workspaceFile)) {
         try {
             const raw = fs.readFileSync(workspaceFile, 'utf8');
-            workspaceData = { ...workspaceData, ...JSON.parse(raw) };
-        } catch (e) {}
+            const diskParsed = JSON.parse(raw);
+            const diskTime = fs.statSync(workspaceFile).mtime.getTime();
+            const dbTime = dbWorkspaceData?.dbUpdatedAt ? new Date(dbWorkspaceData.dbUpdatedAt).getTime() : 0;
+            if (dbWorkspaceData && dbTime >= diskTime) {
+                workspaceData = { ...workspaceData, ...dbWorkspaceData };
+            } else {
+                workspaceData = { ...workspaceData, ...diskParsed };
+            }
+        } catch (e) {
+            if (dbWorkspaceData) workspaceData = { ...workspaceData, ...dbWorkspaceData };
+        }
+    } else if (dbWorkspaceData) {
+        workspaceData = { ...workspaceData, ...dbWorkspaceData };
+        // Hydrate local disk cache from database state
+        try {
+            fs.writeFileSync(workspaceFile, JSON.stringify(workspaceData, null, 2), 'utf8');
+        } catch (_) {}
     }
 
     // Query tables created in student's persistent MySQL database
@@ -522,6 +567,53 @@ router.post('/workspace', authenticate, asyncHandler(async (req, res) => {
     };
 
     fs.writeFileSync(workspaceFile, JSON.stringify(updated, null, 2), 'utf8');
+
+    // Persist to PostgreSQL so state is synchronized across logins, devices, and container restarts
+    if (req.user?.id && req.user?.schoolId) {
+        try {
+            const stateJson = JSON.stringify(updated);
+            const dataUrl = `data:application/json;charset=utf-8,${encodeURIComponent(stateJson)}`;
+            const existingWorkspaceDoc = await prisma.document.findFirst({
+                where: {
+                    schoolId: req.user.schoolId,
+                    uploadedById: req.user.id,
+                    category: 'ide_workspace_state',
+                    deletedAt: null
+                }
+            });
+
+            if (existingWorkspaceDoc) {
+                await prisma.document.update({
+                    where: { id: existingWorkspaceDoc.id },
+                    data: {
+                        description: stateJson,
+                        fileSize: Buffer.byteLength(stateJson, 'utf8'),
+                        url: dataUrl,
+                        updatedAt: new Date()
+                    }
+                });
+            } else {
+                await prisma.document.create({
+                    data: {
+                        schoolId: req.user.schoolId,
+                        uploadedById: req.user.id,
+                        category: 'ide_workspace_state',
+                        name: '.workspace.json',
+                        fileName: '.workspace.json',
+                        fileType: 'json',
+                        mimeType: 'application/json',
+                        fileSize: Buffer.byteLength(stateJson, 'utf8'),
+                        cloudinaryId: 'workspace_db_sync',
+                        url: dataUrl,
+                        description: stateJson,
+                        isPublic: false
+                    }
+                });
+            }
+        } catch (dbSyncErr) {
+            console.warn('[WorkspaceDB] PostgreSQL sync warning:', dbSyncErr.message);
+        }
+    }
 
     return res.json({
         success: true,

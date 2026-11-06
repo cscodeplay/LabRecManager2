@@ -181,10 +181,33 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         orderBy: { createdAt: 'desc' }
     });
 
+    // Deduplicate documents in the same folder by normalized name and owner
+    const seenMap = new Map();
+    const deduplicatedDocs = [];
+    const duplicateIdsToClean = [];
+
+    for (const d of documents) {
+        const normName = (d.name || d.fileName || '').trim().toLowerCase();
+        const key = `${d.folderId || 'root'}::${d.uploadedById || 'none'}::${normName}`;
+        if (!seenMap.has(key)) {
+            seenMap.set(key, true);
+            deduplicatedDocs.push(d);
+        } else {
+            duplicateIdsToClean.push(d.id);
+        }
+    }
+
+    if (duplicateIdsToClean.length > 0) {
+        prisma.document.updateMany({
+            where: { id: { in: duplicateIdsToClean } },
+            data: { deletedAt: new Date() }
+        }).catch(() => {});
+    }
+
     res.json({
         success: true,
         data: {
-            documents: documents.map(d => {
+            documents: deduplicatedDocs.map(d => {
                 // Deduplicate shares by type + target ID
                 const uniqueSharesMap = new Map();
                 d.shares?.forEach(s => {
@@ -321,25 +344,13 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                 let finalPublicId = `local_${diskFileName}`;
                 let finalUrl = `/uploads/${diskFileName}`;
 
-                // Upload to Cloudinary so code & files are stored on cloud
-                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
-                    try {
-                        const result = await cloudinary.uploadFile(
-                            req.file.buffer,
-                            req.file.originalname,
-                            req.file.mimetype
-                        );
-                        if (result && (result.secureUrl || result.url)) {
-                            finalPublicId = result.publicId;
-                            finalUrl = result.secureUrl || result.url;
-                        }
-                    } catch (cloudErr) {
-                        console.warn('[DocPersonal] Cloudinary upload notice:', cloudErr.message);
-                    }
+                // For code documents, directly embed full source code into database URL for atomic persistence
+                if (isCodeDoc) {
+                    finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(req.file.buffer.toString('utf8'))}`;
                 }
 
-                // Upload to Cloudinary so code & files are stored on cloud
-                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                // Upload to Cloudinary for non-code files (PDFs, images, office docs)
+                if (!isCodeDoc && cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
                     try {
                         const result = await cloudinary.uploadFile(
                             req.file.buffer,
@@ -411,10 +422,10 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                 fs.writeFileSync(diskPath, req.file.buffer);
 
                 let finalPublicId = `local_${diskFileName}`;
-                let finalUrl = `/uploads/${diskFileName}`;
+                let finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(req.file.buffer.toString('utf8'))}`;
 
-                // Upload to Cloudinary so code & files are stored on cloud
-                if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+                // Upload to Cloudinary for non-code files (code is stored directly in DB url)
+                if (!isCodeDoc && cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
                     try {
                         const result = await cloudinary.uploadFile(
                             req.file.buffer,
@@ -423,7 +434,6 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                         );
                         if (result && (result.secureUrl || result.url)) {
                             finalPublicId = result.publicId;
-                            finalUrl = result.secureUrl || result.url;
                         }
                     } catch (cloudErr) {
                         console.warn('[DocPersonal] Cloudinary upload notice:', cloudErr.message);
@@ -501,22 +511,37 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 
     // Enforce uniqueness: Do not allow same file name in the same folder
     // For non-admins (students/instructors), scope duplicate check to their own uploads so other students aren't blocked
+    const nameWithoutExt = resolvedName.replace(/\.[^.]+$/, '');
     const duplicateWhere = {
         schoolId: req.user.schoolId,
         folderId: targetFolderId,
         deletedAt: null,
         OR: [
             { name: { equals: resolvedName, mode: 'insensitive' } },
-            { fileName: { equals: resolvedFileName, mode: 'insensitive' } }
+            { name: { equals: resolvedFileName, mode: 'insensitive' } },
+            { name: { equals: nameWithoutExt, mode: 'insensitive' } },
+            { fileName: { equals: resolvedFileName, mode: 'insensitive' } },
+            { fileName: { equals: resolvedName, mode: 'insensitive' } }
         ]
     };
     if (!['admin', 'principal'].includes(req.user.role)) {
         duplicateWhere.uploadedById = req.user.id;
     }
 
-    const existingDoc = await prisma.document.findFirst({
-        where: duplicateWhere
+    const existingDocs = await prisma.document.findMany({
+        where: duplicateWhere,
+        orderBy: { updatedAt: 'desc' }
     });
+    const existingDoc = existingDocs[0] || null;
+
+    if (existingDocs.length > 1) {
+        // Soft delete all older duplicates so only one canonical document remains in folder
+        const duplicateIdsToDelete = existingDocs.slice(1).map(d => d.id);
+        await prisma.document.updateMany({
+            where: { id: { in: duplicateIdsToDelete } },
+            data: { deletedAt: new Date() }
+        }).catch(() => {});
+    }
 
     if (existingDoc) {
         // If overwrite is explicitly allowed and user owns the existing file
@@ -533,8 +558,13 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
             let finalPublicId = `local_${diskFileName}`;
             let finalUrl = `/uploads/${diskFileName}`;
 
-            // Upload to Cloudinary so overwritten documents are stored on cloud
-            if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+            const isCodeDocOverwrite = existingDoc.category === 'code' || category === 'code' || existingDoc.name?.endsWith('.py') || existingDoc.name?.endsWith('.sql') || existingDoc.fileName?.endsWith('.py') || existingDoc.fileName?.endsWith('.sql') || resolvedFileName?.endsWith('.py') || resolvedFileName?.endsWith('.sql');
+            if (isCodeDocOverwrite) {
+                finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(req.file.buffer.toString('utf8'))}`;
+            }
+
+            // Upload to Cloudinary for non-code files (code is stored directly in DB url)
+            if (!isCodeDocOverwrite && cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
                 try {
                     const result = await cloudinary.uploadFile(
                         req.file.buffer,
@@ -543,7 +573,9 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                     );
                     if (result && (result.secureUrl || result.url)) {
                         finalPublicId = result.publicId;
-                        finalUrl = result.secureUrl || result.url;
+                        if (!isCodeDocOverwrite) {
+                            finalUrl = result.secureUrl || result.url;
+                        }
                     }
                 } catch (cloudErr) {
                     console.warn('[DocOverwrite] Cloudinary upload notice:', cloudErr.message);
@@ -603,8 +635,13 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     let finalPublicId = `local_${diskFileName}`;
     let finalUrl = `/uploads/${diskFileName}`;
 
-    // If Cloudinary is configured and file size <= 10MB (Cloudinary raw free tier limit is 10MB), attempt Cloudinary upload
-    if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+    const isNewCodeDoc = category === 'code' || req.file.originalname?.endsWith('.py') || req.file.originalname?.endsWith('.sql') || name?.endsWith('.py') || name?.endsWith('.sql');
+    if (isNewCodeDoc) {
+        finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(req.file.buffer.toString('utf8'))}`;
+    }
+
+    // If Cloudinary is configured and file is not code, attempt Cloudinary upload
+    if (!isNewCodeDoc && cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
         try {
             const result = await cloudinary.uploadFile(
                 req.file.buffer,
@@ -613,13 +650,53 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
             );
             if (result && (result.secureUrl || result.url)) {
                 finalPublicId = result.publicId;
-                finalUrl = result.secureUrl || result.url;
+                if (!isNewCodeDoc) {
+                    finalUrl = result.secureUrl || result.url;
+                }
             }
         } catch (cloudErr) {
             console.warn('[Documents Upload] Cloudinary upload failed. Falling back to local storage:', cloudErr.message);
         }
     } else if (req.file.size > 10 * 1024 * 1024) {
         console.log(`[Documents Upload] File size is ${(req.file.size / (1024*1024)).toFixed(1)} MB (> 10 MB). Stored locally in /uploads to prevent Cloudinary payload rejection.`);
+    }
+
+    // Final atomic check for concurrent duplicate upload before creation
+    const concurrentDoc = await prisma.document.findFirst({
+        where: duplicateWhere,
+        orderBy: { createdAt: 'desc' }
+    });
+    if (concurrentDoc && isOverwrite) {
+        const overwritten = await prisma.document.update({
+            where: { id: concurrentDoc.id },
+            data: {
+                name: resolvedName,
+                fileName: resolvedFileName,
+                folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : concurrentDoc.folderId,
+                description: description !== undefined ? description : concurrentDoc.description,
+                category: category || concurrentDoc.category,
+                fileType: getFileType(req.file.mimetype),
+                mimeType: req.file.mimetype,
+                fileSize: req.file.size,
+                cloudinaryId: finalPublicId,
+                url: finalUrl,
+                updatedAt: new Date()
+            },
+            include: {
+                uploadedBy: { select: { id: true, firstName: true, lastName: true } },
+                folder: { select: { id: true, name: true } }
+            }
+        });
+        return res.status(200).json({
+            success: true,
+            message: 'Document overwritten successfully',
+            data: {
+                document: {
+                    ...overwritten,
+                    fileSizeFormatted: formatSize(overwritten.fileSize)
+                }
+            }
+        });
     }
 
     // Create document record
@@ -703,11 +780,21 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
 
     const conflict = await prisma.document.findFirst({ where: conflictWhere });
     if (conflict) {
-        return res.status(409).json({
-            success: false,
-            message: `A document named "${targetFileName}" already exists in this folder. Duplicate filenames are not allowed in the same folder.`,
-            messageHindi: `इस फ़ोल्डर में "${targetFileName}" नाम की फ़ाइल पहले से मौजूद है।`
-        });
+        const isSameNameAsCurrentDoc = targetName.toLowerCase() === (doc.name || '').toLowerCase() ||
+                                       targetFileName.toLowerCase() === (doc.fileName || '').toLowerCase();
+        if (isSameNameAsCurrentDoc) {
+            // Stale duplicate exists with the same name as current doc: soft-delete the stale duplicate
+            await prisma.document.update({
+                where: { id: conflict.id },
+                data: { deletedAt: new Date() }
+            }).catch(() => {});
+        } else {
+            return res.status(409).json({
+                success: false,
+                message: `A document named "${targetFileName}" already exists in this folder. Duplicate filenames are not allowed in the same folder.`,
+                messageHindi: `इस फ़ोल्डर में "${targetFileName}" नाम की फ़ाइल पहले से मौजूद है।`
+            });
+        }
     }
 
     let updateData = {
@@ -732,7 +819,12 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         let finalPublicId = `local_${diskFileName}`;
         let finalUrl = `/uploads/${diskFileName}`;
 
-        if (cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
+        const isCodeDocUpdate = doc.category === 'code' || category === 'code' || targetFileName?.endsWith('.py') || targetFileName?.endsWith('.sql');
+        if (isCodeDocUpdate) {
+            finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(req.file.buffer.toString('utf8'))}`;
+        }
+
+        if (!isCodeDocUpdate && cloudinary.isConfigured() && req.file.size <= 10 * 1024 * 1024) {
             try {
                 if (doc.cloudinaryId && !doc.cloudinaryId.startsWith('local_')) {
                     await cloudinary.deleteFile(doc.cloudinaryId, 'raw').catch(() => {});
@@ -744,7 +836,9 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
                 );
                 if (result && (result.secureUrl || result.url)) {
                     finalPublicId = result.publicId;
-                    finalUrl = result.secureUrl || result.url;
+                    if (!isCodeDocUpdate) {
+                        finalUrl = result.secureUrl || result.url;
+                    }
                 }
             } catch (cloudErr) {
                 console.warn('[Documents Update] Cloudinary upload failed. Falling back to local storage:', cloudErr.message);
@@ -772,7 +866,12 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         let finalPublicId = `local_${diskFileName}`;
         let finalUrl = `/uploads/${diskFileName}`;
 
-        if (cloudinary.isConfigured() && buf.length <= 10 * 1024 * 1024) {
+        const isCodeContent = doc.category === 'code' || category === 'code' || effectiveFileName.endsWith('.py') || effectiveFileName.endsWith('.sql');
+        if (isCodeContent) {
+            finalUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(content)}`;
+        }
+
+        if (!isCodeContent && cloudinary.isConfigured() && buf.length <= 10 * 1024 * 1024) {
             try {
                 if (doc.cloudinaryId && !doc.cloudinaryId.startsWith('local_')) {
                     await cloudinary.deleteFile(doc.cloudinaryId, 'raw').catch(() => {});
@@ -1089,6 +1188,22 @@ router.get('/:id/download', optionalAuth, asyncHandler(async (req, res) => {
         }
     }
 
+    // If data URL (e.g. database-backed code file)
+    if (doc.url && doc.url.startsWith('data:')) {
+        try {
+            const commaIdx = doc.url.indexOf(',');
+            const header = doc.url.substring(0, commaIdx);
+            const rawData = doc.url.substring(commaIdx + 1);
+            const isBase64 = header.includes(';base64');
+            const buf = isBase64 ? Buffer.from(rawData, 'base64') : Buffer.from(decodeURIComponent(rawData), 'utf8');
+            res.setHeader('Content-Type', doc.mimeType || 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
+            return res.send(buf);
+        } catch (e) {
+            console.warn('[DocDownload] Failed to decode data URL:', e.message);
+        }
+    }
+
     // If remote URL (Cloudinary or other HTTP storage)
     if (doc.url && doc.url.startsWith('http')) {
         return res.redirect(doc.url);
@@ -1123,6 +1238,33 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         return res.status(403).send('Not authorized');
     }
 
+    const isCodeDoc = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
+
+    // Never cache code documents so changes are immediately visible
+    if (isCodeDoc) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
+
+    // Fast path: Database-backed code documents stored directly in PostgreSQL
+    if (doc.url && doc.url.startsWith('data:')) {
+        try {
+            const commaIdx = doc.url.indexOf(',');
+            const header = doc.url.substring(0, commaIdx);
+            const rawData = doc.url.substring(commaIdx + 1);
+            const isBase64 = header.includes(';base64');
+            const text = isBase64
+                ? Buffer.from(rawData, 'base64').toString('utf8')
+                : decodeURIComponent(rawData);
+            res.setHeader('Content-Type', doc.mimeType || (isCodeDoc ? 'text/plain; charset=utf-8' : 'text/plain'));
+            res.setHeader('Content-Disposition', 'inline');
+            return res.send(text);
+        } catch (decodeErr) {
+            console.warn('[DocFile] Error decoding data URL:', decodeErr.message);
+        }
+    }
+
     if (doc.url && (doc.url.startsWith('/RAG/') || doc.cloudinaryId?.startsWith('local_rag_'))) {
         const fileBasename = path.basename(doc.url);
         const searchPaths = [
@@ -1141,7 +1283,6 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         }
     }
 
-    const isCodeDoc = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
     let zeroByteCodeFilePath = null;
 
     if (doc.url && doc.url.startsWith('/uploads/')) {
@@ -1238,23 +1379,12 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
             console.warn('[DocStream] Workspace fallback warning:', wsSearchErr.message);
         }
 
-        // If zero-byte file exists or was created with 0 bytes, provide a clean starter template rather than a blank 0-byte file
+        // Non-destructive fallback: Return starter template if physical file was not found, but NEVER overwrite the database record!
         const isSql = doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.sql') || doc.category === 'sql';
         const cleanName = doc.name || doc.fileName || (isSql ? 'query.sql' : 'program.py');
         const starterCode = isSql
-            ? `-- ===============================================================\n-- Script: ${cleanName}\n-- Created: ${new Date(doc.createdAt).toLocaleDateString()}\n-- Ready for SQL queries\n-- ===============================================================\n\n`
-            : `\"\"\"\n===============================================================\nScript: ${cleanName}\nCreated: ${new Date(doc.createdAt).toLocaleDateString()}\nReady for Python code\n===============================================================\n\"\"\"\n\n`;
-
-        const targetDiskPath = zeroByteCodeFilePath || path.join(__dirname, '../../uploads', path.basename(doc.url || `doc_${Date.now()}_${doc.fileName || doc.name}`));
-        try {
-            const uploadDir = path.dirname(targetDiskPath);
-            if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-            fs.writeFileSync(targetDiskPath, starterCode, 'utf8');
-            await prisma.document.update({
-                where: { id: doc.id },
-                data: { fileSize: Buffer.byteLength(starterCode, 'utf8') }
-            }).catch(() => {});
-        } catch (_) {}
+            ? `-- Script: ${cleanName}\n-- Ready for SQL queries\n\n`
+            : `# Script: ${cleanName}\n# Ready for Python code\n\n`;
 
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.setHeader('Content-Disposition', 'inline');
