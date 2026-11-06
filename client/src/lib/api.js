@@ -288,7 +288,7 @@ export const devicesAPI = {
 
 // Compiler API
 export const compilerAPI = {
-    execute: (data) => api.post('/compiler/execute', data),
+    execute: (data, config = {}) => api.post('/compiler/execute', data, config),
     generateDiagram: (data) => api.post('/compiler/generate-diagram', data),
     getLanguages: () => api.get('/compiler/languages'),
     getWorkspace: (params) => api.get('/compiler/workspace', { params }),
@@ -303,7 +303,8 @@ export const compilerAPI = {
     submitStudentReview: (studentId, data) => api.post(`/compiler/student-workspace/${studentId}/review`, data),
     generateStudentAiReview: (studentId, data) => api.post(`/compiler/student-workspace/${studentId}/ai-review`, data),
     bulkAiReview: (data) => api.post('/compiler/students-bulk-ai-review', data),
-    getMyReview: () => api.get('/compiler/my-review')
+    getMyReview: () => api.get('/compiler/my-review'),
+    exportBundle: (data) => api.post('/compiler/export-bundle', data, { responseType: 'blob' })
 };
 
 export const assignmentsAPI = {

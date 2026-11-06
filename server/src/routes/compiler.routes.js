@@ -12,6 +12,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const { synthesizeDiagram } = require('../utils/diagramSynthesizer');
 const practiceDatabaseService = require('../services/practiceDatabase.service');
 const studentCodeReviewService = require('../services/studentCodeReview.service');
+const { generateProjectBundleZip } = require('../utils/projectBundleExporter');
 
 const WORKSPACES_ROOT = path.join(__dirname, '../../storage/workspaces/students');
 
@@ -1047,6 +1048,48 @@ router.get('/my-review', authenticate, asyncHandler(async (req, res) => {
         success: true,
         data: reviewData
     });
+}));
+
+/**
+ * @route   POST /api/compiler/export-bundle
+ * @desc    Export source code, flowchart/ER diagram, and output in a ZIP archive with PDF and/or Word reports
+ * @access  Private
+ */
+router.post('/export-bundle', authenticate, asyncHandler(async (req, res) => {
+    const {
+        fileName = 'program.py',
+        code = '',
+        language = 'python',
+        diagramImageBase64 = null,
+        output = null,
+        stdin = '',
+        format = 'both'
+    } = req.body;
+
+    const studentName = req.user?.firstName ? `${req.user.firstName} ${req.user.lastName || ''}`.trim() : (req.user?.name || 'Student');
+    const studentId = req.user?.studentId || req.user?.admissionNumber || '';
+    const schoolName = req.user?.school?.name || 'Lab Record Manager';
+
+    const zipBuffer = await generateProjectBundleZip({
+        fileName,
+        code,
+        language,
+        diagramImageBase64,
+        output,
+        stdin,
+        format,
+        studentName,
+        studentId,
+        schoolName
+    });
+
+    const cleanBaseName = fileName.replace(/\.[^/.]+$/, '').trim() || 'program';
+    const downloadZipName = `${cleanBaseName}_bundle.zip`;
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadZipName)}"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    return res.send(zipBuffer);
 }));
 
 module.exports = router;

@@ -32,7 +32,9 @@ import {
     Minimize2,
     WrapText,
     ListOrdered,
-    Code2
+    Code2,
+    Package,
+    Square
 } from 'lucide-react';
 
 const CODE_SNIPPETS_LIST = {
@@ -70,7 +72,10 @@ export default function IDEMenuBar({
     onSaveAs,
     onDownload,
     onExportDiagram,
+    onExportBundle,
     onRunCode,
+    isExecuting = false,
+    onStopCode,
     onClearOutput,
     onResetDatabase,
     onFormatCode,
@@ -283,6 +288,17 @@ export default function IDEMenuBar({
                                     <Shapes className="w-3.5 h-3.5 text-purple-500" />
                                     Export Flowchart (PNG)
                                 </span>
+                            </button>
+
+                            <button
+                                onClick={() => handleAction(onExportBundle)}
+                                className={itemBtnClass}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Package className="w-3.5 h-3.5 text-amber-500" />
+                                    Export Project Bundle (.zip)...
+                                </span>
+                                <span className="text-[10px] text-amber-500 font-semibold font-mono">ZIP</span>
                             </button>
                         </div>
                     )}
@@ -545,16 +561,29 @@ export default function IDEMenuBar({
                     </button>
                     {openMenu === 'run' && (
                         <div className={`w-64 ${dropdownClass}`}>
-                            <button
-                                onClick={() => handleAction(onRunCode)}
-                                className={itemBtnClass}
-                            >
-                                <span className="flex items-center gap-2">
-                                    <Play className="w-3.5 h-3.5 text-emerald-500 fill-current" />
-                                    Run Code
-                                </span>
-                                <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Enter</kbd>
-                            </button>
+                            {isExecuting ? (
+                                <button
+                                    onClick={() => handleAction(onStopCode)}
+                                    className={`${itemBtnClass} text-rose-600 dark:text-rose-400 font-bold`}
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <Square className="w-3.5 h-3.5 text-rose-500 fill-current animate-pulse" />
+                                        Stop Execution
+                                    </span>
+                                    <kbd className="text-[10px] text-rose-400 font-mono">Ctrl+C</kbd>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => handleAction(onRunCode)}
+                                    className={itemBtnClass}
+                                >
+                                    <span className="flex items-center gap-2">
+                                        <Play className="w-3.5 h-3.5 text-emerald-500 fill-current" />
+                                        Run Code
+                                    </span>
+                                    <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Enter</kbd>
+                                </button>
+                            )}
 
                             <button
                                 onClick={() => handleAction(onClearOutput)}

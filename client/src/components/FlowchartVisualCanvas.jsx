@@ -1086,7 +1086,7 @@ export default function FlowchartVisualCanvas({
         const starterConns = DEFAULT_INITIAL_FLOWCHART_CONNECTORS;
         setNodes(starterNodes);
         setConnectors(starterConns);
-        setSelectedNodeId(null);
+        setSelectedNodeIds([]);
         setSelectedConnectorId(null);
         notifyChange(starterNodes, starterConns);
         toast.success('Reset to standard flowchart template');
@@ -1520,7 +1520,7 @@ export default function FlowchartVisualCanvas({
                         <button
                             onClick={() => {
                                 setActiveTool('connector');
-                                setSelectedNodeId(null);
+                                setSelectedNodeIds([]);
                                 setSelectedConnectorId(null);
                             }}
                             className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${

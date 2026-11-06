@@ -11,7 +11,9 @@ import {
     WholeWord,
     Regex,
     Check,
-    CheckCheck
+    CheckCheck,
+    Sparkles,
+    Move
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -24,9 +26,10 @@ export default function FindReplaceModal({
 }) {
     const [findText, setFindText] = useState('');
     const [replaceText, setReplaceText] = useState('');
-    const [matchCase, setMatchCase] = useState(false);
+    const [matchCase, setMatchCase] = useState(false); // false = Ignore Case (default), true = Exact Match
     const [matchWholeWord, setMatchWholeWord] = useState(false);
     const [useRegex, setUseRegex] = useState(false);
+    const [findInSelection, setFindInSelection] = useState(false);
 
     const [matches, setMatches] = useState([]);
     const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
@@ -38,16 +41,18 @@ export default function FindReplaceModal({
     const modalRef = useRef(null);
     const findInputRef = useRef(null);
 
-    // Center the dialog upon opening
+    // Monaco decorations ref for real-time highlighting
+    const decorationsRef = useRef([]);
+
+    // Center the dialog upon opening and populate selected text if any
     useEffect(() => {
         if (isOpen) {
-            const width = 420;
-            const height = 230;
+            const width = 430;
+            const height = 260;
             const initialX = Math.max(20, Math.floor((window.innerWidth - width) / 2));
             const initialY = Math.max(40, Math.floor((window.innerHeight - height) / 2));
             setPosition({ x: initialX, y: initialY });
 
-            // If text is selected in Monaco editor, populate findText
             if (editorRef?.current) {
                 const editor = editorRef.current;
                 const selection = editor.getSelection();
@@ -66,11 +71,54 @@ export default function FindReplaceModal({
         }
     }, [isOpen, editorRef]);
 
+    // Cleanup Monaco decorations when modal closes or unmounts
+    const clearMonacoDecorations = () => {
+        if (editorRef?.current && decorationsRef.current.length > 0) {
+            editorRef.current.deltaDecorations(decorationsRef.current, []);
+            decorationsRef.current = [];
+        }
+    };
+
+    useEffect(() => {
+        if (!isOpen) {
+            clearMonacoDecorations();
+        }
+        return () => clearMonacoDecorations();
+    }, [isOpen]);
+
+    // Apply Real-time Highlighting to Monaco Editor Buffer
+    const updateDecorations = (resultsList, activeIdx) => {
+        if (!editorRef?.current) return;
+        const editor = editorRef.current;
+
+        const newDecorations = (resultsList || []).map((m, idx) => {
+            const isActive = idx === activeIdx;
+            return {
+                range: m.range,
+                options: {
+                    className: isActive ? 'monaco-find-active-match' : 'monaco-find-match',
+                    inlineClassName: isActive ? 'monaco-find-active-match-inline' : 'monaco-find-match-inline',
+                    overviewRuler: {
+                        color: isActive ? '#f59e0b' : '#fbbf24',
+                        position: 4 // Full lane
+                    },
+                    minimap: {
+                        color: isActive ? '#f59e0b' : '#fbbf24',
+                        position: 1
+                    }
+                }
+            };
+        });
+
+        decorationsRef.current = editor.deltaDecorations(decorationsRef.current, newDecorations);
+    };
+
     // Perform Search in Monaco Editor Buffer
-    const performSearch = (searchText = findText) => {
+    const performSearch = (searchText = findText, preferredActiveIndex = null) => {
         if (!editorRef?.current || !searchText) {
             setMatches([]);
             setCurrentMatchIndex(-1);
+            clearMonacoDecorations();
             return [];
         }
 
@@ -79,35 +127,49 @@ export default function FindReplaceModal({
         if (!model) return [];
 
         try {
+            // If findInSelection is enabled, limit range
+            let searchRange = null;
+            if (findInSelection) {
+                const sel = editor.getSelection();
+                if (sel && !sel.isEmpty()) searchRange = sel;
+            }
+
             const results = model.findMatches(
                 searchText,
-                true, // searchOnlyEditableRange
+                searchRange || true,
                 useRegex,
                 matchCase,
                 matchWholeWord ? 'word' : null,
-                false // captureMatches
+                false
             );
 
             setMatches(results || []);
 
             if (results && results.length > 0) {
-                // Find closest match to current cursor
-                const curPos = editor.getPosition();
                 let nextIdx = 0;
-                if (curPos) {
-                    const found = results.findIndex(
-                        (m) => m.range.startLineNumber >= curPos.lineNumber && m.range.startColumn >= curPos.column
-                    );
-                    if (found !== -1) nextIdx = found;
+                if (preferredActiveIndex !== null && preferredActiveIndex >= 0 && preferredActiveIndex < results.length) {
+                    nextIdx = preferredActiveIndex;
+                } else {
+                    const curPos = editor.getPosition();
+                    if (curPos) {
+                        const found = results.findIndex(
+                            (m) => m.range.startLineNumber >= curPos.lineNumber && m.range.startColumn >= curPos.column
+                        );
+                        if (found !== -1) nextIdx = found;
+                    }
                 }
                 setCurrentMatchIndex(nextIdx);
-                highlightMatch(results[nextIdx]);
+                highlightAndRevealMatch(results[nextIdx], results, nextIdx);
             } else {
                 setCurrentMatchIndex(-1);
+                clearMonacoDecorations();
             }
             return results || [];
         } catch (err) {
             console.warn('[FindReplace] Search error:', err.message);
+            setMatches([]);
+            setCurrentMatchIndex(-1);
+            clearMonacoDecorations();
             return [];
         }
     };
@@ -117,27 +179,28 @@ export default function FindReplaceModal({
         if (isOpen) {
             performSearch(findText);
         }
-    }, [findText, matchCase, matchWholeWord, useRegex, isOpen]);
+    }, [findText, matchCase, matchWholeWord, useRegex, findInSelection, isOpen]);
 
-    const highlightMatch = (match) => {
+    const highlightAndRevealMatch = (match, resultsList = matches, idx = currentMatchIndex) => {
         if (!editorRef?.current || !match) return;
         const editor = editorRef.current;
         editor.setSelection(match.range);
         editor.revealRangeInCenter(match.range);
+        updateDecorations(resultsList, idx);
     };
 
     const handleNext = () => {
         if (matches.length === 0) return;
         const nextIdx = (currentMatchIndex + 1) % matches.length;
         setCurrentMatchIndex(nextIdx);
-        highlightMatch(matches[nextIdx]);
+        highlightAndRevealMatch(matches[nextIdx], matches, nextIdx);
     };
 
     const handlePrev = () => {
         if (matches.length === 0) return;
         const prevIdx = (currentMatchIndex - 1 + matches.length) % matches.length;
         setCurrentMatchIndex(prevIdx);
-        highlightMatch(matches[prevIdx]);
+        highlightAndRevealMatch(matches[prevIdx], matches, prevIdx);
     };
 
     const handleReplace = () => {
@@ -158,9 +221,9 @@ export default function FindReplaceModal({
             onCodeChange(editor.getValue());
         }
 
-        // Re-run search to update match count and select next
-        const remaining = performSearch(findText);
-        toast.success('Replaced 1 occurrence', { id: 'rep-single', duration: 1500 });
+        // Re-run search and preserve index
+        performSearch(findText, currentMatchIndex);
+        toast.success('Replaced 1 occurrence', { id: 'rep-single', duration: 1200 });
     };
 
     const handleReplaceAll = () => {
@@ -172,7 +235,7 @@ export default function FindReplaceModal({
         const editor = editorRef.current;
         const count = matches.length;
 
-        // Perform replace on all ranges in reverse order so character offsets remain valid
+        // Reverse order so offsets remain valid
         const edits = [...matches].reverse().map((m) => ({
             range: m.range,
             text: replaceText,
@@ -186,7 +249,7 @@ export default function FindReplaceModal({
         }
 
         performSearch(findText);
-        toast.success(`Replaced ${count} ${count === 1 ? 'occurrence' : 'occurrences'}!`);
+        toast.success(`Replaced ${count} ${count === 1 ? 'occurrence' : 'occurrences'}!`, { icon: '✨' });
     };
 
     // Drag handlers
@@ -202,8 +265,8 @@ export default function FindReplaceModal({
     useEffect(() => {
         const handleMouseMove = (e) => {
             if (!isDragging) return;
-            const newX = Math.max(10, Math.min(window.innerWidth - 420, e.clientX - dragOffsetRef.current.x));
-            const newY = Math.max(10, Math.min(window.innerHeight - 200, e.clientY - dragOffsetRef.current.y));
+            const newX = Math.max(10, Math.min(window.innerWidth - 430, e.clientX - dragOffsetRef.current.x));
+            const newY = Math.max(10, Math.min(window.innerHeight - 220, e.clientY - dragOffsetRef.current.y));
             setPosition({ x: newX, y: newY });
         };
 
@@ -248,24 +311,45 @@ export default function FindReplaceModal({
                 zIndex: 9999
             }}
             onKeyDown={handleKeyDown}
-            className={`w-[420px] rounded-xl shadow-2xl border-2 border-black overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 ${
-                isLightMode ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
+            className={`w-[430px] rounded-2xl shadow-2xl border-2 overflow-hidden select-none animate-in fade-in zoom-in-95 duration-100 ${
+                isLightMode ? 'bg-white border-slate-300 text-slate-900 shadow-slate-900/20' : 'bg-slate-900 border-slate-700 text-slate-100 shadow-black/40'
             }`}
         >
+            {/* Custom Monaco Match Highlight Styles */}
+            <style jsx global>{`
+                .monaco-find-match {
+                    background-color: rgba(254, 240, 138, 0.45) !important;
+                    border: 1px solid #eab308 !important;
+                    border-radius: 2px !important;
+                }
+                .monaco-find-active-match {
+                    background-color: #f59e0b !important;
+                    color: #000000 !important;
+                    border: 1px solid #b45309 !important;
+                    border-radius: 2px !important;
+                    box-shadow: 0 0 8px rgba(245, 158, 11, 0.9) !important;
+                }
+            `}</style>
+
             {/* Header (Draggable Handle) */}
             <div
                 onMouseDown={handleMouseDown}
-                className={`flex items-center justify-between px-3.5 py-2.5 cursor-move border-b ${
+                className={`flex items-center justify-between px-4 py-2.5 cursor-move border-b ${
                     isLightMode
-                        ? 'bg-slate-100 border-slate-300'
-                        : 'bg-slate-950 border-slate-800'
+                        ? 'bg-slate-100 border-slate-200 text-slate-800'
+                        : 'bg-slate-950 border-slate-800 text-slate-200'
                 }`}
             >
                 <div className="flex items-center gap-2">
+                    <Move className="w-3.5 h-3.5 text-slate-400" />
                     <Search className="w-4 h-4 text-amber-500" />
-                    <span className="text-xs font-bold tracking-wide">Find and Replace</span>
+                    <span className="text-xs font-bold tracking-wide">Find & Replace</span>
                     {findText && (
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20 font-semibold">
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold border ${
+                            matches.length > 0
+                                ? 'bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800'
+                                : 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950 dark:text-rose-200 dark:border-rose-800'
+                        }`}>
                             {matches.length > 0
                                 ? `${currentMatchIndex + 1} of ${matches.length}`
                                 : 'No matches'}
@@ -292,7 +376,7 @@ export default function FindReplaceModal({
                             value={findText}
                             onChange={(e) => setFindText(e.target.value)}
                             placeholder="Find..."
-                            className={`w-full pl-2.5 pr-20 py-1.5 rounded-lg text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
+                            className={`w-full pl-2.5 pr-24 py-1.5 rounded-lg text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-amber-500 ${
                                 isLightMode
                                     ? 'bg-slate-50 border-slate-300 text-slate-900'
                                     : 'bg-slate-950 border-slate-700 text-slate-100'
@@ -303,24 +387,24 @@ export default function FindReplaceModal({
                             <button
                                 type="button"
                                 onClick={() => setMatchCase(!matchCase)}
-                                className={`p-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition cursor-pointer ${
                                     matchCase
-                                        ? 'bg-amber-500 text-slate-950'
-                                        : 'text-slate-400 hover:text-slate-200'
+                                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                 }`}
-                                title="Match Case (Alt+C)"
+                                title={`Match Case (Alt+C): ${matchCase ? 'ON (Exact Match)' : 'OFF (Ignoring Case)'}`}
                             >
-                                <CaseSensitive className="w-3.5 h-3.5" />
+                                Aa
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setMatchWholeWord(!matchWholeWord)}
                                 className={`p-1 rounded text-[10px] font-bold transition cursor-pointer ${
                                     matchWholeWord
-                                        ? 'bg-amber-500 text-slate-950'
-                                        : 'text-slate-400 hover:text-slate-200'
+                                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                 }`}
-                                title="Match Whole Word (Alt+W)"
+                                title={`Match Whole Word (Alt+W): ${matchWholeWord ? 'ON' : 'OFF'}`}
                             >
                                 <WholeWord className="w-3.5 h-3.5" />
                             </button>
@@ -329,10 +413,10 @@ export default function FindReplaceModal({
                                 onClick={() => setUseRegex(!useRegex)}
                                 className={`p-1 rounded text-[10px] font-bold transition cursor-pointer ${
                                     useRegex
-                                        ? 'bg-amber-500 text-slate-950'
-                                        : 'text-slate-400 hover:text-slate-200'
+                                        ? 'bg-amber-500 text-slate-950 shadow-xs'
+                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                                 }`}
-                                title="Use Regular Expression (Alt+R)"
+                                title={`Use Regular Expression (Alt+R): ${useRegex ? 'ON' : 'OFF'}`}
                             >
                                 <Regex className="w-3.5 h-3.5" />
                             </button>
@@ -370,8 +454,52 @@ export default function FindReplaceModal({
                     </div>
                 </div>
 
+                {/* Explicit Case Mode Selector & Options */}
+                <div className="flex items-center justify-between text-[11px] px-0.5">
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Case:</span>
+                        <div className="inline-flex rounded-md p-0.5 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700">
+                            <button
+                                type="button"
+                                onClick={() => setMatchCase(false)}
+                                className={`px-2 py-0.5 text-[10px] rounded transition cursor-pointer ${
+                                    !matchCase
+                                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+                                }`}
+                                title="Ignore Case (Case-Insensitive search)"
+                            >
+                                Ignore Case
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMatchCase(true)}
+                                className={`px-2 py-0.5 text-[10px] rounded transition cursor-pointer flex items-center gap-1 ${
+                                    matchCase
+                                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+                                }`}
+                                title="Exact Match (Case-Sensitive search)"
+                            >
+                                <span className="font-mono font-bold">Aa</span>
+                                <span>Exact Match</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <label className="flex items-center gap-1 cursor-pointer text-slate-600 dark:text-slate-400">
+                        <input
+                            type="checkbox"
+                            checked={findInSelection}
+                            onChange={(e) => setFindInSelection(e.target.checked)}
+                            className="rounded text-amber-600 focus:ring-0 w-3 h-3 cursor-pointer"
+                        />
+                        <span>In selection</span>
+                    </label>
+                </div>
+
                 {/* Replace Row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 pt-0.5">
                     <input
                         type="text"
                         value={replaceText}
@@ -390,7 +518,7 @@ export default function FindReplaceModal({
                             type="button"
                             onClick={handleReplace}
                             disabled={matches.length === 0}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white transition disabled:opacity-40 cursor-pointer shadow-xs"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-sky-600 hover:bg-sky-500 text-white transition disabled:opacity-40 cursor-pointer shadow-xs"
                             title="Replace Current Match"
                         >
                             Replace
@@ -399,7 +527,7 @@ export default function FindReplaceModal({
                             type="button"
                             onClick={handleReplaceAll}
                             disabled={matches.length === 0}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition disabled:opacity-40 cursor-pointer shadow-xs"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white transition disabled:opacity-40 cursor-pointer shadow-xs"
                             title="Replace All Occurrences"
                         >
                             All
@@ -408,12 +536,12 @@ export default function FindReplaceModal({
                 </div>
             </div>
 
-            {/* Footer hint */}
-            <div className={`px-3 py-1.5 border-t text-[10px] flex items-center justify-between text-slate-400 font-mono ${
+            {/* Clean Footer (Clean Shortcuts Hint Only, No Debug Clutter) */}
+            <div className={`px-4 py-2 border-t text-[10px] font-mono flex items-center justify-between text-slate-400 ${
                 isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
             }`}>
-                <span>Enter: Next • Shift+Enter: Prev</span>
-                <span className="font-semibold text-slate-500">Draggable • Black Border</span>
+                <span>Enter ↵ Next • Shift+Enter ⇧↵ Prev</span>
+                <span>Esc to Close</span>
             </div>
         </div>
     );

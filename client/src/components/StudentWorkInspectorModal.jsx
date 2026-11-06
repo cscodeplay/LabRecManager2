@@ -190,10 +190,10 @@ export default function StudentWorkInspectorModal({
             // Search query filter (matches student name, roll number, admission number, email username)
             if (searchQuery && searchQuery.trim()) {
                 const q = searchQuery.trim().toLowerCase();
-                const matchName = (st.name || '').toLowerCase().includes(q);
-                const matchAdm = (st.admissionNumber || '').toLowerCase().includes(q);
-                const matchEmail = (st.email ? st.email.split('@')[0].toLowerCase().includes(q) : false);
-                const matchRoll = (st.rollNumber || '').toLowerCase().includes(q);
+                const matchName = String(st.name || '').toLowerCase().includes(q);
+                const matchAdm = String(st.admissionNumber || '').toLowerCase().includes(q);
+                const matchEmail = (st.email ? String(st.email).split('@')[0].toLowerCase().includes(q) : false);
+                const matchRoll = String(st.rollNumber || '').toLowerCase().includes(q);
                 if (!matchName && !matchAdm && !matchEmail && !matchRoll) return false;
             }
 
@@ -580,19 +580,27 @@ export default function StudentWorkInspectorModal({
                                             key={st.id}
                                             data-student-row={st.id}
                                             onClick={() => setSelectedStudentId(st.id)}
-                                            className={`p-3 transition cursor-pointer flex items-start gap-2.5 ${
+                                            className={`p-3 transition cursor-pointer flex items-start gap-2.5 border-b ${
+                                                isDarkMode ? 'border-slate-800/80' : 'border-slate-200'
+                                            } ${
                                                 isSelected
-                                                    ? 'bg-amber-500/10 border-l-4 border-amber-500 text-white'
-                                                    : 'hover:bg-slate-900/60 text-slate-300'
+                                                    ? isDarkMode
+                                                        ? 'bg-amber-500/15 border-l-4 border-amber-500 text-white shadow-xs'
+                                                        : 'bg-amber-100/70 border-l-4 border-amber-600 text-slate-950 shadow-xs'
+                                                    : isDarkMode
+                                                    ? 'hover:bg-slate-900/80 text-slate-200'
+                                                    : 'hover:bg-amber-50/60 text-slate-900'
                                             }`}
                                         >
                                             {/* Bulk Checkbox */}
                                             <button
                                                 onClick={(e) => toggleSelectStudent(st.id, e)}
-                                                className="mt-0.5 text-slate-500 hover:text-purple-400 transition cursor-pointer"
+                                                className={`mt-0.5 transition cursor-pointer ${
+                                                    isDarkMode ? 'text-slate-400 hover:text-purple-400' : 'text-slate-600 hover:text-purple-600'
+                                                }`}
                                             >
                                                 {isBulkSelected ? (
-                                                    <CheckSquare className="w-4 h-4 text-purple-400" />
+                                                    <CheckSquare className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                                                 ) : (
                                                     <Square className="w-4 h-4" />
                                                 )}
@@ -601,7 +609,7 @@ export default function StudentWorkInspectorModal({
                                             {/* Details */}
                                             <div className="flex-1 min-w-0 space-y-1">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="font-bold text-xs truncate">
+                                                    <span className="font-extrabold text-xs truncate text-black dark:text-white">
                                                         {st.name || 'Unnamed Student'}
                                                     </span>
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider ${getStatusStyle(st.reviewStatus || 'unreviewed')}`}>
@@ -609,17 +617,25 @@ export default function StudentWorkInspectorModal({
                                                     </span>
                                                 </div>
 
-                                                <div className="flex items-center justify-between text-[11px] text-slate-400">
-                                                    <span className="truncate">{st.className || 'General'} • Roll {st.rollNumber || 'N/A'}</span>
+                                                <div className={`flex items-center justify-between text-[11px] font-semibold ${
+                                                    isDarkMode ? 'text-slate-200' : 'text-slate-900'
+                                                }`}>
+                                                    <span className="truncate">
+                                                        <span className="text-black dark:text-white font-bold">{st.className || 'General'}</span>
+                                                        <span className="mx-1 text-slate-400">•</span>
+                                                        <span className="text-amber-800 dark:text-amber-300 font-bold">Roll {st.rollNumber || 'N/A'}</span>
+                                                    </span>
                                                     {st.latestRating && (
-                                                        <span className="text-amber-400 font-bold flex items-center gap-0.5">
+                                                        <span className="text-amber-600 dark:text-amber-400 font-extrabold flex items-center gap-0.5">
                                                             ★ {st.latestRating}/5
                                                         </span>
                                                     )}
                                                 </div>
 
                                                 {/* Datetime & Activity */}
-                                                <div className="flex items-center justify-between text-[10px] text-slate-500 pt-0.5">
+                                                <div className={`flex items-center justify-between text-[10px] font-medium pt-0.5 ${
+                                                    isDarkMode ? 'text-slate-400' : 'text-slate-700'
+                                                }`}>
                                                     <span className="flex items-center gap-1">
                                                         <Clock className="w-3 h-3 text-slate-500" />
                                                         {timeInfo.relative}
@@ -664,16 +680,16 @@ export default function StudentWorkInspectorModal({
                                 <div className={`px-4 py-2.5 border-b flex items-center justify-between text-xs ${isDarkMode ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200 bg-slate-100/60'}`}>
                                     <div className="flex items-center gap-3">
                                         <div>
-                                            <span className="font-bold text-sm text-white">
+                                            <span className="font-extrabold text-sm text-black dark:text-white">
                                                 {workspace.studentInfo?.name}
                                             </span>
-                                            <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                                                <span>{workspace.studentInfo?.className}</span>
-                                                <span>•</span>
-                                                <span>Adm: {workspace.studentInfo?.admissionNumber}</span>
-                                                <span>•</span>
-                                                <span className="text-slate-300 flex items-center gap-1">
-                                                    <Calendar className="w-3 h-3 text-amber-400" />
+                                            <div className="flex items-center gap-2 text-[11px] text-slate-800 dark:text-slate-300 font-semibold">
+                                                <span className="text-black dark:text-white font-bold">{workspace.studentInfo?.className}</span>
+                                                <span className="text-slate-400">•</span>
+                                                <span>Adm: <strong className="text-black dark:text-white">{workspace.studentInfo?.admissionNumber}</strong></span>
+                                                <span className="text-slate-400">•</span>
+                                                <span className="text-slate-900 dark:text-slate-200 flex items-center gap-1 font-medium">
+                                                    <Calendar className="w-3 h-3 text-amber-500" />
                                                     Last Active: {formatDateTime(workspace.updatedAt).formatted}
                                                 </span>
                                             </div>

@@ -55,7 +55,8 @@ import {
     Minimize2,
     WrapText,
     ListOrdered,
-    Square
+    Square,
+    Bug
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
@@ -71,6 +72,8 @@ import StudentWorkInspectorModal from '@/components/StudentWorkInspectorModal';
 import StudentFeedbackDrawer from '@/components/StudentFeedbackDrawer';
 import MermaidRenderer from '@/components/MermaidRenderer';
 import FindReplaceModal from '@/components/FindReplaceModal';
+import ExportBundleModal from '@/components/ExportBundleModal';
+import DebugVariableInspectorModal from '@/components/DebugVariableInspectorModal';
 
 // Dynamically load Monaco Editor to avoid SSR conflicts
 const Editor = dynamic(() => import('@monaco-editor/react'), {
@@ -284,6 +287,9 @@ function PracticeIDEPage() {
     const isSavingTabRef = useRef({});
     const isProgrammaticUpdateRef = useRef(false);
     const [showFindReplaceModal, setShowFindReplaceModal] = useState(false);
+    const [showExportBundleModal, setShowExportBundleModal] = useState(false);
+    const [showDebugModal, setShowDebugModal] = useState(false);
+    const executionAbortControllerRef = useRef(null);
 
     // Autosave Toggle & Flashing Disappearing Indicator
     const [isAutosaveEnabled, setIsAutosaveEnabled] = useState(true);
@@ -1646,11 +1652,13 @@ Date:          ${dateStr}
             : (!isDatabaseLanguage(currentTab.language) ? (currentTab.stdin || '') : '');
 
         try {
+            const controller = new AbortController();
+            executionAbortControllerRef.current = controller;
             const response = await compilerAPI.execute({
                 language: isDatabaseLanguage(currentTab.language) ? (currentTab.language === 'plsql' ? 'plsql' : 'sql') : (currentTab.language === 'python' ? 'python3' : currentTab.language),
                 code: codeToExecute,
                 stdin: effectiveStdin
-            });
+            }, { signal: controller.signal });
 
             if (response.data && response.data.success) {
                 const resData = response.data.data;
@@ -1677,6 +1685,10 @@ Date:          ${dateStr}
                 }
             }
         } catch (err) {
+            if (err.name === 'CanceledError' || err.name === 'AbortError' || err.code === 'ERR_CANCELED') {
+                toast('Execution cancelled (Ctrl+C)', { icon: '⏹️' });
+                return;
+            }
             const errMsg = err.response?.data?.message || err.message || 'Execution failed';
             setTabs((prevTabs) => {
                 const nextTabs = prevTabs.map((t) =>
@@ -1693,6 +1705,7 @@ Date:          ${dateStr}
             });
             toast.error(errMsg);
         } finally {
+            executionAbortControllerRef.current = null;
             setIsExecuting(false);
         }
     };
@@ -1740,10 +1753,16 @@ Date:          ${dateStr}
         if (socketRef.current) {
             socketRef.current.emit('compiler:kill', { sessionId: currentActiveId });
         }
+        if (executionAbortControllerRef.current) {
+            try {
+                executionAbortControllerRef.current.abort();
+            } catch (_) {}
+            executionAbortControllerRef.current = null;
+        }
         setIsExecuting(false);
         setActivePrompt(null);
         setPromptValue('');
-        toast('Execution stopped', { icon: '⏹️' });
+        toast('Execution stopped (Ctrl+C)', { icon: '⏹️' });
     };
 
     // Python Tutor style interactive in-console stdin input handler
@@ -2284,6 +2303,9 @@ Date:          ${dateStr}
                 onSaveAs={() => handleSaveToDocuments(true)}
                 onDownload={handleDownloadCode}
                 onExportDiagram={() => toast('Export diagram available in Canvas toolbar')}
+                onExportBundle={() => setShowExportBundleModal(true)}
+                isExecuting={isExecuting}
+                onStopCode={handleStopExecution}
                 onRunCode={handleExecuteCode}
                 onClearOutput={() => {
                     setTabs((prev) =>
@@ -2777,27 +2799,42 @@ Date:          ${dateStr}
 
                             <div className={`h-4 w-px mx-0.5 ${isLightMode ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                            {/* Round Play / Stop Button */}
+                            {/* Round Play / Stop Button (Icon-Only with Tooltip) */}
                             {isExecuting ? (
                                 <button
                                     onClick={handleStopExecution}
-                                    className="px-2.5 py-1.5 rounded-full bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-md shadow-rose-600/30 transition-all flex items-center gap-1 cursor-pointer active:scale-95 group relative animate-pulse"
+                                    className="w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white shadow-md shadow-rose-600/30 transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative animate-pulse"
                                     title="Stop Program Execution (Ctrl+C)"
-                                    aria-label="Stop Program"
+                                    aria-label="Stop Program Execution (Ctrl+C)"
                                 >
                                     <Square className="w-3.5 h-3.5 fill-current" />
-                                    <span className="text-[11px] font-sans font-bold">Stop</span>
                                 </button>
                             ) : (
                                 <button
                                     onClick={() => handleExecuteCode()}
                                     className="w-8 h-8 rounded-full bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative"
                                     title="Run Program (Ctrl+↵)"
-                                    aria-label="Run Program"
+                                    aria-label="Run Program (Ctrl+↵)"
                                 >
                                     <Play className="w-4 h-4 fill-current ml-0.5" />
                                 </button>
                             )}
+
+                            {/* Debugger & Variable Monitoring Overlay Button */}
+                            <button
+                                onClick={() => setShowDebugModal(true)}
+                                className={`w-8 h-8 rounded-full border transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative ${
+                                    showDebugModal
+                                        ? 'border-rose-500 bg-rose-500/20 text-rose-500 shadow-xs'
+                                        : isLightMode
+                                        ? 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                                        : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300'
+                                }`}
+                                title="Debug & Variable Inspector (F5 / Step)"
+                                aria-label="Debug & Variable Inspector"
+                            >
+                                <Bug className="w-4 h-4 text-rose-500" />
+                            </button>
 
                             {/* ER Diagram Generator from Live Database Schema (in SQL / PL-SQL mode) */}
                             {isDatabaseLanguage(activeTab.language) && (
@@ -3670,6 +3707,26 @@ Date:          ${dateStr}
                 onClose={() => setShowFeedbackDrawer(false)}
                 reviewData={{ latestReview: latestStudentReview }}
                 isDarkMode={!isLightMode}
+            />
+
+            {/* Project Bundle Exporter Modal (.zip with source, pdf/docx report, diagram & output) */}
+            <ExportBundleModal
+                isOpen={showExportBundleModal}
+                onClose={() => setShowExportBundleModal(false)}
+                activeTab={activeTab}
+                flowchartData={activeTab.flowchartData}
+                isLightMode={isLightMode}
+            />
+
+            {/* Draggable Centered Debugger & Variable Monitoring Overlay */}
+            <DebugVariableInspectorModal
+                isOpen={showDebugModal}
+                onClose={() => setShowDebugModal(false)}
+                editorRef={editorRef}
+                code={editorRef.current ? editorRef.current.getValue() : (activeTab.code || '')}
+                language={activeTab.language}
+                isLightMode={isLightMode}
+                onRunCode={handleExecuteCode}
             />
         </div>
     );
