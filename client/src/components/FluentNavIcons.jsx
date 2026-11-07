@@ -305,13 +305,36 @@ export function FluentPlansIcon({ className = "w-6 h-6 flex-shrink-0", ...props 
     );
 }
 
-// 24. Settings (Intermeshed precision gears)
+// 24. Settings (Precision Steel Cogwheel / Gray Gear)
 export function FluentSettingsIcon({ className = "w-6 h-6 flex-shrink-0", ...props }) {
     return (
         <svg className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
-            <circle cx="16" cy="16" r="6" fill="#64748b" />
-            <path d="M16 2v4m0 20v4m-14-14h4m20 0h4m-5.8-9.8l-2.8 2.8m-10.8 10.8l-2.8 2.8m0-16.4l2.8 2.8m10.8 10.8l2.8 2.8" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" />
-            <circle cx="16" cy="16" r="3" fill="#0f172a" />
+            <defs>
+                <linearGradient id="fluent_settings_gear_grad" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#94a3b8" />
+                    <stop offset="0.5" stopColor="#64748b" />
+                    <stop offset="1" stopColor="#475569" />
+                </linearGradient>
+                <linearGradient id="fluent_settings_hub_grad" x1="10" y1="10" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#cbd5e1" />
+                    <stop offset="1" stopColor="#475569" />
+                </linearGradient>
+            </defs>
+            {/* 6-Tooth Precision Cogwheel Outer Rim */}
+            <path
+                fill="url(#fluent_settings_gear_grad)"
+                stroke="#334155"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+                d="M12.9 5.5a3.1 3.1 0 0 1 6.2 0 3.1 3.1 0 0 0 4.4 2.5 3.1 3.1 0 0 1 3.1 5.4 3.1 3.1 0 0 0 0 5.1 3.1 3.1 0 0 1-3.1 5.4 3.1 3.1 0 0 0-4.4 2.5 3.1 3.1 0 0 1-6.2 0 3.1 3.1 0 0 0-4.4-2.5 3.1 3.1 0 0 1-3.1-5.4 3.1 3.1 0 0 0 0-5.1 3.1 3.1 0 0 1 3.1-5.4 3.1 3.1 0 0 0 4.4-2.5z"
+            />
+            {/* Raised Circular Hub */}
+            <circle cx="16" cy="16" r="6" fill="url(#fluent_settings_hub_grad)" stroke="#334155" strokeWidth="1" />
+            {/* Axle Bore Center Cutout Hole */}
+            <circle cx="16" cy="16" r="3.2" fill="#0f172a" />
+            <circle cx="16" cy="16" r="3.2" stroke="#1e293b" strokeWidth="0.8" fill="none" />
+            {/* Specular Highlight Sheen */}
+            <circle cx="14.5" cy="14.5" r="0.8" fill="#ffffff" opacity="0.6" />
         </svg>
     );
 }

@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LabRecManager — Direction B Icon System Catalog</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #111827;
+      --card-border: #1f2937;
+      --text-main: #f8fafc;
+      --text-sub: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --chip-bg: #1e293b;
+      --chip-border: #334155;
+    }
+    html.light {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --text-main: #0f172a;
+      --text-sub: #64748b;
+      --accent: #0284c7;
+      --accent-glow: rgba(2, 132, 199, 0.15);
+      --chip-bg: #f1f5f9;
+      --chip-border: #cbd5e1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      min-height: 100vh;
+      padding: 40px 24px;
+      transition: background 0.2s, color 0.2s;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 28px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .brand-badge {
+      background: linear-gradient(135deg, #0284c7, #6366f1);
+      color: white;
+      font-size: 22px;
+      font-weight: 800;
+      width: 50px;
+      height: 50px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(2, 132, 199, 0.4);
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-sub);
+      margin-top: 4px;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .search-box {
+      position: relative;
+    }
+    .search-input {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      font-size: 14px;
+      padding: 10px 16px 10px 38px;
+      border-radius: 10px;
+      width: 250px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      color: var(--text-sub);
+    }
+    .btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn:hover {
+      border-color: var(--accent);
+      background: var(--chip-bg);
+    }
+    .filters {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 16px;
+      margin-bottom: 20px;
+    }
+    .filter-chip {
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      color: var(--text-sub);
+      padding: 7px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .filter-chip:hover, .filter-chip.active {
+      color: var(--text-main);
+      border-color: var(--accent);
+      background: var(--accent-glow);
+    }
+    .counter {
+      font-size: 13px;
+      color: var(--text-sub);
+      margin-bottom: 24px;
+    }
+    .counter strong {
+      color: var(--accent);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 20px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+      border-color: var(--accent);
+    }
+    .icon-stage {
+      height: 94px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg);
+      border-radius: 10px;
+      border: 1px dashed var(--card-border);
+      position: relative;
+    }
+    .icon-svg {
+      width: 48px;
+      height: 48px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+      transition: transform 0.2s;
+    }
+    .card:hover .icon-svg {
+      transform: scale(1.1);
+    }
+    .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .icon-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .category-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--chip-bg);
+      color: var(--accent);
+      border: 1px solid var(--chip-border);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .icon-desc {
+      font-size: 12px;
+      color: var(--text-sub);
+      line-height: 1.4;
+      min-height: 34px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .copy-btn {
+      flex: 1;
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
+      color: var(--text-main);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 7px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      transition: background 0.2s, color 0.2s;
+    }
+    .copy-btn:hover {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #10b981;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      z-index: 1000;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-badge">⚡</div>
+        <div>
+          <h1>LabRecManager Icon System Catalog</h1>
+          <p class="subtitle">Direction B: Multi-Color Fluent Glyphs with Dimensional Shading & 100% Commercial-Safe Licensing (MIT / Apache 2.0 / PSF)</p>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="search-box">
+          <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search icons...">
+        </div>
+        <button id="themeToggle" class="btn">
+          <span id="themeIcon">☀️</span> Toggle Theme
+        </button>
+      </div>
+    </header>
+
+    <div class="filters" id="filters">
+      <button class="filter-chip active" data-filter="all">All Icons (<span id="totalCount">48</span>)</button>
+      <button class="filter-chip" data-filter="Sidebar Navigation">Sidebar Navigation</button>
+      <button class="filter-chip" data-filter="Code Practice IDE">Code Practice IDE</button>
+      <button class="filter-chip" data-filter="Header & Profile">Header & Profile</button>
+      <button class="filter-chip" data-filter="Dashboard Shortcuts">Dashboard Shortcuts</button>
+      <button class="filter-chip" data-filter="Office Document Studios">Office Document Studios</button>
+    </div>
+
+    <div class="counter">
+      Showing <strong id="visibleCount">48</strong> icons in system
+    </div>
+
+    <div class="grid" id="iconGrid">
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentdashboardicon" data-desc="1. dashboard (3d orange & terracotta house)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M16 2L2 14h5v14h18V14h5L16 2z" fill="#f97316" />
+            <path d="M16 2L16 14h10V14h4L16 2z" fill="#ea580c" />
+            <path d="M12 28V18h8v10h-8z" fill="#fed7aa" />
+            <path d="M12 18h8v2h-8z" fill="#fdba74" />
+            <rect x="7" y="18" width="3" height="4" rx="0.5" fill="#ffedd5" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentDashboardIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">1. Dashboard (3D Orange & Terracotta House)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentDashboardIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(0, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentcodepracticeicon" data-desc="2. code practice ide (terminal window with macos red/yellow/green dots & cyan code prompt)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="2" y="4" width="28" height="24" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1.5" />
+            <circle cx="6" cy="9" r="1.5" fill="#ef4444" />
+            <circle cx="10" cy="9" r="1.5" fill="#f59e0b" />
+            <circle cx="14" cy="9" r="1.5" fill="#10b981" />
+            <path d="M7 16l4 3-4 3" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="14" y1="22" x2="20" y2="22" stroke="#facc15" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentCodePracticeIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">2. Code Practice IDE (Terminal Window with macOS red/yellow/green dots & cyan code prompt)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentCodePracticeIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(1, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentclassesicon" data-desc="3. classes & students (multi-color student group avatars)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="12" cy="10" r="5" fill="#f87171" />
+            <path d="M4 26c0-4.418 3.582-8 8-8s8 3.582 8 8H4z" fill="#ef4444" />
+            <circle cx="22" cy="12" r="4" fill="#38bdf8" />
+            <path d="M16 26c0-3.314 2.686-6 6-6s6 2.686 6 6h-12z" fill="#0284c7" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentClassesIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">3. Classes & Students (Multi-color student group avatars)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentClassesIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(2, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentmanageusersicon" data-desc="4. manage users (user with golden addition plus badge)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="13" cy="11" r="6" fill="#38bdf8" />
+            <path d="M4 27c0-4.97 4.03-9 9-9s9 4.03 9 9H4z" fill="#0284c7" />
+            <circle cx="24" cy="11" r="5" fill="#10b981" />
+            <path d="M24 8v6M21 11h6" stroke="#ffffff" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentManageUsersIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">4. Manage Users (User with golden addition plus badge)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentManageUsersIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(3, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentlabsicon" data-desc="5. labs & pc stations (silver imac desktop workstation with glowing cyan terminal)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="2" y="4" width="28" height="19" rx="3" fill="#0f172a" stroke="#64748b" stroke-width="1.5" />
+            <rect x="5" y="7" width="22" height="13" rx="1.5" fill="#0284c7" />
+            <path d="M8 12l3 3-3 3" stroke="#e0f2fe" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M16 23v4M10 27h12" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentLabsIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">5. Labs & PC Stations (Silver iMac desktop workstation with glowing cyan terminal)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentLabsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(4, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Dashboard Shortcuts" data-name="fluentassignmentsicon" data-desc="6. assignments (lined clipboard with brass clip and emerald checkmarks)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="5" width="22" height="24" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+            <rect x="11" y="2" width="10" height="5" rx="1.5" fill="#facc15" stroke="#d97706" stroke-width="1" />
+            <circle cx="16" cy="4.5" r="1.5" fill="#78350f" />
+            <path d="M10 12l2 2 4-4" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="18" y1="12" x2="23" y2="12" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M10 18l2 2 4-4" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="18" y1="18" x2="23" y2="18" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" />
+            <path d="M10 24l2 2 4-4" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="18" y1="24" x2="23" y2="24" stroke="#64748b" stroke-width="1.5" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentAssignmentsIcon</span>
+              <span class="category-tag">Dashboard Shortcuts</span>
+            </div>
+            <div class="icon-desc">6. Assignments (Lined clipboard with brass clip and emerald checkmarks)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentAssignmentsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(5, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluenttrainingicon" data-desc="7. training & courses (graduation cap with gold tassel and diploma)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <polygon points="16,4 30,11 16,18 2,11" fill="#4f46e5" />
+            <polygon points="16,4 30,11 16,14 2,11" fill="#6366f1" />
+            <path d="M7 14v8c0 4.4 4 8 9 8s9-3.6 9-8v-8" fill="#4338ca" />
+            <path d="M28 12v9" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" />
+            <circle cx="28" cy="22" r="2" fill="#fbbf24" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTrainingIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">7. Training & Courses (Graduation cap with gold tassel and diploma)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTrainingIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(6, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Office Document Studios" data-name="fluentdocumentsicon" data-desc="8. documents & office suite (multi-sheet stack: word doc + excel sheet)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="8" y="2" width="18" height="24" rx="2" fill="#10b981" />
+            <rect x="4" y="6" width="18" height="24" rx="2" fill="#2563eb" />
+            <path d="M8 12h10M8 16h8M8 20h6" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" />
+            <rect x="18" y="16" width="10" height="12" rx="1.5" fill="#f97316" />
+            <circle cx="23" cy="22" r="2.5" fill="#ffffff" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentDocumentsIcon</span>
+              <span class="category-tag">Office Document Studios</span>
+            </div>
+            <div class="icon-desc">8. Documents & Office Suite (Multi-sheet stack: Word doc + Excel sheet)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentDocumentsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(7, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentstorageicon" data-desc="9. storage / hard drive (server rack array with emerald activity lights)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="3" y="5" width="26" height="9" rx="2.5" fill="#334155" stroke="#475569" stroke-width="1" />
+            <circle cx="7" cy="9.5" r="1.5" fill="#10b981" />
+            <circle cx="11" cy="9.5" r="1.5" fill="#38bdf8" />
+            <line x1="16" y1="9.5" x2="25" y2="9.5" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+
+            <rect x="3" y="18" width="26" height="9" rx="2.5" fill="#1e293b" stroke="#334155" stroke-width="1" />
+            <circle cx="7" cy="22.5" r="1.5" fill="#10b981" />
+            <circle cx="11" cy="22.5" r="1.5" fill="#f59e0b" />
+            <line x1="16" y1="22.5" x2="25" y2="22.5" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentStorageIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">9. Storage / Hard Drive (Server rack array with emerald activity lights)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentStorageIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(8, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentgradesicon" data-desc="10. grades & awards (3d golden trophy cup with star insignia)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M7 6h18v7a9 9 0 01-18 0V6z" fill="#eab308" />
+            <path d="M7 8H3a3 3 0 003 3h1V8zM25 8h4a3 3 0 01-3 3h-1V8z" fill="#ca8a04" />
+            <rect x="14" y="19" width="4" height="6" fill="#eab308" />
+            <path d="M10 25h12v3H10z" fill="#ca8a04" />
+            <polygon points="16,8 17.5,12 21.5,12 18,14.5 19.5,18.5 16,16 12.5,18.5 14,14.5 10.5,12 14.5,12" fill="#fef08a" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentGradesIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">10. Grades & Awards (3D Golden Trophy Cup with star insignia)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentGradesIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(9, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentmeetingsicon" data-desc="11. live meetings (cobalt blue hd camera with optical lens)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="3" y="8" width="18" height="16" rx="3" fill="#2563eb" />
+            <path d="M21 12l8-5v18l-8-5V12z" fill="#1d4ed8" />
+            <circle cx="12" cy="16" r="4" fill="#60a5fa" />
+            <circle cx="12" cy="16" r="2" fill="#1e3a8a" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentMeetingsIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">11. Live Meetings (Cobalt blue HD camera with optical lens)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentMeetingsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(10, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentwhiteboardicon" data-desc="12. interactive whiteboard (wooden easel with artist canvas)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M16 3l-8 23h3l1.8-5h6.4l1.8 5h3L16 3z" fill="#b45309" />
+            <rect x="6" y="7" width="20" height="13" rx="2" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" />
+            <circle cx="12" cy="13" r="2.5" fill="#38bdf8" />
+            <path d="M16 15l4-3v6l-4-3z" fill="#f43f5e" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentWhiteboardIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">12. Interactive Whiteboard (Wooden easel with artist canvas)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentWhiteboardIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(11, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentquizicon" data-desc="13. ai quiz maker (glowing purple & gold brain lightbulb with sparks)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="16" cy="16" r="12" fill="#8b5cf6" />
+            <path d="M16 7c-3.3 0-6 2.7-6 6 0 2.2 1.2 4.1 3 5.1V20h6v-1.9c1.8-1 3-2.9 3-5.1 0-3.3-2.7-6-6-6z" fill="#fde047" />
+            <circle cx="24" cy="7" r="2" fill="#ec4899" />
+            <circle cx="7" cy="8" r="1.5" fill="#38bdf8" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentQuizIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">13. AI Quiz Maker (Glowing purple & gold brain lightbulb with sparks)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentQuizIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(12, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentactivityicon" data-desc="14. activity logs (heartbeat pulse monitor in emerald/teal)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="16" cy="16" r="13" fill="#0f766e" />
+            <path d="M5 16h5l3-8 5 16 3-8h6" stroke="#2dd4bf" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentActivityIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">14. Activity Logs (Heartbeat pulse monitor in emerald/teal)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentActivityIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(13, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentticketsicon" data-desc="15. tickets & issue tracker (perforated orange ticket stub)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M4 10a2 2 0 012-2h20a2 2 0 012 2v3a3 3 0 000 6v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3a3 3 0 000-6v-3z" fill="#f97316" />
+            <line x1="12" y1="10" x2="12" y2="22" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="2 2" />
+            <circle cx="20" cy="16" r="2.5" fill="#ffffff" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTicketsIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">15. Tickets & Issue Tracker (Perforated orange ticket stub)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTicketsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(14, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentbuildingicon" data-desc="16. school profile & campus (academy building with columns)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <polygon points="16,3 30,10 2,10" fill="#0284c7" />
+            <rect x="4" y="10" width="24" height="2" fill="#0369a1" />
+            <rect x="5" y="12" width="3" height="13" fill="#e0f2fe" />
+            <rect x="11" y="12" width="3" height="13" fill="#e0f2fe" />
+            <rect x="18" y="12" width="3" height="13" fill="#e0f2fe" />
+            <rect x="24" y="12" width="3" height="13" fill="#e0f2fe" />
+            <rect x="2" y="25" width="28" height="4" fill="#0369a1" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentBuildingIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">16. School Profile & Campus (Academy building with columns)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentBuildingIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(15, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluenttimetableicon" data-desc="17. timetable / schedule (wall clock with red second hand)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="16" cy="16" r="13" fill="#0284c7" />
+            <circle cx="16" cy="16" r="10" fill="#f8fafc" />
+            <line x1="16" y1="10" x2="16" y2="16" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round" />
+            <line x1="16" y1="16" x2="21" y2="16" stroke="#ef4444" stroke-width="2" stroke-linecap="round" />
+            <circle cx="16" cy="16" r="1.5" fill="#0f172a" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTimetableIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">17. Timetable / Schedule (Wall clock with red second hand)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTimetableIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(16, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentcalendaricon" data-desc="18. calendar (tear-off desk calendar with red binder header)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="6" width="24" height="22" rx="3" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1" />
+            <path d="M4 9a3 3 0 013-3h18a3 3 0 013 3v4H4V9z" fill="#ef4444" />
+            <rect x="8" y="3" width="3" height="5" rx="1.5" fill="#991b1b" />
+            <rect x="21" y="3" width="3" height="5" rx="1.5" fill="#991b1b" />
+            <circle cx="10" cy="18" r="1.5" fill="#0284c7" />
+            <circle cx="16" cy="18" r="1.5" fill="#0284c7" />
+            <circle cx="22" cy="18" r="1.5" fill="#0284c7" />
+            <circle cx="10" cy="23" r="1.5" fill="#0284c7" />
+            <circle cx="16" cy="23" r="1.5" fill="#ef4444" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentCalendarIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">18. Calendar (Tear-off desk calendar with red binder header)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentCalendarIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(17, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentreportsicon" data-desc="19. reports & analytics (rising 3-bar gradient telemetry chart)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="16" width="6" height="12" rx="1.5" fill="#38bdf8" />
+            <rect x="13" y="10" width="6" height="18" rx="1.5" fill="#3b82f6" />
+            <rect x="22" y="5" width="6" height="23" rx="1.5" fill="#1d4ed8" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentReportsIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">19. Reports & Analytics (Rising 3-bar gradient telemetry chart)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentReportsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(18, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentnotesicon" data-desc="20. admin notes (yellow notepad with ballpoint pencil)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="4" width="22" height="24" rx="2" fill="#fef08a" stroke="#ca8a04" stroke-width="1" />
+            <line x1="9" y1="9" x2="23" y2="9" stroke="#eab308" stroke-width="1.5" />
+            <line x1="9" y1="14" x2="23" y2="14" stroke="#eab308" stroke-width="1.5" />
+            <line x1="9" y1="19" x2="19" y2="19" stroke="#eab308" stroke-width="1.5" />
+            <path d="M22 18l5 5-2 3-5-5 2-3z" fill="#f97316" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentNotesIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">20. Admin Notes (Yellow notepad with ballpoint pencil)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentNotesIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(19, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentdefaultersicon" data-desc="21. defaulters & alerts (crimson warning shield with exclamation badge)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M16 3l12 5v9c0 7-5 12-12 13-7-1-12-6-12-13V8l12-5z" fill="#ef4444" />
+            <path d="M16 3l12 5v9c0 7-5 12-12 13V3z" fill="#dc2626" />
+            <line x1="16" y1="10" x2="16" y2="19" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+            <circle cx="16" cy="23" r="1.5" fill="#ffffff" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentDefaultersIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">21. Defaulters & Alerts (Crimson warning shield with exclamation badge)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentDefaultersIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(20, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentrolesicon" data-desc="22. roles & permissions (golden key & security lock)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="12" cy="14" r="8" fill="#f59e0b" />
+            <circle cx="12" cy="14" r="4" fill="#fef3c7" />
+            <path d="M18 14h10v4h-3v3h-3v-3h-4v-4z" fill="#d97706" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentRolesIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">22. Roles & Permissions (Golden key & security lock)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentRolesIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(21, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentplansicon" data-desc="23. implementation plans (structured task list with checklist icons)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="4" width="24" height="24" rx="3" fill="#1e293b" stroke="#475569" stroke-width="1" />
+            <rect x="7" y="8" width="5" height="5" rx="1" fill="#10b981" />
+            <line x1="15" y1="10.5" x2="25" y2="10.5" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" />
+            <rect x="7" y="15" width="5" height="5" rx="1" fill="#38bdf8" />
+            <line x1="15" y1="17.5" x2="25" y2="17.5" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" />
+            <rect x="7" y="22" width="5" height="5" rx="1" fill="#f59e0b" />
+            <line x1="15" y1="24.5" x2="22" y2="24.5" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentPlansIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">23. Implementation Plans (Structured task list with checklist icons)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentPlansIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(22, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentsettingsicon" data-desc="24. settings (precision steel cogwheel / gray gear)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <defs>
+                <linearGradient id="fluent_settings_gear_grad" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#94a3b8" />
+                    <stop offset="0.5" stop-color="#64748b" />
+                    <stop offset="1" stop-color="#475569" />
+                </linearGradient>
+                <linearGradient id="fluent_settings_hub_grad" x1="10" y1="10" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#cbd5e1" />
+                    <stop offset="1" stop-color="#475569" />
+                </linearGradient>
+            </defs>
+            {/* 6-Tooth Precision Cogwheel Outer Rim */}
+            <path
+                fill="url(#fluent_settings_gear_grad)"
+                stroke="#334155"
+                stroke-width="1.2"
+                stroke-linejoin="round"
+                d="M12.9 5.5a3.1 3.1 0 0 1 6.2 0 3.1 3.1 0 0 0 4.4 2.5 3.1 3.1 0 0 1 3.1 5.4 3.1 3.1 0 0 0 0 5.1 3.1 3.1 0 0 1-3.1 5.4 3.1 3.1 0 0 0-4.4 2.5 3.1 3.1 0 0 1-6.2 0 3.1 3.1 0 0 0-4.4-2.5 3.1 3.1 0 0 1-3.1-5.4 3.1 3.1 0 0 0 0-5.1 3.1 3.1 0 0 1 3.1-5.4 3.1 3.1 0 0 0 4.4-2.5z"
+            />
+            {/* Raised Circular Hub */}
+            <circle cx="16" cy="16" r="6" fill="url(#fluent_settings_hub_grad)" stroke="#334155" stroke-width="1" />
+            {/* Axle Bore Center Cutout Hole */}
+            <circle cx="16" cy="16" r="3.2" fill="#0f172a" />
+            <circle cx="16" cy="16" r="3.2" stroke="#1e293b" stroke-width="0.8" fill="none" />
+            {/* Specular Highlight Sheen */}
+            <circle cx="14.5" cy="14.5" r="0.8" fill="#ffffff" opacity="0.6" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentSettingsIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">24. Settings (Precision Steel Cogwheel / Gray Gear)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentSettingsIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(23, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentteachingicon" data-desc="25. teaching dashboard (presentation blackboard with teacher marker)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="3" y="5" width="26" height="18" rx="2" fill="#065f46" stroke="#047857" stroke-width="1.5" />
+            <path d="M8 11l4 5 4-3 7 6" stroke="#34d399" stroke-width="2" stroke-linecap="round" fill="none" />
+            <circle cx="23" cy="19" r="1.5" fill="#fde047" />
+            <path d="M16 23v6M10 29h12" stroke="#64748b" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTeachingIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">25. Teaching Dashboard (Presentation blackboard with teacher marker)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTeachingIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(24, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Sidebar Navigation" data-name="fluentlectureplansicon" data-desc="26. lecture plans (book with colored ribbon bookmark)">
+          <div class="icon-stage">
+            <svg class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path d="M6 4h16a3 3 0 013 3v20a1 1 0 01-1 1H7a3 3 0 01-3-3V7a3 3 0 012-3z" fill="#0284c7" />
+            <path d="M4 25a3 3 0 013-3h18v4H7a3 3 0 01-3-1z" fill="#0369a1" />
+            <path d="M14 4v11l3-2 3 2V4h-6z" fill="#f59e0b" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentLecturePlansIcon</span>
+              <span class="category-tag">Sidebar Navigation</span>
+            </div>
+            <div class="icon-desc">26. Lecture Plans (Book with colored ribbon bookmark)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentLecturePlansIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(25, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentpythonicon" data-desc="authentic python dual-snake vector glyph (psf / mit)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 128 128" fill="none" >
+            <path fill="#387eb8" d="M63.58 3.5c-30.82 0-28.9 13.37-28.9 13.37l.03 13.85h29.35v4.18H23.51S3.5 32.55 3.5 63.56c0 31.02 17.43 29.9 17.43 29.9h10.4V78.85s-.56-17.43 17.15-17.43h29.07s16.6 0 16.6-16.03V16.87S96.27 3.5 63.58 3.5M47.7 12.63a4.7 4.7 0 1 1 0 9.4a4.7 4.7 0 0 1 0-9.4" />
+            <path fill="#ffe052" d="M64.42 124.5c30.82 0 28.9-13.37 28.9-13.37l-.03-13.85H63.94v-4.18h40.55s20.01 2.35 20.01-28.66c0-31.02-17.43-29.9-17.43-29.9h-10.4v14.61s.56 17.43-17.15 17.43H30.85s-16.6 0-16.6 16.03v28.52s-2.12 13.37 30.57 13.37m15.88-9.13a4.7 4.7 0 1 1 0-9.4a4.7 4.7 0 0 1 0 9.4" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentPythonIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Authentic Python dual-snake vector glyph (PSF / MIT)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentPythonIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(26, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentsqlicon" data-desc="sql relational database cylinder glyph">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <ellipse cx="16" cy="7" rx="12" ry="4" fill="#38bdf8" />
+            <path d="M4 7v6c0 2.21 5.37 4 12 4s12-1.79 12-4V7" fill="#0284c7" />
+            <ellipse cx="16" cy="13" rx="12" ry="3.5" fill="#38bdf8" opacity="0.6" />
+            <path d="M4 14v6c0 2.21 5.37 4 12 4s12-1.79 12-4v-6" fill="#0369a1" />
+            <ellipse cx="16" cy="20" rx="12" ry="3.5" fill="#38bdf8" opacity="0.6" />
+            <path d="M4 21v4c0 2.21 5.37 4 12 4s12-1.79 12-4v-4" fill="#075985" />
+            <polygon points="17,14 13,21 17,21 15,27 21,19 17,19" fill="#facc15" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentSqlIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">SQL Relational Database Cylinder Glyph</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentSqlIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(27, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentcppicon" data-desc="c++ vector glyph">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <polygon points="16,2 29,9.5 29,24.5 16,32 3,24.5 3,9.5" fill="#0284c7" />
+            <polygon points="16,4 27,10.5 27,23.5 16,30 5,10.5" fill="#0369a1" />
+            <path d="M15 11a5 5 0 1 0 0 10h2" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" />
+            <path d="M21 14v4M19 16h4M26 14v4M24 16h4" stroke="#67e8f9" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentCppIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">C++ Vector Glyph</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentCppIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(28, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentdebuggericon" data-desc="microsoft fluent 2 3d crimson bug (interactive debugger)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path fill="#f43f5e" d="M16 6a6 6 0 0 0-6 6v2h12v-2a6 6 0 0 0-6-6" />
+            <rect x="8" y="16" width="16" height="12" rx="6" fill="#e11d48" />
+            <path stroke="#fb7185" stroke-width="2" stroke-linecap="round" d="M4 14l6 2m0 0l-6 6m24-8l-6 2m0 0l6 6M8 8L5 5m19 3l3-3" />
+            <circle cx="13" cy="11" r="1.2" fill="#ffffff" />
+            <circle cx="19" cy="11" r="1.2" fill="#ffffff" />
+            <line x1="16" y1="16" x2="16" y2="28" stroke="#9f1239" stroke-width="1.5" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentDebuggerIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Microsoft Fluent 2 3D Crimson Bug (Interactive Debugger)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentDebuggerIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(29, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentterminalicon" data-desc="icons8 flat color terminal bezel with emerald prompt">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="3" y="5" width="26" height="22" rx="4" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+            <rect x="3" y="5" width="26" height="6" rx="4" fill="#0f172a" />
+            <circle cx="6.5" cy="8" r="1" fill="#ef4444" />
+            <circle cx="9.5" cy="8" r="1" fill="#f59e0b" />
+            <circle cx="12.5" cy="8" r="1" fill="#10b981" />
+            <path stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M7 16l4 4l-4 4m6 0h6" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTerminalIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Icons8 Flat Color Terminal Bezel with Emerald Prompt</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTerminalIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(30, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentflowcharticon" data-desc="flowchart visualizer tri-color node diagram">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="4" width="10" height="7" rx="2" fill="#3b82f6" />
+            <polygon points="22 13 28 17.5 22 22 16 17.5" fill="#f59e0b" />
+            <rect x="4" y="21" width="10" height="7" rx="2" fill="#10b981" />
+            <path d="M9 11v10M14 17.5h2" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" />
+            <circle cx="9" cy="11" r="1" fill="#93c5fd" />
+            <circle cx="9" cy="21" r="1" fill="#86efac" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentFlowchartIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Flowchart Visualizer Tri-color Node Diagram</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentFlowchartIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(31, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentaicopiloticon" data-desc="ai copilot radiant gradient star">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <defs>
+                <linearGradient id="fluent_ai_copilot_grad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#38bdf8" />
+                    <stop offset="0.5" stop-color="#818cf8" />
+                    <stop offset="1" stop-color="#c084fc" />
+                </linearGradient>
+            </defs>
+            <path fill="url(#fluent_ai_copilot_grad)" d="M16 2l3.5 10.5L30 16l-10.5 3.5L16 30l-3.5-10.5L2 16l10.5-3.5z" />
+            <circle cx="16" cy="16" r="2.5" fill="#ffffff" opacity="0.9" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentAICopilotIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">AI Copilot Radiant Gradient Star</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentAICopilotIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(32, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentconsoleclearicon" data-desc="console clear action button (crimson wastebasket)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 48 48" fill="none" >
+            <path fill="#f87171" d="M12 12h24l-2 28a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4z" />
+            <path fill="#dc2626" d="M9 8h30a2 2 0 0 1 2 2v2H7v-2a2 2 0 0 1 2-2z" />
+            <rect x="19" y="4" width="10" height="4" rx="2" fill="#991b1b" />
+            <line x1="20" y1="18" x2="20" y2="36" stroke="#b91c1c" stroke-width="2.5" stroke-linecap="round" />
+            <line x1="28" y1="18" x2="28" y2="36" stroke="#b91c1c" stroke-width="2.5" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentConsoleClearIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Console Clear Action Button (Crimson Wastebasket)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentConsoleClearIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(33, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Code Practice IDE" data-name="fluentconsoleexporticon" data-desc="console export bundle action button (royal indigo arrow to tray)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 48 48" fill="none" >
+            <path fill="#38bdf8" d="M6 34v6a4 4 0 0 0 4 4h28a4 4 0 0 0 4-4v-6" stroke="#0284c7" stroke-width="3" stroke-linecap="round" />
+            <path d="M24 6v24m-8-8l8 8l8-8" stroke="#0284c7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentConsoleExportIcon</span>
+              <span class="category-tag">Code Practice IDE</span>
+            </div>
+            <div class="icon-desc">Console Export Bundle Action Button (Royal Indigo Arrow to Tray)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentConsoleExportIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(34, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Header & Profile" data-name="fluentacademicsessionicon" data-desc="academic session 3d mortarboard cap with golden tassel">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path fill="#3b82f6" d="M16 4l14 7l-14 7L2 11z" />
+            <path fill="#1d4ed8" d="M6 14.5v6.5c0 4 4.5 7 10 7s10-3 10-7v-6.5l-10 5z" />
+            <path stroke="#f59e0b" stroke-width="2" stroke-linecap="round" d="M28 12v9a2 2 0 1 0 4 0v-9z" />
+            <circle cx="30" cy="22" r="1.5" fill="#f59e0b" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentAcademicSessionIcon</span>
+              <span class="category-tag">Header & Profile</span>
+            </div>
+            <div class="icon-desc">Academic Session 3D Mortarboard Cap with Golden Tassel</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentAcademicSessionIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(35, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Header & Profile" data-name="fluentnotificationbellicon" data-desc="metallic gold brass notification bell with clapper & unread ping">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path fill="#fbbf24" d="M16 3a3 3 0 0 0-3 3v1.1A10 10 0 0 0 6 17v4l-2 2v2h24v-2l-2-2v-4a10 10 0 0 0-7-9.9V6a3 3 0 0 0-3-3" />
+            <path fill="#d97706" d="M16 29a4 4 0 0 0 4-4h-8a4 4 0 0 0 4 4" />
+            {hasUnread && (
+                <circle cx="23" cy="7" r="4.5" fill="#ef4444" stroke="#ffffff" stroke-width="1.5" />
+            )}
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentNotificationBellIcon</span>
+              <span class="category-tag">Header & Profile</span>
+            </div>
+            <div class="icon-desc">Metallic Gold Brass Notification Bell with Clapper & Unread Ping</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentNotificationBellIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(36, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Header & Profile" data-name="fluentuserprofileicon" data-desc="3d royal azure user profile glyph">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <circle cx="16" cy="16" r="14" fill="#3b82f6" />
+            <circle cx="16" cy="11" r="5" fill="#ffffff" />
+            <path d="M7 26c0-4.5 4-7.5 9-7.5s9 3 9 7.5" fill="#ffffff" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentUserProfileIcon</span>
+              <span class="category-tag">Header & Profile</span>
+            </div>
+            <div class="icon-desc">3D Royal Azure User Profile Glyph</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentUserProfileIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(37, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Header & Profile" data-name="fluentsecuritylockicon" data-desc="satin-finish brass padlock with brushed steel shackle (security & pin reset)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="13" width="22" height="16" rx="4" fill="#f59e0b" stroke="#d97706" stroke-width="1.5" />
+            <path d="M10 13V9a6 6 0 0 1 12 0v4" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" fill="none" />
+            <circle cx="16" cy="20" r="2" fill="#78350f" />
+            <path d="M16 22v3" stroke="#78350f" stroke-width="2" stroke-linecap="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentSecurityLockIcon</span>
+              <span class="category-tag">Header & Profile</span>
+            </div>
+            <div class="icon-desc">Satin-Finish Brass Padlock with Brushed Steel Shackle (Security & PIN Reset)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentSecurityLockIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(38, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Header & Profile" data-name="fluentsignouticon" data-desc="architectural egress portal with crimson departure arrow (sign out / logout)">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path fill="#fee2e2" d="M6 5h12a3 3 0 0 1 3 3v3h-4V8H8v16h9v-3h4v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3" />
+            <path fill="#ef4444" d="M21 11l6 5l-6 5v-3H12v-4h9z" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentSignOutIcon</span>
+              <span class="category-tag">Header & Profile</span>
+            </div>
+            <div class="icon-desc">Architectural Egress Portal with Crimson Departure Arrow (Sign Out / Logout)</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentSignOutIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(39, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Dashboard Shortcuts" data-name="fluentassignmentledgericon" data-desc="layered indigo assignment ledger with verification badge">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="4" width="22" height="25" rx="3" fill="#6366f1" />
+            <path fill="#818cf8" d="M5 4h22v6H5z" />
+            <rect x="9" y="14" width="14" height="2" rx="1" fill="#c7d2fe" />
+            <rect x="9" y="18" width="10" height="2" rx="1" fill="#c7d2fe" />
+            <circle cx="23" cy="22" r="5" fill="#10b981" />
+            <path d="M21 22l1.5 1.5l3-3" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentAssignmentLedgerIcon</span>
+              <span class="category-tag">Dashboard Shortcuts</span>
+            </div>
+            <div class="icon-desc">Layered Indigo Assignment Ledger with Verification Badge</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentAssignmentLedgerIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(40, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Dashboard Shortcuts" data-name="fluentworkstationicon" data-desc="high-definition led workstation monitor with stand">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="3" y="5" width="26" height="16" rx="2" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5" />
+            <rect x="5" y="7" width="22" height="12" fill="#0f172a" />
+            <path fill="#38bdf8" d="M12 21h8v3h-8zM8 24h16v2H8z" />
+            <circle cx="16" cy="13" r="2" fill="#10b981" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentWorkstationIcon</span>
+              <span class="category-tag">Dashboard Shortcuts</span>
+            </div>
+            <div class="icon-desc">High-Definition LED Workstation Monitor with Stand</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentWorkstationIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(41, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Dashboard Shortcuts" data-name="fluenttrophyicon" data-desc="3d championship trophy goblet in polished gold on mahogany plinth">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <path fill="#f59e0b" d="M8 5h16v9a8 8 0 0 1-16 0z" />
+            <path fill="#d97706" d="M4 7h4v4a4 4 0 0 1-4-4zm24 0h-4v4a4 4 0 0 0 4-4z" />
+            <path fill="#b45309" d="M14 21h4v4h-4z" />
+            <rect x="10" y="25" width="12" height="3" rx="1.5" fill="#78350f" />
+            <circle cx="16" cy="11" r="3" fill="#fef3c7" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTrophyIcon</span>
+              <span class="category-tag">Dashboard Shortcuts</span>
+            </div>
+            <div class="icon-desc">3D Championship Trophy Goblet in Polished Gold on Mahogany Plinth</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTrophyIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(42, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="App & Studio Components" data-name="fluenttimetableicon" data-desc="teal desk calendar binder with pinned dates & red active period marker">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="6" width="24" height="22" rx="4" fill="#0d9488" />
+            <rect x="4" y="6" width="24" height="7" rx="3" fill="#14b8a6" />
+            <circle cx="9" cy="4" r="1.5" fill="#f8fafc" />
+            <circle cx="23" cy="4" r="1.5" fill="#f8fafc" />
+            <rect x="8" y="16" width="4" height="4" rx="1" fill="#ccfbf1" />
+            <rect x="14" y="16" width="4" height="4" rx="1" fill="#ccfbf1" />
+            <rect x="20" y="16" width="4" height="4" rx="1" fill="#ccfbf1" />
+            <rect x="8" y="22" width="4" height="4" rx="1" fill="#ccfbf1" />
+            <rect x="14" y="22" width="4" height="4" rx="1" fill="#f43f5e" />
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentTimetableIcon</span>
+              <span class="category-tag">App & Studio Components</span>
+            </div>
+            <div class="icon-desc">Teal Desk Calendar Binder with Pinned Dates & Red Active Period Marker</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentTimetableIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(43, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Office Document Studios" data-name="fluentworddocicon" data-desc="cobalt word processor document with typography badge">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="3" width="22" height="26" rx="3" fill="#2563eb" />
+            <path fill="#60a5fa" d="M10 9h12v2H10zm0 5h12v2H10zm0 5h8v2H10z" />
+            <rect x="2" y="10" width="10" height="12" rx="2" fill="#1d4ed8" stroke="#3b82f6" stroke-width="1.5" />
+            <text x="4" y="19" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="9" fill="#ffffff">W</text>
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentWordDocIcon</span>
+              <span class="category-tag">Office Document Studios</span>
+            </div>
+            <div class="icon-desc">Cobalt Word Processor Document with Typography Badge</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentWordDocIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(44, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Office Document Studios" data-name="fluentexceldocicon" data-desc="emerald excel spreadsheet workbook with grid badge">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="3" width="22" height="26" rx="3" fill="#16a34a" />
+            <path fill="#4ade80" d="M10 9h12v1H10zm0 4h12v1H10zm0 4h12v1H10zm0 4h12v1H10z" />
+            <rect x="2" y="10" width="10" height="12" rx="2" fill="#15803d" stroke="#22c55e" stroke-width="1.5" />
+            <text x="4.5" y="19" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="9" fill="#ffffff">X</text>
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentExcelDocIcon</span>
+              <span class="category-tag">Office Document Studios</span>
+            </div>
+            <div class="icon-desc">Emerald Excel Spreadsheet Workbook with Grid Badge</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentExcelDocIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(45, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Office Document Studios" data-name="fluentpdfdocicon" data-desc="scarlet pdf document seal with pdf badge">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="5" y="3" width="22" height="26" rx="3" fill="#dc2626" />
+            <path fill="#f87171" d="M9 18h14v2H9zm0 4h10v2H9z" />
+            <rect x="2" y="9" width="11" height="12" rx="2" fill="#b91c1c" stroke="#ef4444" stroke-width="1.5" />
+            <text x="3.5" y="18" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="7" fill="#ffffff">PDF</text>
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentPdfDocIcon</span>
+              <span class="category-tag">Office Document Studios</span>
+            </div>
+            <div class="icon-desc">Scarlet PDF Document Seal with PDF Badge</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentPdfDocIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(46, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+        <div class="card" data-category="Office Document Studios" data-name="fluentslidesdocicon" data-desc="amber presentation deck with projection aperture">
+          <div class="icon-stage">
+            <svg  class="icon-svg" ${shadowClass}`} viewBox="0 0 32 32" fill="none" >
+            <rect x="4" y="5" width="24" height="18" rx="3" fill="#ea580c" />
+            <rect x="7" y="8" width="18" height="12" rx="1.5" fill="#fed7aa" />
+            <path fill="#ea580c" d="M9 10h6v3H9zm0 5h14v1.5H9z" />
+            <rect x="2" y="10" width="10" height="12" rx="2" fill="#c2410c" stroke="#f97316" stroke-width="1.5" />
+            <text x="4" y="19" font-family="'Plus Jakarta Sans', sans-serif" font-weight="800" font-size="9" fill="#ffffff">P</text>
+        </svg>
+          </div>
+          <div class="meta">
+            <div class="icon-title">
+              <span>FluentSlidesDocIcon</span>
+              <span class="category-tag">Office Document Studios</span>
+            </div>
+            <div class="icon-desc">Amber Presentation Deck with Projection Aperture</div>
+          </div>
+          <div class="actions">
+            <button class="copy-btn" onclick="copyText('FluentSlidesDocIcon', 'Component name copied!')">Copy Name</button>
+            <button class="copy-btn" onclick="copySvg(47, 'SVG markup copied!')">Copy SVG</button>
+          </div>
+        </div>
+      
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Copied to clipboard!</div>
+
+  <script>
+    const allSvgs = ["<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M16 2L2 14h5v14h18V14h5L16 2z\" fill=\"#f97316\" />\n            <path d=\"M16 2L16 14h10V14h4L16 2z\" fill=\"#ea580c\" />\n            <path d=\"M12 28V18h8v10h-8z\" fill=\"#fed7aa\" />\n            <path d=\"M12 18h8v2h-8z\" fill=\"#fdba74\" />\n            <rect x=\"7\" y=\"18\" width=\"3\" height=\"4\" rx=\"0.5\" fill=\"#ffedd5\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"2\" y=\"4\" width=\"28\" height=\"24\" rx=\"4\" fill=\"#0f172a\" stroke=\"#334155\" stroke-width=\"1.5\" />\n            <circle cx=\"6\" cy=\"9\" r=\"1.5\" fill=\"#ef4444\" />\n            <circle cx=\"10\" cy=\"9\" r=\"1.5\" fill=\"#f59e0b\" />\n            <circle cx=\"14\" cy=\"9\" r=\"1.5\" fill=\"#10b981\" />\n            <path d=\"M7 16l4 3-4 3\" stroke=\"#38bdf8\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n            <line x1=\"14\" y1=\"22\" x2=\"20\" y2=\"22\" stroke=\"#facc15\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"12\" cy=\"10\" r=\"5\" fill=\"#f87171\" />\n            <path d=\"M4 26c0-4.418 3.582-8 8-8s8 3.582 8 8H4z\" fill=\"#ef4444\" />\n            <circle cx=\"22\" cy=\"12\" r=\"4\" fill=\"#38bdf8\" />\n            <path d=\"M16 26c0-3.314 2.686-6 6-6s6 2.686 6 6h-12z\" fill=\"#0284c7\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"13\" cy=\"11\" r=\"6\" fill=\"#38bdf8\" />\n            <path d=\"M4 27c0-4.97 4.03-9 9-9s9 4.03 9 9H4z\" fill=\"#0284c7\" />\n            <circle cx=\"24\" cy=\"11\" r=\"5\" fill=\"#10b981\" />\n            <path d=\"M24 8v6M21 11h6\" stroke=\"#ffffff\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"2\" y=\"4\" width=\"28\" height=\"19\" rx=\"3\" fill=\"#0f172a\" stroke=\"#64748b\" stroke-width=\"1.5\" />\n            <rect x=\"5\" y=\"7\" width=\"22\" height=\"13\" rx=\"1.5\" fill=\"#0284c7\" />\n            <path d=\"M8 12l3 3-3 3\" stroke=\"#e0f2fe\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n            <path d=\"M16 23v4M10 27h12\" stroke=\"#94a3b8\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"5\" width=\"22\" height=\"24\" rx=\"3\" fill=\"#f8fafc\" stroke=\"#cbd5e1\" stroke-width=\"1\" />\n            <rect x=\"11\" y=\"2\" width=\"10\" height=\"5\" rx=\"1.5\" fill=\"#facc15\" stroke=\"#d97706\" stroke-width=\"1\" />\n            <circle cx=\"16\" cy=\"4.5\" r=\"1.5\" fill=\"#78350f\" />\n            <path d=\"M10 12l2 2 4-4\" stroke=\"#10b981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n            <line x1=\"18\" y1=\"12\" x2=\"23\" y2=\"12\" stroke=\"#64748b\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n            <path d=\"M10 18l2 2 4-4\" stroke=\"#10b981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n            <line x1=\"18\" y1=\"18\" x2=\"23\" y2=\"18\" stroke=\"#64748b\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n            <path d=\"M10 24l2 2 4-4\" stroke=\"#10b981\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n            <line x1=\"18\" y1=\"24\" x2=\"23\" y2=\"24\" stroke=\"#64748b\" stroke-width=\"1.5\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <polygon points=\"16,4 30,11 16,18 2,11\" fill=\"#4f46e5\" />\n            <polygon points=\"16,4 30,11 16,14 2,11\" fill=\"#6366f1\" />\n            <path d=\"M7 14v8c0 4.4 4 8 9 8s9-3.6 9-8v-8\" fill=\"#4338ca\" />\n            <path d=\"M28 12v9\" stroke=\"#f59e0b\" stroke-width=\"2\" stroke-linecap=\"round\" />\n            <circle cx=\"28\" cy=\"22\" r=\"2\" fill=\"#fbbf24\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"8\" y=\"2\" width=\"18\" height=\"24\" rx=\"2\" fill=\"#10b981\" />\n            <rect x=\"4\" y=\"6\" width=\"18\" height=\"24\" rx=\"2\" fill=\"#2563eb\" />\n            <path d=\"M8 12h10M8 16h8M8 20h6\" stroke=\"#ffffff\" stroke-width=\"1.8\" stroke-linecap=\"round\" />\n            <rect x=\"18\" y=\"16\" width=\"10\" height=\"12\" rx=\"1.5\" fill=\"#f97316\" />\n            <circle cx=\"23\" cy=\"22\" r=\"2.5\" fill=\"#ffffff\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"3\" y=\"5\" width=\"26\" height=\"9\" rx=\"2.5\" fill=\"#334155\" stroke=\"#475569\" stroke-width=\"1\" />\n            <circle cx=\"7\" cy=\"9.5\" r=\"1.5\" fill=\"#10b981\" />\n            <circle cx=\"11\" cy=\"9.5\" r=\"1.5\" fill=\"#38bdf8\" />\n            <line x1=\"16\" y1=\"9.5\" x2=\"25\" y2=\"9.5\" stroke=\"#64748b\" stroke-width=\"2\" stroke-linecap=\"round\" />\n\n            <rect x=\"3\" y=\"18\" width=\"26\" height=\"9\" rx=\"2.5\" fill=\"#1e293b\" stroke=\"#334155\" stroke-width=\"1\" />\n            <circle cx=\"7\" cy=\"22.5\" r=\"1.5\" fill=\"#10b981\" />\n            <circle cx=\"11\" cy=\"22.5\" r=\"1.5\" fill=\"#f59e0b\" />\n            <line x1=\"16\" y1=\"22.5\" x2=\"25\" y2=\"22.5\" stroke=\"#64748b\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M7 6h18v7a9 9 0 01-18 0V6z\" fill=\"#eab308\" />\n            <path d=\"M7 8H3a3 3 0 003 3h1V8zM25 8h4a3 3 0 01-3 3h-1V8z\" fill=\"#ca8a04\" />\n            <rect x=\"14\" y=\"19\" width=\"4\" height=\"6\" fill=\"#eab308\" />\n            <path d=\"M10 25h12v3H10z\" fill=\"#ca8a04\" />\n            <polygon points=\"16,8 17.5,12 21.5,12 18,14.5 19.5,18.5 16,16 12.5,18.5 14,14.5 10.5,12 14.5,12\" fill=\"#fef08a\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"3\" y=\"8\" width=\"18\" height=\"16\" rx=\"3\" fill=\"#2563eb\" />\n            <path d=\"M21 12l8-5v18l-8-5V12z\" fill=\"#1d4ed8\" />\n            <circle cx=\"12\" cy=\"16\" r=\"4\" fill=\"#60a5fa\" />\n            <circle cx=\"12\" cy=\"16\" r=\"2\" fill=\"#1e3a8a\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M16 3l-8 23h3l1.8-5h6.4l1.8 5h3L16 3z\" fill=\"#b45309\" />\n            <rect x=\"6\" y=\"7\" width=\"20\" height=\"13\" rx=\"2\" fill=\"#f8fafc\" stroke=\"#cbd5e1\" stroke-width=\"1.5\" />\n            <circle cx=\"12\" cy=\"13\" r=\"2.5\" fill=\"#38bdf8\" />\n            <path d=\"M16 15l4-3v6l-4-3z\" fill=\"#f43f5e\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"16\" cy=\"16\" r=\"12\" fill=\"#8b5cf6\" />\n            <path d=\"M16 7c-3.3 0-6 2.7-6 6 0 2.2 1.2 4.1 3 5.1V20h6v-1.9c1.8-1 3-2.9 3-5.1 0-3.3-2.7-6-6-6z\" fill=\"#fde047\" />\n            <circle cx=\"24\" cy=\"7\" r=\"2\" fill=\"#ec4899\" />\n            <circle cx=\"7\" cy=\"8\" r=\"1.5\" fill=\"#38bdf8\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"16\" cy=\"16\" r=\"13\" fill=\"#0f766e\" />\n            <path d=\"M5 16h5l3-8 5 16 3-8h6\" stroke=\"#2dd4bf\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M4 10a2 2 0 012-2h20a2 2 0 012 2v3a3 3 0 000 6v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3a3 3 0 000-6v-3z\" fill=\"#f97316\" />\n            <line x1=\"12\" y1=\"10\" x2=\"12\" y2=\"22\" stroke=\"#ffffff\" stroke-width=\"1.5\" stroke-dasharray=\"2 2\" />\n            <circle cx=\"20\" cy=\"16\" r=\"2.5\" fill=\"#ffffff\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <polygon points=\"16,3 30,10 2,10\" fill=\"#0284c7\" />\n            <rect x=\"4\" y=\"10\" width=\"24\" height=\"2\" fill=\"#0369a1\" />\n            <rect x=\"5\" y=\"12\" width=\"3\" height=\"13\" fill=\"#e0f2fe\" />\n            <rect x=\"11\" y=\"12\" width=\"3\" height=\"13\" fill=\"#e0f2fe\" />\n            <rect x=\"18\" y=\"12\" width=\"3\" height=\"13\" fill=\"#e0f2fe\" />\n            <rect x=\"24\" y=\"12\" width=\"3\" height=\"13\" fill=\"#e0f2fe\" />\n            <rect x=\"2\" y=\"25\" width=\"28\" height=\"4\" fill=\"#0369a1\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"16\" cy=\"16\" r=\"13\" fill=\"#0284c7\" />\n            <circle cx=\"16\" cy=\"16\" r=\"10\" fill=\"#f8fafc\" />\n            <line x1=\"16\" y1=\"10\" x2=\"16\" y2=\"16\" stroke=\"#0f172a\" stroke-width=\"2.2\" stroke-linecap=\"round\" />\n            <line x1=\"16\" y1=\"16\" x2=\"21\" y2=\"16\" stroke=\"#ef4444\" stroke-width=\"2\" stroke-linecap=\"round\" />\n            <circle cx=\"16\" cy=\"16\" r=\"1.5\" fill=\"#0f172a\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"6\" width=\"24\" height=\"22\" rx=\"3\" fill=\"#f8fafc\" stroke=\"#cbd5e1\" stroke-width=\"1\" />\n            <path d=\"M4 9a3 3 0 013-3h18a3 3 0 013 3v4H4V9z\" fill=\"#ef4444\" />\n            <rect x=\"8\" y=\"3\" width=\"3\" height=\"5\" rx=\"1.5\" fill=\"#991b1b\" />\n            <rect x=\"21\" y=\"3\" width=\"3\" height=\"5\" rx=\"1.5\" fill=\"#991b1b\" />\n            <circle cx=\"10\" cy=\"18\" r=\"1.5\" fill=\"#0284c7\" />\n            <circle cx=\"16\" cy=\"18\" r=\"1.5\" fill=\"#0284c7\" />\n            <circle cx=\"22\" cy=\"18\" r=\"1.5\" fill=\"#0284c7\" />\n            <circle cx=\"10\" cy=\"23\" r=\"1.5\" fill=\"#0284c7\" />\n            <circle cx=\"16\" cy=\"23\" r=\"1.5\" fill=\"#ef4444\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"16\" width=\"6\" height=\"12\" rx=\"1.5\" fill=\"#38bdf8\" />\n            <rect x=\"13\" y=\"10\" width=\"6\" height=\"18\" rx=\"1.5\" fill=\"#3b82f6\" />\n            <rect x=\"22\" y=\"5\" width=\"6\" height=\"23\" rx=\"1.5\" fill=\"#1d4ed8\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"4\" width=\"22\" height=\"24\" rx=\"2\" fill=\"#fef08a\" stroke=\"#ca8a04\" stroke-width=\"1\" />\n            <line x1=\"9\" y1=\"9\" x2=\"23\" y2=\"9\" stroke=\"#eab308\" stroke-width=\"1.5\" />\n            <line x1=\"9\" y1=\"14\" x2=\"23\" y2=\"14\" stroke=\"#eab308\" stroke-width=\"1.5\" />\n            <line x1=\"9\" y1=\"19\" x2=\"19\" y2=\"19\" stroke=\"#eab308\" stroke-width=\"1.5\" />\n            <path d=\"M22 18l5 5-2 3-5-5 2-3z\" fill=\"#f97316\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M16 3l12 5v9c0 7-5 12-12 13-7-1-12-6-12-13V8l12-5z\" fill=\"#ef4444\" />\n            <path d=\"M16 3l12 5v9c0 7-5 12-12 13V3z\" fill=\"#dc2626\" />\n            <line x1=\"16\" y1=\"10\" x2=\"16\" y2=\"19\" stroke=\"#ffffff\" stroke-width=\"2.5\" stroke-linecap=\"round\" />\n            <circle cx=\"16\" cy=\"23\" r=\"1.5\" fill=\"#ffffff\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"12\" cy=\"14\" r=\"8\" fill=\"#f59e0b\" />\n            <circle cx=\"12\" cy=\"14\" r=\"4\" fill=\"#fef3c7\" />\n            <path d=\"M18 14h10v4h-3v3h-3v-3h-4v-4z\" fill=\"#d97706\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"4\" width=\"24\" height=\"24\" rx=\"3\" fill=\"#1e293b\" stroke=\"#475569\" stroke-width=\"1\" />\n            <rect x=\"7\" y=\"8\" width=\"5\" height=\"5\" rx=\"1\" fill=\"#10b981\" />\n            <line x1=\"15\" y1=\"10.5\" x2=\"25\" y2=\"10.5\" stroke=\"#94a3b8\" stroke-width=\"2\" stroke-linecap=\"round\" />\n            <rect x=\"7\" y=\"15\" width=\"5\" height=\"5\" rx=\"1\" fill=\"#38bdf8\" />\n            <line x1=\"15\" y1=\"17.5\" x2=\"25\" y2=\"17.5\" stroke=\"#94a3b8\" stroke-width=\"2\" stroke-linecap=\"round\" />\n            <rect x=\"7\" y=\"22\" width=\"5\" height=\"5\" rx=\"1\" fill=\"#f59e0b\" />\n            <line x1=\"15\" y1=\"24.5\" x2=\"22\" y2=\"24.5\" stroke=\"#94a3b8\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <defs>\n                <linearGradient id=\"fluent_settings_gear_grad\" x1=\"4\" y1=\"4\" x2=\"28\" y2=\"28\" gradientUnits=\"userSpaceOnUse\">\n                    <stop stop-color=\"#94a3b8\" />\n                    <stop offset=\"0.5\" stop-color=\"#64748b\" />\n                    <stop offset=\"1\" stop-color=\"#475569\" />\n                </linearGradient>\n                <linearGradient id=\"fluent_settings_hub_grad\" x1=\"10\" y1=\"10\" x2=\"22\" y2=\"22\" gradientUnits=\"userSpaceOnUse\">\n                    <stop stop-color=\"#cbd5e1\" />\n                    <stop offset=\"1\" stop-color=\"#475569\" />\n                </linearGradient>\n            </defs>\n            {/* 6-Tooth Precision Cogwheel Outer Rim */}\n            <path\n                fill=\"url(#fluent_settings_gear_grad)\"\n                stroke=\"#334155\"\n                stroke-width=\"1.2\"\n                stroke-linejoin=\"round\"\n                d=\"M12.9 5.5a3.1 3.1 0 0 1 6.2 0 3.1 3.1 0 0 0 4.4 2.5 3.1 3.1 0 0 1 3.1 5.4 3.1 3.1 0 0 0 0 5.1 3.1 3.1 0 0 1-3.1 5.4 3.1 3.1 0 0 0-4.4 2.5 3.1 3.1 0 0 1-6.2 0 3.1 3.1 0 0 0-4.4-2.5 3.1 3.1 0 0 1-3.1-5.4 3.1 3.1 0 0 0 0-5.1 3.1 3.1 0 0 1 3.1-5.4 3.1 3.1 0 0 0 4.4-2.5z\"\n            />\n            {/* Raised Circular Hub */}\n            <circle cx=\"16\" cy=\"16\" r=\"6\" fill=\"url(#fluent_settings_hub_grad)\" stroke=\"#334155\" stroke-width=\"1\" />\n            {/* Axle Bore Center Cutout Hole */}\n            <circle cx=\"16\" cy=\"16\" r=\"3.2\" fill=\"#0f172a\" />\n            <circle cx=\"16\" cy=\"16\" r=\"3.2\" stroke=\"#1e293b\" stroke-width=\"0.8\" fill=\"none\" />\n            {/* Specular Highlight Sheen */}\n            <circle cx=\"14.5\" cy=\"14.5\" r=\"0.8\" fill=\"#ffffff\" opacity=\"0.6\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"3\" y=\"5\" width=\"26\" height=\"18\" rx=\"2\" fill=\"#065f46\" stroke=\"#047857\" stroke-width=\"1.5\" />\n            <path d=\"M8 11l4 5 4-3 7 6\" stroke=\"#34d399\" stroke-width=\"2\" stroke-linecap=\"round\" fill=\"none\" />\n            <circle cx=\"23\" cy=\"19\" r=\"1.5\" fill=\"#fde047\" />\n            <path d=\"M16 23v6M10 29h12\" stroke=\"#64748b\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path d=\"M6 4h16a3 3 0 013 3v20a1 1 0 01-1 1H7a3 3 0 01-3-3V7a3 3 0 012-3z\" fill=\"#0284c7\" />\n            <path d=\"M4 25a3 3 0 013-3h18v4H7a3 3 0 01-3-1z\" fill=\"#0369a1\" />\n            <path d=\"M14 4v11l3-2 3 2V4h-6z\" fill=\"#f59e0b\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 128 128\" fill=\"none\" >\n            <path fill=\"#387eb8\" d=\"M63.58 3.5c-30.82 0-28.9 13.37-28.9 13.37l.03 13.85h29.35v4.18H23.51S3.5 32.55 3.5 63.56c0 31.02 17.43 29.9 17.43 29.9h10.4V78.85s-.56-17.43 17.15-17.43h29.07s16.6 0 16.6-16.03V16.87S96.27 3.5 63.58 3.5M47.7 12.63a4.7 4.7 0 1 1 0 9.4a4.7 4.7 0 0 1 0-9.4\" />\n            <path fill=\"#ffe052\" d=\"M64.42 124.5c30.82 0 28.9-13.37 28.9-13.37l-.03-13.85H63.94v-4.18h40.55s20.01 2.35 20.01-28.66c0-31.02-17.43-29.9-17.43-29.9h-10.4v14.61s.56 17.43-17.15 17.43H30.85s-16.6 0-16.6 16.03v28.52s-2.12 13.37 30.57 13.37m15.88-9.13a4.7 4.7 0 1 1 0-9.4a4.7 4.7 0 0 1 0 9.4\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <ellipse cx=\"16\" cy=\"7\" rx=\"12\" ry=\"4\" fill=\"#38bdf8\" />\n            <path d=\"M4 7v6c0 2.21 5.37 4 12 4s12-1.79 12-4V7\" fill=\"#0284c7\" />\n            <ellipse cx=\"16\" cy=\"13\" rx=\"12\" ry=\"3.5\" fill=\"#38bdf8\" opacity=\"0.6\" />\n            <path d=\"M4 14v6c0 2.21 5.37 4 12 4s12-1.79 12-4v-6\" fill=\"#0369a1\" />\n            <ellipse cx=\"16\" cy=\"20\" rx=\"12\" ry=\"3.5\" fill=\"#38bdf8\" opacity=\"0.6\" />\n            <path d=\"M4 21v4c0 2.21 5.37 4 12 4s12-1.79 12-4v-4\" fill=\"#075985\" />\n            <polygon points=\"17,14 13,21 17,21 15,27 21,19 17,19\" fill=\"#facc15\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <polygon points=\"16,2 29,9.5 29,24.5 16,32 3,24.5 3,9.5\" fill=\"#0284c7\" />\n            <polygon points=\"16,4 27,10.5 27,23.5 16,30 5,10.5\" fill=\"#0369a1\" />\n            <path d=\"M15 11a5 5 0 1 0 0 10h2\" stroke=\"#ffffff\" stroke-width=\"2.5\" stroke-linecap=\"round\" />\n            <path d=\"M21 14v4M19 16h4M26 14v4M24 16h4\" stroke=\"#67e8f9\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path fill=\"#f43f5e\" d=\"M16 6a6 6 0 0 0-6 6v2h12v-2a6 6 0 0 0-6-6\" />\n            <rect x=\"8\" y=\"16\" width=\"16\" height=\"12\" rx=\"6\" fill=\"#e11d48\" />\n            <path stroke=\"#fb7185\" stroke-width=\"2\" stroke-linecap=\"round\" d=\"M4 14l6 2m0 0l-6 6m24-8l-6 2m0 0l6 6M8 8L5 5m19 3l3-3\" />\n            <circle cx=\"13\" cy=\"11\" r=\"1.2\" fill=\"#ffffff\" />\n            <circle cx=\"19\" cy=\"11\" r=\"1.2\" fill=\"#ffffff\" />\n            <line x1=\"16\" y1=\"16\" x2=\"16\" y2=\"28\" stroke=\"#9f1239\" stroke-width=\"1.5\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"3\" y=\"5\" width=\"26\" height=\"22\" rx=\"4\" fill=\"#1e293b\" stroke=\"#334155\" stroke-width=\"1.5\" />\n            <rect x=\"3\" y=\"5\" width=\"26\" height=\"6\" rx=\"4\" fill=\"#0f172a\" />\n            <circle cx=\"6.5\" cy=\"8\" r=\"1\" fill=\"#ef4444\" />\n            <circle cx=\"9.5\" cy=\"8\" r=\"1\" fill=\"#f59e0b\" />\n            <circle cx=\"12.5\" cy=\"8\" r=\"1\" fill=\"#10b981\" />\n            <path stroke=\"#10b981\" stroke-width=\"2.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"M7 16l4 4l-4 4m6 0h6\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"4\" width=\"10\" height=\"7\" rx=\"2\" fill=\"#3b82f6\" />\n            <polygon points=\"22 13 28 17.5 22 22 16 17.5\" fill=\"#f59e0b\" />\n            <rect x=\"4\" y=\"21\" width=\"10\" height=\"7\" rx=\"2\" fill=\"#10b981\" />\n            <path d=\"M9 11v10M14 17.5h2\" stroke=\"#60a5fa\" stroke-width=\"2\" stroke-linecap=\"round\" />\n            <circle cx=\"9\" cy=\"11\" r=\"1\" fill=\"#93c5fd\" />\n            <circle cx=\"9\" cy=\"21\" r=\"1\" fill=\"#86efac\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <defs>\n                <linearGradient id=\"fluent_ai_copilot_grad\" x1=\"2\" y1=\"2\" x2=\"30\" y2=\"30\" gradientUnits=\"userSpaceOnUse\">\n                    <stop stop-color=\"#38bdf8\" />\n                    <stop offset=\"0.5\" stop-color=\"#818cf8\" />\n                    <stop offset=\"1\" stop-color=\"#c084fc\" />\n                </linearGradient>\n            </defs>\n            <path fill=\"url(#fluent_ai_copilot_grad)\" d=\"M16 2l3.5 10.5L30 16l-10.5 3.5L16 30l-3.5-10.5L2 16l10.5-3.5z\" />\n            <circle cx=\"16\" cy=\"16\" r=\"2.5\" fill=\"#ffffff\" opacity=\"0.9\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 48 48\" fill=\"none\" >\n            <path fill=\"#f87171\" d=\"M12 12h24l-2 28a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4z\" />\n            <path fill=\"#dc2626\" d=\"M9 8h30a2 2 0 0 1 2 2v2H7v-2a2 2 0 0 1 2-2z\" />\n            <rect x=\"19\" y=\"4\" width=\"10\" height=\"4\" rx=\"2\" fill=\"#991b1b\" />\n            <line x1=\"20\" y1=\"18\" x2=\"20\" y2=\"36\" stroke=\"#b91c1c\" stroke-width=\"2.5\" stroke-linecap=\"round\" />\n            <line x1=\"28\" y1=\"18\" x2=\"28\" y2=\"36\" stroke=\"#b91c1c\" stroke-width=\"2.5\" stroke-linecap=\"round\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 48 48\" fill=\"none\" >\n            <path fill=\"#38bdf8\" d=\"M6 34v6a4 4 0 0 0 4 4h28a4 4 0 0 0 4-4v-6\" stroke=\"#0284c7\" stroke-width=\"3\" stroke-linecap=\"round\" />\n            <path d=\"M24 6v24m-8-8l8 8l8-8\" stroke=\"#0284c7\" stroke-width=\"4\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path fill=\"#3b82f6\" d=\"M16 4l14 7l-14 7L2 11z\" />\n            <path fill=\"#1d4ed8\" d=\"M6 14.5v6.5c0 4 4.5 7 10 7s10-3 10-7v-6.5l-10 5z\" />\n            <path stroke=\"#f59e0b\" stroke-width=\"2\" stroke-linecap=\"round\" d=\"M28 12v9a2 2 0 1 0 4 0v-9z\" />\n            <circle cx=\"30\" cy=\"22\" r=\"1.5\" fill=\"#f59e0b\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path fill=\"#fbbf24\" d=\"M16 3a3 3 0 0 0-3 3v1.1A10 10 0 0 0 6 17v4l-2 2v2h24v-2l-2-2v-4a10 10 0 0 0-7-9.9V6a3 3 0 0 0-3-3\" />\n            <path fill=\"#d97706\" d=\"M16 29a4 4 0 0 0 4-4h-8a4 4 0 0 0 4 4\" />\n            {hasUnread && (\n                <circle cx=\"23\" cy=\"7\" r=\"4.5\" fill=\"#ef4444\" stroke=\"#ffffff\" stroke-width=\"1.5\" />\n            )}\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <circle cx=\"16\" cy=\"16\" r=\"14\" fill=\"#3b82f6\" />\n            <circle cx=\"16\" cy=\"11\" r=\"5\" fill=\"#ffffff\" />\n            <path d=\"M7 26c0-4.5 4-7.5 9-7.5s9 3 9 7.5\" fill=\"#ffffff\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"13\" width=\"22\" height=\"16\" rx=\"4\" fill=\"#f59e0b\" stroke=\"#d97706\" stroke-width=\"1.5\" />\n            <path d=\"M10 13V9a6 6 0 0 1 12 0v4\" stroke=\"#94a3b8\" stroke-width=\"3\" stroke-linecap=\"round\" fill=\"none\" />\n            <circle cx=\"16\" cy=\"20\" r=\"2\" fill=\"#78350f\" />\n            <path d=\"M16 22v3\" stroke=\"#78350f\" stroke-width=\"2\" stroke-linecap=\"round\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path fill=\"#fee2e2\" d=\"M6 5h12a3 3 0 0 1 3 3v3h-4V8H8v16h9v-3h4v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3\" />\n            <path fill=\"#ef4444\" d=\"M21 11l6 5l-6 5v-3H12v-4h9z\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"4\" width=\"22\" height=\"25\" rx=\"3\" fill=\"#6366f1\" />\n            <path fill=\"#818cf8\" d=\"M5 4h22v6H5z\" />\n            <rect x=\"9\" y=\"14\" width=\"14\" height=\"2\" rx=\"1\" fill=\"#c7d2fe\" />\n            <rect x=\"9\" y=\"18\" width=\"10\" height=\"2\" rx=\"1\" fill=\"#c7d2fe\" />\n            <circle cx=\"23\" cy=\"22\" r=\"5\" fill=\"#10b981\" />\n            <path d=\"M21 22l1.5 1.5l3-3\" stroke=\"#ffffff\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"3\" y=\"5\" width=\"26\" height=\"16\" rx=\"2\" fill=\"#0284c7\" stroke=\"#38bdf8\" stroke-width=\"1.5\" />\n            <rect x=\"5\" y=\"7\" width=\"22\" height=\"12\" fill=\"#0f172a\" />\n            <path fill=\"#38bdf8\" d=\"M12 21h8v3h-8zM8 24h16v2H8z\" />\n            <circle cx=\"16\" cy=\"13\" r=\"2\" fill=\"#10b981\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <path fill=\"#f59e0b\" d=\"M8 5h16v9a8 8 0 0 1-16 0z\" />\n            <path fill=\"#d97706\" d=\"M4 7h4v4a4 4 0 0 1-4-4zm24 0h-4v4a4 4 0 0 0 4-4z\" />\n            <path fill=\"#b45309\" d=\"M14 21h4v4h-4z\" />\n            <rect x=\"10\" y=\"25\" width=\"12\" height=\"3\" rx=\"1.5\" fill=\"#78350f\" />\n            <circle cx=\"16\" cy=\"11\" r=\"3\" fill=\"#fef3c7\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"6\" width=\"24\" height=\"22\" rx=\"4\" fill=\"#0d9488\" />\n            <rect x=\"4\" y=\"6\" width=\"24\" height=\"7\" rx=\"3\" fill=\"#14b8a6\" />\n            <circle cx=\"9\" cy=\"4\" r=\"1.5\" fill=\"#f8fafc\" />\n            <circle cx=\"23\" cy=\"4\" r=\"1.5\" fill=\"#f8fafc\" />\n            <rect x=\"8\" y=\"16\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#ccfbf1\" />\n            <rect x=\"14\" y=\"16\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#ccfbf1\" />\n            <rect x=\"20\" y=\"16\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#ccfbf1\" />\n            <rect x=\"8\" y=\"22\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#ccfbf1\" />\n            <rect x=\"14\" y=\"22\" width=\"4\" height=\"4\" rx=\"1\" fill=\"#f43f5e\" />\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"3\" width=\"22\" height=\"26\" rx=\"3\" fill=\"#2563eb\" />\n            <path fill=\"#60a5fa\" d=\"M10 9h12v2H10zm0 5h12v2H10zm0 5h8v2H10z\" />\n            <rect x=\"2\" y=\"10\" width=\"10\" height=\"12\" rx=\"2\" fill=\"#1d4ed8\" stroke=\"#3b82f6\" stroke-width=\"1.5\" />\n            <text x=\"4\" y=\"19\" font-family=\"'Plus Jakarta Sans', sans-serif\" font-weight=\"800\" font-size=\"9\" fill=\"#ffffff\">W</text>\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"3\" width=\"22\" height=\"26\" rx=\"3\" fill=\"#16a34a\" />\n            <path fill=\"#4ade80\" d=\"M10 9h12v1H10zm0 4h12v1H10zm0 4h12v1H10zm0 4h12v1H10z\" />\n            <rect x=\"2\" y=\"10\" width=\"10\" height=\"12\" rx=\"2\" fill=\"#15803d\" stroke=\"#22c55e\" stroke-width=\"1.5\" />\n            <text x=\"4.5\" y=\"19\" font-family=\"'Plus Jakarta Sans', sans-serif\" font-weight=\"800\" font-size=\"9\" fill=\"#ffffff\">X</text>\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"5\" y=\"3\" width=\"22\" height=\"26\" rx=\"3\" fill=\"#dc2626\" />\n            <path fill=\"#f87171\" d=\"M9 18h14v2H9zm0 4h10v2H9z\" />\n            <rect x=\"2\" y=\"9\" width=\"11\" height=\"12\" rx=\"2\" fill=\"#b91c1c\" stroke=\"#ef4444\" stroke-width=\"1.5\" />\n            <text x=\"3.5\" y=\"18\" font-family=\"'Plus Jakarta Sans', sans-serif\" font-weight=\"800\" font-size=\"7\" fill=\"#ffffff\">PDF</text>\n        </svg>","<svg  class=\"icon-svg\" ${shadowClass}`} viewBox=\"0 0 32 32\" fill=\"none\" >\n            <rect x=\"4\" y=\"5\" width=\"24\" height=\"18\" rx=\"3\" fill=\"#ea580c\" />\n            <rect x=\"7\" y=\"8\" width=\"18\" height=\"12\" rx=\"1.5\" fill=\"#fed7aa\" />\n            <path fill=\"#ea580c\" d=\"M9 10h6v3H9zm0 5h14v1.5H9z\" />\n            <rect x=\"2\" y=\"10\" width=\"10\" height=\"12\" rx=\"2\" fill=\"#c2410c\" stroke=\"#f97316\" stroke-width=\"1.5\" />\n            <text x=\"4\" y=\"19\" font-family=\"'Plus Jakarta Sans', sans-serif\" font-weight=\"800\" font-size=\"9\" fill=\"#ffffff\">P</text>\n        </svg>"];
+
+    // Theme Toggle
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+    themeToggle.addEventListener('click', () => {
+      if (html.classList.contains('dark')) {
+        html.classList.remove('dark');
+        html.classList.add('light');
+        document.getElementById('themeIcon').textContent = '🌙';
+      } else {
+        html.classList.remove('light');
+        html.classList.add('dark');
+        document.getElementById('themeIcon').textContent = '☀️';
+      }
+    });
+
+    // Search & Filtering
+    const searchInput = document.getElementById('searchInput');
+    const filterChips = document.querySelectorAll('.filter-chip');
+    const cards = document.querySelectorAll('.card');
+    const visibleCount = document.getElementById('visibleCount');
+
+    let currentFilter = 'all';
+
+    function updateVisibility() {
+      const query = searchInput.value.toLowerCase().trim();
+      let count = 0;
+
+      cards.forEach(card => {
+        const cat = card.getAttribute('data-category');
+        const name = card.getAttribute('data-name');
+        const desc = card.getAttribute('data-desc');
+
+        const matchesFilter = currentFilter === 'all' || cat === currentFilter;
+        const matchesQuery = !query || name.includes(query) || desc.includes(query) || cat.toLowerCase().includes(query);
+
+        if (matchesFilter && matchesQuery) {
+          card.style.display = 'flex';
+          count++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      visibleCount.textContent = count;
+    }
+
+    searchInput.addEventListener('input', updateVisibility);
+
+    filterChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        filterChips.forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        currentFilter = chip.getAttribute('data-filter');
+        updateVisibility();
+      });
+    });
+
+    // Toast and Copy
+    const toast = document.getElementById('toast');
+    let toastTimeout;
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    function copyText(text, msg) {
+      navigator.clipboard.writeText(text).then(() => showToast(msg));
+    }
+
+    function copySvg(index, msg) {
+      navigator.clipboard.writeText(allSvgs[index]).then(() => showToast(msg));
+    }
+  </script>
+</body>
+</html>
