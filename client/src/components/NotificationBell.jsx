@@ -5,6 +5,7 @@ import {
     Bell, Check, X, Clock, BookOpen, Award, Video, MessageCircle,
     Trash2, Sparkles, Filter, CheckCheck
 } from 'lucide-react';
+import { FluentNotificationBellIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
@@ -178,10 +179,10 @@ export default function NotificationBell() {
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer"
                 title="Notifications"
             >
-                <Bell className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+                <FluentNotificationBellIcon className="w-5 h-5 shrink-0" hasUnread={unreadCount > 0} />
                 {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center animate-pulse shadow-sm">
                         {unreadCount > 9 ? '9+' : unreadCount}

@@ -36,6 +36,13 @@ import {
     Package,
     Square
 } from 'lucide-react';
+import {
+    FluentPythonIcon,
+    FluentSqlIcon,
+    FluentDebuggerIcon,
+    FluentTerminalIcon,
+    FluentFlowchartIcon
+} from '@/components/FluentAppIcons';
 
 const CODE_SNIPPETS_LIST = {
     python: [
@@ -174,6 +181,10 @@ export default function IDEMenuBar({
             <div className="flex items-center gap-1">
                 {/* Brand / Logo Icon */}
                 <div className={`flex items-center gap-1.5 pr-1.5 sm:pr-2 mr-1 border-r ${isLightMode ? 'border-slate-200' : 'border-slate-800'}`}>
+                    <div className="flex items-center -space-x-1">
+                        <FluentPythonIcon className="w-3.5 h-3.5" />
+                        <FluentSqlIcon className="w-3.5 h-3.5" />
+                    </div>
                     <span className="font-extrabold bg-gradient-to-r from-amber-500 to-sky-500 bg-clip-text text-transparent text-xs tracking-wider font-mono">
                         <span className="hidden md:inline">PYTHON & SQL </span>STUDIO
                     </span>
@@ -191,7 +202,7 @@ export default function IDEMenuBar({
                                 className={itemBtnClass}
                             >
                                 <span className="flex items-center gap-2">
-                                    <Plus className="w-3.5 h-3.5 text-amber-500" />
+                                    <FluentPythonIcon className="w-3.5 h-3.5" />
                                     New Python Script (.py)
                                 </span>
                                 <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+N</kbd>
@@ -202,7 +213,7 @@ export default function IDEMenuBar({
                                 className={itemBtnClass}
                             >
                                 <span className="flex items-center gap-2">
-                                    <Database className="w-3.5 h-3.5 text-sky-500" />
+                                    <FluentSqlIcon className="w-3.5 h-3.5" />
                                     New SQL Query (.sql)
                                 </span>
                                 <kbd className="text-[10px] text-slate-400 font-mono">Ctrl+Alt+S</kbd>
@@ -391,7 +402,10 @@ export default function IDEMenuBar({
                     {openMenu === 'snippets' && (
                         <div className={`w-72 max-h-[75vh] overflow-y-auto p-1.5 ${dropdownClass}`}>
                             <p className="text-[10px] uppercase font-bold text-amber-500 px-3 py-1 flex items-center justify-between">
-                                <span>Python Snippets</span>
+                                <span className="flex items-center gap-1.5">
+                                    <FluentPythonIcon className="w-3.5 h-3.5" />
+                                    <span>Python Snippets</span>
+                                </span>
                                 <span className="font-mono text-[9px] bg-amber-500/10 px-1.5 py-0.2 rounded text-amber-500 font-bold">.py</span>
                             </p>
                             {CODE_SNIPPETS_LIST.python.map((snip, idx) => (
@@ -410,7 +424,10 @@ export default function IDEMenuBar({
                             <div className={dividerClass} />
 
                             <p className="text-[10px] uppercase font-bold text-sky-500 px-3 py-1 flex items-center justify-between">
-                                <span>SQL Snippets</span>
+                                <span className="flex items-center gap-1.5">
+                                    <FluentSqlIcon className="w-3.5 h-3.5" />
+                                    <span>SQL Snippets</span>
+                                </span>
                                 <span className="font-mono text-[9px] bg-sky-500/10 px-1.5 py-0.2 rounded text-sky-500 font-bold">.sql</span>
                             </p>
                             {CODE_SNIPPETS_LIST.sql.map((snip, idx) => (

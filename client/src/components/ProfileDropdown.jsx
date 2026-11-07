@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { User, Settings, LogOut, Shield, ChevronDown, Mail, Phone, Building } from 'lucide-react';
+import { FluentSecurityLockIcon, FluentSignOutIcon, FluentUserProfileIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 
 import UserAvatar from './UserAvatar';
@@ -124,7 +125,7 @@ export default function ProfileDropdown() {
                             onClick={() => setIsOpen(false)}
                             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                         >
-                            <User className="w-4 h-4" />
+                            <FluentUserProfileIcon className="w-4 h-4 shrink-0" />
                             <span className="font-medium">View Profile</span>
                         </Link>
                         <Link
@@ -132,15 +133,15 @@ export default function ProfileDropdown() {
                             onClick={() => setIsOpen(false)}
                             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-700 hover:bg-slate-100 transition"
                         >
-                            <Settings className="w-4 h-4" />
-                            <span className="font-medium">Settings</span>
+                            <FluentSecurityLockIcon className="w-4 h-4 shrink-0" />
+                            <span className="font-medium">Settings & Security</span>
                         </Link>
                         <button
                             onClick={handleLogout}
-                            className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-red-600 hover:bg-red-50 transition"
+                            className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-red-600 hover:bg-red-50 transition cursor-pointer"
                         >
-                            <LogOut className="w-4 h-4" />
-                            <span className="font-medium">Logout</span>
+                            <FluentSignOutIcon className="w-4 h-4 shrink-0" />
+                            <span className="font-medium">Sign Out</span>
                         </button>
                     </div>
                 </div>

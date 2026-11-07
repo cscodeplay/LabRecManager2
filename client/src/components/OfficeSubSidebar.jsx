@@ -13,6 +13,12 @@ import {
     Sparkles,
     LayoutGrid
 } from 'lucide-react';
+import {
+    FluentWordDocIcon,
+    FluentExcelDocIcon,
+    FluentSlidesDocIcon,
+    FluentPdfDocIcon
+} from '@/components/FluentAppIcons';
 
 /**
  * Dedicated Sub-Sidebar Rail for the Office & Media Suite.
@@ -50,7 +56,7 @@ export default function OfficeSubSidebar({ activeApp = 'documents', className = 
             name: 'LabDocs',
             subtitle: 'Word Processor',
             href: '/documents/word-editor',
-            icon: FileText,
+            icon: FluentWordDocIcon,
             color: 'blue',
             activeClass: isDark
                 ? 'bg-blue-500/20 text-blue-400 border-blue-500/40 shadow-xs'
@@ -64,7 +70,7 @@ export default function OfficeSubSidebar({ activeApp = 'documents', className = 
             name: 'LabSheets',
             subtitle: 'Spreadsheets',
             href: '/documents/excel-editor',
-            icon: FileSpreadsheet,
+            icon: FluentExcelDocIcon,
             color: 'emerald',
             activeClass: isDark
                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-xs'
@@ -78,7 +84,7 @@ export default function OfficeSubSidebar({ activeApp = 'documents', className = 
             name: 'LabSlides',
             subtitle: 'Presentations',
             href: '/documents/slides-editor',
-            icon: Presentation,
+            icon: FluentSlidesDocIcon,
             color: 'amber',
             activeClass: isDark
                 ? 'bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-xs'
@@ -92,7 +98,7 @@ export default function OfficeSubSidebar({ activeApp = 'documents', className = 
             name: 'LabPDF Studio',
             subtitle: 'PDF Toolkit',
             href: '/documents/pdf-studio',
-            icon: Layers,
+            icon: FluentPdfDocIcon,
             color: 'rose',
             activeClass: isDark
                 ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 shadow-xs'

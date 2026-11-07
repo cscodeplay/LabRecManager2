@@ -58,6 +58,16 @@ import {
     Square,
     Bug
 } from 'lucide-react';
+import {
+    FluentPythonIcon,
+    FluentSqlIcon,
+    FluentDebuggerIcon,
+    FluentTerminalIcon,
+    FluentFlowchartIcon,
+    FluentAICopilotIcon,
+    FluentConsoleClearIcon,
+    FluentConsoleExportIcon
+} from '@/components/FluentAppIcons';
 import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import { useAuthStore } from '@/lib/store';
@@ -2433,13 +2443,14 @@ Date:          ${dateStr}
                                 title={`Path: ${getTabAbsolutePath(tab)}\nFile: ${tab.filename}\n(Double-click or click pencil to rename)`}
                             >
                                 <span
-                                    className={`text-[9px] font-bold px-1 py-0.2 rounded font-mono ${
+                                    className={`inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded font-mono ${
                                         isSql
-                                            ? 'bg-sky-500/20 text-sky-500 dark:text-sky-400'
-                                            : 'bg-amber-500/20 text-amber-500 dark:text-amber-400'
+                                            ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300'
+                                            : 'bg-amber-500/20 text-amber-600 dark:text-amber-300'
                                     }`}
                                 >
-                                    {isSql ? 'SQL' : 'PY'}
+                                    {isSql ? <FluentSqlIcon className="w-3 h-3" /> : <FluentPythonIcon className="w-3 h-3" />}
+                                    <span>{isSql ? 'SQL' : 'PY'}</span>
                                 </span>
 
                                 {editingTabId === tab.id && editingTabLocation === 'tab' ? (
@@ -2595,12 +2606,17 @@ Date:          ${dateStr}
                     <div className={`flex items-center justify-between px-3 py-2 border-b flex-shrink-0 w-full max-w-full relative z-20 overflow-visible ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-slate-900 border-slate-800'}`}>
                         {/* Left: Language Badge & Autosave Status */}
                         <div className="flex items-center gap-2 min-w-0 flex-1 relative overflow-visible">
-                            <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
+                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
                                 isLightMode
                                     ? 'bg-slate-100 border-slate-300 text-slate-700'
                                     : 'bg-slate-800 border-slate-700 text-slate-300'
                             }`}>
-                                {activeTab.language === 'plsql' ? 'PL/SQL' : activeTab.language?.toUpperCase() || 'CODE'}
+                                {isDatabaseLanguage(activeTab.language) ? (
+                                    <FluentSqlIcon className="w-3.5 h-3.5" />
+                                ) : (
+                                    <FluentPythonIcon className="w-3.5 h-3.5" />
+                                )}
+                                <span>{activeTab.language === 'plsql' ? 'PL/SQL' : activeTab.language?.toUpperCase() || 'CODE'}</span>
                             </span>
 
                             {/* File Datetime & Sync Information Tooltip */}
@@ -2851,7 +2867,7 @@ Date:          ${dateStr}
                                 }`}
                                 aria-label="Debug & Variable Inspector"
                             >
-                                <Bug className="w-4 h-4 text-rose-500" />
+                                <FluentDebuggerIcon className="w-5 h-5" />
                             </button>
 
                             {/* ER Diagram Generator from Live Database Schema (in SQL / PL-SQL mode) */}
@@ -3046,7 +3062,7 @@ Date:          ${dateStr}
                                         : 'border-transparent text-slate-400 hover:text-slate-200'
                                 }`}
                             >
-                                <Terminal className="w-3.5 h-3.5" />
+                                <FluentTerminalIcon className="w-4 h-4" />
                                 <span>Output Screen ({activeTab.title})</span>
                                 {activeTab.output?.durationMs !== undefined && (
                                     <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
@@ -3100,25 +3116,62 @@ Date:          ${dateStr}
                             >
                                 {isDatabaseLanguage(activeTab.language) ? (
                                     <>
-                                        <Database className="w-3.5 h-3.5 text-sky-500" />
+                                        <FluentSqlIcon className="w-4 h-4" />
                                         <span>ER Diagram Designer</span>
                                     </>
                                 ) : (
                                     <>
-                                        <Shapes className="w-3.5 h-3.5 text-purple-500" />
+                                        <FluentFlowchartIcon className="w-4 h-4" />
                                         <span>Flowchart Designer</span>
                                     </>
                                 )}
                             </button>
                         </div>
 
-                        {/* Persistent DB Tables list indicator (SQL mode) */}
-                        {isDatabaseLanguage(activeTab.language) && existingTables.length > 0 && (
-                            <div className="flex items-center gap-1 text-[11px] text-sky-500 font-medium">
-                                <Database className="w-3.5 h-3.5" />
-                                <span className="font-mono font-semibold">{existingTables.length} tables saved</span>
-                            </div>
-                        )}
+                        {/* Right: DB Tables indicator & Fast Console Actions */}
+                        <div className="flex items-center gap-2">
+                            {isDatabaseLanguage(activeTab.language) && existingTables.length > 0 && (
+                                <div className="flex items-center gap-1 text-[11px] text-sky-500 font-medium">
+                                    <Database className="w-3.5 h-3.5" />
+                                    <span className="font-mono font-semibold">{existingTables.length} tables saved</span>
+                                </div>
+                            )}
+
+                            {/* Fast Action: Clear Console Output */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTabs((prev) =>
+                                        prev.map((t) => (t.id === activeTabId ? { ...t, output: null } : t))
+                                    );
+                                    toast('Output cleared');
+                                }}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'hover:bg-slate-200 text-slate-500 hover:text-rose-600'
+                                        : 'hover:bg-slate-800 text-slate-400 hover:text-rose-400'
+                                }`}
+                                title="Clear Console Output"
+                                aria-label="Clear Console Output"
+                            >
+                                <FluentConsoleClearIcon className="w-4 h-4" />
+                            </button>
+
+                            {/* Fast Action: Export Bundle */}
+                            <button
+                                type="button"
+                                onClick={() => setShowExportBundleModal(true)}
+                                className={`p-1 rounded-md transition cursor-pointer ${
+                                    isLightMode
+                                        ? 'hover:bg-slate-200 text-slate-500 hover:text-indigo-600'
+                                        : 'hover:bg-slate-800 text-slate-400 hover:text-indigo-400'
+                                }`}
+                                title="Export Complete Bundle (Code + Diagram + Output)"
+                                aria-label="Export Complete Bundle"
+                            >
+                                <FluentConsoleExportIcon className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
 
                     {/* CONTENT 1: COORDINATED OUTPUT SCREEN */}

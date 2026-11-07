@@ -20,6 +20,12 @@ import MoveCopyToDriveModal from '@/components/MoveCopyToDriveModal';
 import RecordingShareModal from '@/components/RecordingShareModal';
 import QRCode from 'qrcode';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import {
+    FluentWordDocIcon,
+    FluentExcelDocIcon,
+    FluentPdfDocIcon,
+    FluentSlidesDocIcon
+} from '@/components/FluentAppIcons';
 
 const CATEGORIES = [
     { value: '', label: 'All Categories' },
@@ -59,13 +65,13 @@ const getFolderIcon = (name, size = 'lg') => {
         case 'Office Media Files':
             return <Cloud className={`${sizeCls} text-rose-500 fill-rose-100`} />;
         case 'Word Documents':
-            return <FileText className={`${sizeCls} text-blue-500 fill-blue-100`} />;
+            return <FluentWordDocIcon className={sizeCls} />;
         case 'Excel Spreadsheets':
-            return <BarChart2 className={`${sizeCls} text-emerald-500 fill-emerald-100`} />;
+            return <FluentExcelDocIcon className={sizeCls} />;
         case 'Presentations (Slides)':
-            return <Presentation className={`${sizeCls} text-amber-500 fill-amber-100`} />;
+            return <FluentSlidesDocIcon className={sizeCls} />;
         case 'PDF Documents':
-            return <File className={`${sizeCls} text-rose-500 fill-rose-100`} />;
+            return <FluentPdfDocIcon className={sizeCls} />;
         case 'Images':
             return <Sparkles className={`${sizeCls} text-purple-500 fill-purple-100`} />;
         case 'Audio':

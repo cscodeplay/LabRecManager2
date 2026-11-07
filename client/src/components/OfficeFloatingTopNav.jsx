@@ -12,6 +12,12 @@ import {
 import api from '@/lib/api';
 import { useThemeStore } from '@/lib/store';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
+import {
+    FluentWordDocIcon,
+    FluentExcelDocIcon,
+    FluentSlidesDocIcon,
+    FluentPdfDocIcon
+} from '@/components/FluentAppIcons';
 
 const SUITE_APPS = [
     {
@@ -20,7 +26,7 @@ const SUITE_APPS = [
         tagline: 'Word Document & Lab Reports',
         description: 'Paginated A4 editor, KaTeX formulas, academic citations & auto-save',
         href: '/documents/word-editor',
-        icon: FileText,
+        icon: FluentWordDocIcon,
         color: 'blue',
         badgeBg: 'bg-blue-600',
         cardBgLight: 'bg-blue-50/80 border-blue-200 text-slate-800 hover:border-blue-400',
@@ -34,7 +40,7 @@ const SUITE_APPS = [
         tagline: 'Spreadsheets & Data Charts',
         description: '100+ formulas, multi-cell drag selection, embedded charts & borders',
         href: '/documents/excel-editor',
-        icon: Grid,
+        icon: FluentExcelDocIcon,
         color: 'emerald',
         badgeBg: 'bg-emerald-600',
         cardBgLight: 'bg-emerald-50/80 border-emerald-200 text-slate-800 hover:border-emerald-400',
@@ -48,7 +54,7 @@ const SUITE_APPS = [
         tagline: 'Presentation Slide Decks',
         description: '16:9 widescreen slides, presenter view, KaTeX support & slideshow mode',
         href: '/documents/slides-editor',
-        icon: Presentation,
+        icon: FluentSlidesDocIcon,
         color: 'amber',
         badgeBg: 'bg-amber-600',
         cardBgLight: 'bg-amber-50/80 border-amber-200 text-slate-800 hover:border-amber-400',
@@ -62,7 +68,7 @@ const SUITE_APPS = [
         tagline: 'PDF Utilities & Page Tools',
         description: 'Merge PDFs, extract & split pages, compress, rotate & watermark',
         href: '/documents/pdf-studio',
-        icon: Layers,
+        icon: FluentPdfDocIcon,
         color: 'rose',
         badgeBg: 'bg-rose-600',
         cardBgLight: 'bg-rose-50/80 border-rose-200 text-slate-800 hover:border-rose-400',

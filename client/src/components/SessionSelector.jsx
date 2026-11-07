@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Calendar, ChevronDown, Lock, AlertTriangle } from 'lucide-react';
+import { FluentAcademicSessionIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import { formatDateRange } from '@/lib/dateUtils';
@@ -85,7 +86,7 @@ export default function SessionSelector() {
                         : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300'
                     }`}
             >
-                <Calendar className="w-4 h-4" />
+                <FluentAcademicSessionIcon className="w-4 h-4 shrink-0" />
                 <span className="text-sm font-medium">
                     {selectedSession?.yearLabel || 'Select Session'}
                 </span>
@@ -124,8 +125,7 @@ export default function SessionSelector() {
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <Calendar className={`w-4 h-4 ${session.isCurrent ? 'text-emerald-600' : 'text-slate-400'
-                                                }`} />
+                                            <FluentAcademicSessionIcon className="w-4 h-4 shrink-0" />
                                             <div className="text-left">
                                                 <p className="text-sm font-medium text-slate-900">
                                                     {session.yearLabel}

@@ -9,6 +9,12 @@ import {
     ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers, CalendarDays, Activity,
     Truck, ShoppingBag, Folder, StickyNote, Database, BarChart3, Code2, QrCode, Laptop, History, Sparkles, PlusCircle
 } from 'lucide-react';
+import {
+    FluentAssignmentLedgerIcon,
+    FluentWorkstationIcon,
+    FluentTrophyIcon,
+    FluentTimetableIcon
+} from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
@@ -26,10 +32,10 @@ export default function DashboardPage() {
     const [activeCategory, setActiveCategory] = useState('all');
 
     const studentShortcuts = [
-        { title: t('dashboard.viewAssignments', 'Assignments'), href: '/assignments', icon: FileText, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
+        { title: t('dashboard.viewAssignments', 'Assignments'), href: '/assignments', icon: FluentAssignmentLedgerIcon, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
         { title: t('dashboard.mySubmissions', 'Submissions'), href: '/submissions', icon: Upload, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
-        { title: t('dashboard.viewGrades', 'Grades & Marks'), href: '/grades', icon: Award, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
-        { title: 'Class Timetable', href: '/timetable', icon: CalendarDays, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
+        { title: t('dashboard.viewGrades', 'Grades & Marks'), href: '/grades', icon: FluentTrophyIcon, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+        { title: 'Class Timetable', href: '/timetable', icon: FluentTimetableIcon, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
         { title: 'Coding Training', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
         { title: 'Live Meeting / Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
         { title: t('nav.liveBoard', 'Live Whiteboard'), href: '/live-board', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
@@ -43,12 +49,12 @@ export default function DashboardPage() {
         { title: t('dashboard.reviewPending', 'Review Submissions'), href: '/submissions', icon: Clock, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
         { title: t('dashboard.manageClasses', 'Manage Classes'), href: '/classes', icon: Users, category: 'academics', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
         { title: 'Teaching & Lecture Plans', href: '/teaching/plans', icon: BookOpen, category: 'academics', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
-        { title: 'Timetable Schedules', href: '/timetable', icon: CalendarDays, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
+        { title: 'Timetable Schedules', href: '/timetable', icon: FluentTimetableIcon, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
         { title: 'Training & Coding Modules', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
-        { title: 'Grades & Evaluation', href: '/grades', icon: Award, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+        { title: 'Grades & Evaluation', href: '/grades', icon: FluentTrophyIcon, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
 
         // Lab & Hardware
-        { title: 'Lab Inventory & Hardware', href: '/admin/labs', icon: Monitor, category: 'labs', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
+        { title: 'Lab Inventory & Hardware', href: '/admin/labs', icon: FluentWorkstationIcon, category: 'labs', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
         { title: 'Equipment Shift Requests', href: '/admin/labs/shift-requests', icon: Truck, category: 'labs', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
         { title: 'Hardware Audit Reports', href: '/admin/labs/inventory-reports', icon: BarChart3, category: 'labs', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
         { title: 'Laptop Issuances', href: '/admin/laptop-issuances', icon: Laptop, category: 'labs', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
