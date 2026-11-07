@@ -10,6 +10,16 @@ import {
     CheckSquare, Trash2, Undo2, Redo2, RectangleHorizontal, X
 } from 'lucide-react';
 import TorchIcon from './TorchIcon';
+import {
+    ArgonSelectIcon,
+    ArgonPenIcon,
+    ArgonHighlighterIcon,
+    ArgonEraserIcon,
+    ArgonShapeIcon,
+    ArgonTextIcon,
+    ArgonLineIcon,
+    ArgonSparkleIcon
+} from './geometryTools/CustomToolbarIcons';
 
 // ─── Geometric Dimensions (Sleek Proportions) ──────────────────────────────
 const R_INNER_RING = 60;       // Inner edge of main wheel
@@ -22,14 +32,14 @@ const MENU_BOUNDING_R = 158;   // Clamping radius from center
 
 // ─── Tool Definitions ──────────────────────────────────────────────────────
 const INNER_TOOLS = [
-    { id: 'select', label: 'Select', icon: MousePointer2 },
-    { id: 'pen', label: 'Pen', icon: Pencil },
-    { id: 'highlighter', label: 'Highlighter', icon: Highlighter },
-    { id: 'eraser', label: 'Eraser', icon: Eraser },
-    { id: 'shapes', label: 'Shapes', icon: Circle },
-    { id: 'text', label: 'Text', icon: Type },
-    { id: 'line', label: 'Line', icon: Minus },
-    { id: 'more', label: 'More', icon: Sparkles },
+    { id: 'select', label: 'Select', icon: ArgonSelectIcon },
+    { id: 'pen', label: 'Pen', icon: ArgonPenIcon },
+    { id: 'highlighter', label: 'Highlighter', icon: ArgonHighlighterIcon },
+    { id: 'eraser', label: 'Eraser', icon: ArgonEraserIcon },
+    { id: 'shapes', label: 'Shapes', icon: ArgonShapeIcon },
+    { id: 'text', label: 'Text', icon: ArgonTextIcon },
+    { id: 'line', label: 'Line', icon: ArgonLineIcon },
+    { id: 'more', label: 'More', icon: ArgonSparkleIcon },
 ];
 
 const OUTER_TOOLS = {

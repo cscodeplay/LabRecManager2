@@ -117,7 +117,7 @@ import WhiteboardDocumentObject, { detectDocumentType } from './WhiteboardDocume
 import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
 import EstimatorCalculator from './EstimatorCalculator';
 import WhiteboardFlashcards from './WhiteboardFlashcards';
-import { getCustomToolbarIcon } from './geometryTools/CustomToolbarIcons';
+import { getCustomToolbarIcon, ArgonMathIcon, ArgonPhysicsIcon, ArgonBrowserIcon, ArgonTemplatesIcon } from './geometryTools/CustomToolbarIcons';
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -2420,6 +2420,14 @@ export default function Whiteboard({
         }
 
         let isMounted = true;
+        let settleTimer = null;
+        
+        // Safety fallback: Ensure interaction lock is always lifted even if network or image decode stalls
+        const safetyTimer = setTimeout(() => {
+            if (isMounted) {
+                setIsStateLoaded(true);
+            }
+        }, 1200);
 
         const loadState = async () => {
             try {
@@ -2493,12 +2501,9 @@ export default function Whiteboard({
             } catch (e) {
                 console.error('Error loading whiteboard state:', e);
             } finally {
-                if (isMounted) {
-                    // Small delay to ensure canvas and child components are fully rendered before removing blur
-                    setTimeout(() => {
-                        if (isMounted) setIsStateLoaded(true);
-                    }, 250);
-                }
+                settleTimer = setTimeout(() => {
+                    setIsStateLoaded(true);
+                }, 200);
             }
         };
         
@@ -2506,6 +2511,8 @@ export default function Whiteboard({
 
         return () => {
             isMounted = false;
+            clearTimeout(safetyTimer);
+            if (settleTimer) clearTimeout(settleTimer);
         };
     }, [STORAGE_KEY, whiteboardId]);
 
@@ -21881,7 +21888,7 @@ export default function Whiteboard({
                         willChange: 'transform, opacity'
                     }}
                     className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
-                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-40 hover:opacity-100')
+                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-95 hover:opacity-100')
                 } ${
                     toolbarDock === 'top'
                         ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
@@ -22079,8 +22086,8 @@ export default function Whiteboard({
                                         (t.id === 'tasks' && showTasksPanel) ||
                                         (t.id === 'table' && showTableModal) ||
                                         (t.id === 'fill' && showFillPicker))
-                                            ? (TOOL_CLASSROOM_STYLES[t.id]?.bgActive || 'bg-primary-500 text-white shadow-md ring-2 ring-primary-300 scale-105')
-                                            : (TOOL_CLASSROOM_STYLES[t.id]?.bgInactive || 'text-slate-300 hover:bg-slate-800 hover:text-white')
+                                            ? 'bg-slate-800 text-white shadow-lg ring-2 ring-primary-500/60 scale-105 border border-primary-500/40'
+                                            : 'text-slate-300 hover:bg-slate-800/70 hover:scale-105'
                                     }`}
                                     title={t.label}
                                 >
@@ -22089,9 +22096,9 @@ export default function Whiteboard({
                                         if (t.id === 'highlighter') {
                                             return (
                                                 <div className="relative flex items-center justify-center">
-                                                    <IconComp className="w-4 h-4" style={{ color: highlighterColor }} />
+                                                    <IconComp className="w-5 h-5 flex-shrink-0" />
                                                     <span
-                                                        className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                        className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900 shadow-sm"
                                                         style={{ backgroundColor: highlighterColor }}
                                                     />
                                                 </div>
@@ -22100,15 +22107,15 @@ export default function Whiteboard({
                                         if (t.id === 'pen') {
                                             return (
                                                 <div className="relative flex items-center justify-center">
-                                                    <IconComp className="w-4 h-4" />
+                                                    <IconComp className="w-5 h-5 flex-shrink-0" />
                                                     <span
-                                                        className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full border border-slate-900 shadow-xs"
+                                                        className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900 shadow-sm"
                                                         style={{ backgroundColor: color }}
                                                     />
                                                 </div>
                                             );
                                         }
-                                        return <IconComp className="w-4 h-4" />;
+                                        return <IconComp className="w-5 h-5 flex-shrink-0" />;
                                     })()}
                                 </button>
                                 
@@ -23058,7 +23065,7 @@ export default function Whiteboard({
                                         }`}
                                         title="Math & Geometry Suite (Instruments, Calculator, Flashcards, Graph, Solver)"
                                     >
-                                        <Calculator className="w-4 h-4" />
+                                        <ArgonMathIcon className="w-5 h-5 flex-shrink-0" />
                                         {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal || showEstimator || showFlashcards) && (
                                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-900 animate-pulse" />
                                         )}
@@ -23259,7 +23266,7 @@ export default function Whiteboard({
                                         }`}
                                         title="Science Lab & 3D (Physics Space, 3D Domain Models)"
                                     >
-                                        <Atom className="w-4 h-4" />
+                                        <ArgonPhysicsIcon className="w-5 h-5 flex-shrink-0" />
                                         {(showPhysicsSpace || showDomainLibrary) && (
                                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-violet-400 border border-slate-900 animate-pulse" />
                                         )}
@@ -23348,7 +23355,7 @@ export default function Whiteboard({
                                         }`}
                                         title="Media & Research (Google Images, YouTube, PDF, Video, Audio)"
                                     >
-                                        <Globe className="w-4 h-4" />
+                                        <ArgonBrowserIcon className="w-5 h-5 flex-shrink-0" />
                                         {(rightSiderollMode !== 'closed' || showMediaModal) && (
                                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-slate-900 animate-pulse" />
                                         )}
@@ -23464,7 +23471,7 @@ export default function Whiteboard({
                                         }`}
                                         title="Classroom Toolbox & Utilities (Timer, Spotlight, Curtain, Laser, Recorder...)"
                                     >
-                                        <MoreHorizontal className="w-4 h-4" />
+                                        <ArgonTemplatesIcon className="w-5 h-5 flex-shrink-0" />
                                         {(showClassroomTimer || isSpotlightActive || isCurtainActive || tool === 'laser' || showRecorder || showTasksPanel) && (
                                             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-900 animate-pulse" />
                                         )}
