@@ -2841,7 +2841,7 @@ Date:          ${dateStr}
                             <button
                                 data-debugger-btn="true"
                                 onClick={() => setShowDebugModal(true)}
-                                title="Debug & Variable Inspector (Ctrl+Shift+D)"
+                                title="Debug & Variable Inspector (Ctrl+Shift+D / F5)"
                                 className={`w-8 h-8 rounded-full border transition-all flex items-center justify-center cursor-pointer active:scale-95 group relative ${
                                     showDebugModal
                                         ? 'border-rose-500 bg-rose-500/20 text-rose-500 shadow-xs'
@@ -2849,7 +2849,6 @@ Date:          ${dateStr}
                                         ? 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700'
                                         : 'border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300'
                                 }`}
-                                title="Debug & Variable Inspector (F5 / Step)"
                                 aria-label="Debug & Variable Inspector"
                             >
                                 <Bug className="w-4 h-4 text-rose-500" />
