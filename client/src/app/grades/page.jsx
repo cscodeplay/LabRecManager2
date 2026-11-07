@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store';
 import { gradesAPI, gradeScalesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import AssignmentSuiteTabs from '@/components/AssignmentSuiteTabs';
 
 export default function GradesPage() {
     const router = useRouter();
@@ -163,6 +164,7 @@ export default function GradesPage() {
                     </select>
                 )}
             </PageHeader>
+            <AssignmentSuiteTabs activeTab="grades" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Stats Cards */}

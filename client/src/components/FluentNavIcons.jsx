@@ -68,19 +68,83 @@ export function FluentLabsIcon({ className = "w-6 h-6 flex-shrink-0", ...props }
     );
 }
 
-// 6. Assignments (Lined clipboard with brass clip and emerald checkmarks)
+// 6. Assignments (Master Curriculum Dossier with gold ribbon and verified seal)
 export function FluentAssignmentsIcon({ className = "w-6 h-6 flex-shrink-0", ...props }) {
     return (
         <svg className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
-            <rect x="5" y="5" width="22" height="24" rx="3" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1" />
-            <rect x="11" y="2" width="10" height="5" rx="1.5" fill="#facc15" stroke="#d97706" strokeWidth="1" />
-            <circle cx="16" cy="4.5" r="1.5" fill="#78350f" />
-            <path d="M10 12l2 2 4-4" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <line x1="18" y1="12" x2="23" y2="12" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M10 18l2 2 4-4" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <line x1="18" y1="18" x2="23" y2="18" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
-            <path d="M10 24l2 2 4-4" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            <line x1="18" y1="24" x2="23" y2="24" stroke="#64748b" strokeWidth="1.5" strokeLinecap="round" />
+            <defs>
+                <linearGradient id="fluent_assign_base" x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#3b82f6" />
+                    <stop offset="1" stopColor="#1d4ed8" />
+                </linearGradient>
+                <linearGradient id="fluent_assign_ribbon" x1="18" y1="2" x2="24" y2="14" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#fbbf24" />
+                    <stop offset="1" stopColor="#d97706" />
+                </linearGradient>
+            </defs>
+            {/* Indigo/Blue Master Folder Binder */}
+            <rect x="4" y="3" width="24" height="26" rx="4" fill="url(#fluent_assign_base)" stroke="#60a5fa" strokeWidth="1.2" />
+            <path d="M4 8h24v2H4z" fill="#1e40af" opacity="0.6" />
+            {/* Bookmark Ribbon */}
+            <path d="M19 2v10l3-2.5l3 2.5V2z" fill="url(#fluent_assign_ribbon)" />
+            {/* Ruled Assignment Content Lines */}
+            <rect x="8" y="14" width="8" height="2" rx="1" fill="#93c5fd" />
+            <rect x="8" y="18" width="16" height="2" rx="1" fill="#bfdbfe" />
+            <rect x="8" y="22" width="12" height="2" rx="1" fill="#bfdbfe" />
+            {/* Verification Checkmark Badge */}
+            <circle cx="22" cy="23" r="4.5" fill="#10b981" stroke="#ffffff" strokeWidth="1" />
+            <path d="M20.5 23l1 1l2-2" stroke="#ffffff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+// 6b. Assigned Work (Class Dispatch & Task Distribution Board with student nodes & deadline clock)
+export function FluentAssignedWorkIcon({ className = "w-6 h-6 flex-shrink-0", ...props }) {
+    return (
+        <svg className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+            <defs>
+                <linearGradient id="fluent_dispatch_bg" x1="3" y1="5" x2="29" y2="27" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#0d9488" />
+                    <stop offset="1" stopColor="#0f766e" />
+                </linearGradient>
+            </defs>
+            {/* Teal Work Allocation Board */}
+            <rect x="3" y="5" width="26" height="22" rx="4" fill="url(#fluent_dispatch_bg)" stroke="#2dd4bf" strokeWidth="1.2" />
+            <rect x="3" y="5" width="26" height="6" rx="4" fill="#134e4a" />
+            {/* Student/Group Avatar Nodes */}
+            <circle cx="9" cy="17" r="3" fill="#38bdf8" />
+            <circle cx="17" cy="17" r="3" fill="#818cf8" />
+            {/* Outgoing Distribution Links */}
+            <path d="M9 22c0-2 2-3 4-3h4c2 0 4 1 4 3" stroke="#ccfbf1" strokeWidth="1.5" strokeLinecap="round" />
+            {/* Live Scheduled Clock / Pin Badge */}
+            <circle cx="23" cy="10" r="5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1" />
+            <path d="M23 8v2.5l1.5 1" stroke="#78350f" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+// 6c. Review Submissions (Turn-in Ingestion Tray & Inspection Evaluation Lens)
+export function FluentReviewSubmissionsIcon({ className = "w-6 h-6 flex-shrink-0", ...props }) {
+    return (
+        <svg className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+            <defs>
+                <linearGradient id="fluent_tray_grad" x1="4" y1="12" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#4f46e5" />
+                    <stop offset="1" stopColor="#3730a3" />
+                </linearGradient>
+            </defs>
+            {/* Turn-in Ingestion Tray Base */}
+            <path d="M4 14l3-8h18l3 8v12a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V14z" fill="url(#fluent_tray_grad)" stroke="#818cf8" strokeWidth="1.2" />
+            {/* Inflowing Submission Document */}
+            <rect x="9" y="4" width="14" height="12" rx="2" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1" />
+            <line x1="12" y1="7" x2="20" y2="7" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="12" y1="10" x2="18" y2="10" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+            {/* Front Cutout of Tray */}
+            <path d="M4 18h8v3h8v-3h8v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8z" fill="#312e81" />
+            {/* Inspection / Evaluation Magnifier Lens with Green Verified Tick */}
+            <circle cx="22" cy="18" r="6" fill="#10b981" stroke="#ffffff" strokeWidth="1.5" />
+            <path d="M19.5 18l1.8 1.8l3.2-3.2" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M26.5 22.5l3 3" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
         </svg>
     );
 }

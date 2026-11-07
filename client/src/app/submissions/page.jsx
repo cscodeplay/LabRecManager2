@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/store';
 import { submissionsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import AssignmentSuiteTabs from '@/components/AssignmentSuiteTabs';
 
 export default function SubmissionsPage() {
     const router = useRouter();
@@ -97,6 +98,7 @@ export default function SubmissionsPage() {
     return (
         <div className="min-h-screen bg-slate-50">
             <PageHeader title={isInstructor ? t('submissions.forReview') : t('submissions.mySubmissions')} backLink="/dashboard" />
+            <AssignmentSuiteTabs activeTab="submissions" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}

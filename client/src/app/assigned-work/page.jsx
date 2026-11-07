@@ -12,6 +12,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import AssignmentSuiteTabs from '@/components/AssignmentSuiteTabs';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 export default function AssignedWorkPage() {
@@ -376,6 +377,7 @@ export default function AssignedWorkPage() {
                     <ListChecks className="w-5 h-5" />
                 </Link>
             </PageHeader>
+            <AssignmentSuiteTabs activeTab="assigned-work" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Stats */}

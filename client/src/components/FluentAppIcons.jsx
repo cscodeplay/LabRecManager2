@@ -226,6 +226,53 @@ export function FluentSignOutIcon({ className = "w-4 h-4 flex-shrink-0", size, s
 // ==========================================
 
 /**
+ * Class Dispatch & Task Distribution Board with Student Nodes & Deadline Clock
+ */
+export function FluentAssignedWorkIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
+    return (
+        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+            <defs>
+                <linearGradient id="fluent_dispatch_bg_app" x1="3" y1="5" x2="29" y2="27" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#0d9488" />
+                    <stop offset="1" stopColor="#0f766e" />
+                </linearGradient>
+            </defs>
+            <rect x="3" y="5" width="26" height="22" rx="4" fill="url(#fluent_dispatch_bg_app)" stroke="#2dd4bf" strokeWidth="1.2" />
+            <rect x="3" y="5" width="26" height="6" rx="4" fill="#134e4a" />
+            <circle cx="9" cy="17" r="3" fill="#38bdf8" />
+            <circle cx="17" cy="17" r="3" fill="#818cf8" />
+            <path d="M9 22c0-2 2-3 4-3h4c2 0 4 1 4 3" stroke="#ccfbf1" strokeWidth="1.5" strokeLinecap="round" />
+            <circle cx="23" cy="10" r="5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1" />
+            <path d="M23 8v2.5l1.5 1" stroke="#78350f" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+/**
+ * Turn-in Ingestion Tray & Inspection Evaluation Lens
+ */
+export function FluentReviewSubmissionsIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
+    return (
+        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+            <defs>
+                <linearGradient id="fluent_tray_grad_app" x1="4" y1="12" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stopColor="#4f46e5" />
+                    <stop offset="1" stopColor="#3730a3" />
+                </linearGradient>
+            </defs>
+            <path d="M4 14l3-8h18l3 8v12a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V14z" fill="url(#fluent_tray_grad_app)" stroke="#818cf8" strokeWidth="1.2" />
+            <rect x="9" y="4" width="14" height="12" rx="2" fill="#ffffff" stroke="#cbd5e1" strokeWidth="1" />
+            <line x1="12" y1="7" x2="20" y2="7" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="12" y1="10" x2="18" y2="10" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M4 18h8v3h8v-3h8v8a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-8z" fill="#312e81" />
+            <circle cx="22" cy="18" r="6" fill="#10b981" stroke="#ffffff" strokeWidth="1.5" />
+            <path d="M19.5 18l1.8 1.8l3.2-3.2" stroke="#ffffff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M26.5 22.5l3 3" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+    );
+}
+
+/**
  * Layered Indigo Assignment Ledger with Verification Badge
  */
 export function FluentAssignmentLedgerIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {

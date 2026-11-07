@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import AIAssignmentGenerator from '@/components/AIAssignmentGenerator';
+import AssignmentSuiteTabs from '@/components/AssignmentSuiteTabs';
 
 export default function AssignmentsPage() {
     const router = useRouter();
@@ -133,6 +134,7 @@ export default function AssignmentsPage() {
                     </div>
                 )}
             </PageHeader>
+            <AssignmentSuiteTabs activeTab="assignments" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}
