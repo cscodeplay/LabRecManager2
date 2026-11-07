@@ -50,8 +50,6 @@ const navItems = {
         { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: FluentLabsIcon },
         { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: FluentAssignedWorkIcon },
-        { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: FluentReviewSubmissionsIcon },
         { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
         { href: '/admin/storage', labelKey: 'nav.storage', icon: FluentStorageIcon },
         { href: '/grades', labelKey: 'nav.grades', icon: FluentGradesIcon },
@@ -101,8 +99,6 @@ const navItems = {
         { href: '/teaching/plans', labelKey: 'nav.lecturePlans', icon: FluentLecturePlansIcon },
         { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: FluentAssignedWorkIcon },
-        { href: '/submissions', labelKey: 'nav.review', icon: FluentReviewSubmissionsIcon },
         { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
         { href: '/grades', labelKey: 'nav.grades', icon: FluentGradesIcon },
         { href: '/meetings', labelKey: 'Meetings', icon: FluentMeetingsIcon },
@@ -123,8 +119,6 @@ const navItems = {
         { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
         { href: '/quiz', labelKey: 'AI Quiz Maker', icon: FluentQuizIcon },
-        { href: '/assigned-work', labelKey: 'nav.assignedWork', icon: FluentAssignedWorkIcon },
-        { href: '/submissions', labelKey: 'nav.reviewSubmissions', icon: FluentReviewSubmissionsIcon },
         { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
         { href: '/tickets', labelKey: 'nav.tickets', icon: FluentTicketsIcon },
         { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
@@ -330,9 +324,14 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
             <nav className="flex-1 p-3 overflow-y-auto">
                 <ul className="space-y-1">
                     {items.map((item) => {
-                        // Special handling for /assignments to prevent highlighting on /assignments/assign
+                        // Highlight /assignments for the entire assignment suite (assignments, assigned-work, submissions)
                         const isActive = item.href === '/assignments'
-                            ? pathname === '/assignments' || (pathname.startsWith('/assignments/') && !pathname.startsWith('/assignments/assign'))
+                            ? pathname === '/assignments' ||
+                              pathname.startsWith('/assignments/') ||
+                              pathname === '/assigned-work' ||
+                              pathname.startsWith('/assigned-work/') ||
+                              pathname === '/submissions' ||
+                              pathname.startsWith('/submissions/')
                             : item.href === '/training' 
                                 ? pathname === '/training' || pathname.startsWith('/training/')
                                 : pathname === item.href || pathname.startsWith(item.href + '/');
