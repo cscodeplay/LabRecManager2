@@ -17,6 +17,7 @@ import PageHeader from '@/components/PageHeader';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import UserAvatar from '@/components/UserAvatar';
 import AvatarPickerModal from '@/components/AvatarPickerModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime, formatTime, formatDateRange } from '@/lib/dateUtils';
 
 export default function SettingsPage() {
@@ -868,7 +869,7 @@ export default function SettingsPage() {
         ] : [])
     ];
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div></div>;
+    if (loading) return <GreenSegmentedSpinner fullscreen />;
 
     return (
         <div className="min-h-screen bg-slate-50">

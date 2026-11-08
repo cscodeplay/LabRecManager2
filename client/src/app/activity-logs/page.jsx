@@ -12,6 +12,8 @@ import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import InstituteOperationsTabs from '@/components/InstituteOperationsTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatTime } from '@/lib/dateUtils';
 
 export default function ActivityLogsPage() {
@@ -128,11 +130,7 @@ export default function ActivityLogsPage() {
     }
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
@@ -143,6 +141,7 @@ export default function ActivityLogsPage() {
                     Query Logs
                 </Link>
             </PageHeader>
+            <InstituteOperationsTabs activeTab="activity-logs" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}

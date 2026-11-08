@@ -13,6 +13,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { meetingAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
+import CollaborationSuiteTabs from '@/components/CollaborationSuiteTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime, formatTime } from '@/lib/dateUtils';
 
 import io from 'socket.io-client';
@@ -770,11 +772,7 @@ export default function MeetingPage() {
     const pastSessions = sessions.filter(s => s.status === 'completed' || s.status === 'cancelled' || isSessionExpired(s));
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
@@ -821,6 +819,7 @@ export default function MeetingPage() {
                     )}
                 </div>
             </header>
+            <CollaborationSuiteTabs activeTab="meetings" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Info Banner */}

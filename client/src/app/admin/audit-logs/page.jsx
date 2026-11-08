@@ -11,6 +11,8 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { auditAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import InstituteOperationsTabs from '@/components/InstituteOperationsTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const ACTION_ICONS = {
     login: '🔐',
@@ -138,11 +140,7 @@ export default function AuditLogsPage() {
     };
 
     if (loading && logs.length === 0) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
@@ -174,6 +172,7 @@ export default function AuditLogsPage() {
                     </div>
                 </div>
             </header>
+            <InstituteOperationsTabs activeTab="audit-logs" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Stats Cards */}

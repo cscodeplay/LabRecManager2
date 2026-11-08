@@ -16,6 +16,7 @@ import {
     FluentManageUsersIcon,
     FluentCodePracticeIcon,
     FluentLabsIcon,
+    FluentLabSuiteIcon,
     FluentAssignmentsIcon,
     FluentAssignedWorkIcon,
     FluentReviewSubmissionsIcon,
@@ -24,6 +25,7 @@ import {
     FluentStorageIcon,
     FluentGradesIcon,
     FluentMeetingsIcon,
+    FluentLiveCollabIcon,
     FluentWhiteboardIcon,
     FluentQuizIcon,
     FluentActivityIcon,
@@ -32,8 +34,9 @@ import {
     FluentTimetableIcon,
     FluentCalendarIcon,
     FluentReportsIcon,
+    FluentStudentProgressIcon,
     FluentNotesIcon,
-    FluentDefaultersIcon,
+    FluentInstituteOpsIcon,
     FluentRolesIcon,
     FluentPlansIcon,
     FluentSettingsIcon,
@@ -43,100 +46,96 @@ import {
 
 const navItems = {
     admin: [
-        { href: '/dashboard', labelKey: 'nav.dashboard', icon: FluentDashboardIcon },
-        { href: '/classes', labelKey: 'nav.classes', icon: FluentClassesIcon },
-        { href: '/users', labelKey: 'nav.manageUsers', icon: FluentManageUsersIcon },
-        { href: '/practice-ide', labelKey: 'Code Practice IDE (Python & SQL)', icon: FluentCodePracticeIcon },
-        { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: FluentLabsIcon },
-        { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
+        { href: '/dashboard', labelKey: 'Dashboard', icon: FluentDashboardIcon },
+        { href: '/classes', labelKey: 'Classes', icon: FluentClassesIcon },
+        { href: '/users', labelKey: 'Users', icon: FluentManageUsersIcon },
+        { href: '/practice-ide', labelKey: 'Practice IDE', icon: FluentCodePracticeIcon },
+        { href: '/admin/labs', labelKey: 'Labs & Hardware', icon: FluentLabSuiteIcon },
+        { href: '/assignments', labelKey: 'Assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
-        { href: '/admin/storage', labelKey: 'nav.storage', icon: FluentStorageIcon },
-        { href: '/grades', labelKey: 'nav.grades', icon: FluentGradesIcon },
-        { href: '/meetings', labelKey: 'Meetings', icon: FluentMeetingsIcon },
-        { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: FluentWhiteboardIcon },
-        { href: '/quiz', labelKey: 'AI Quiz Maker', icon: FluentQuizIcon },
-        { href: '/admin/whiteboards', labelKey: 'nav.liveSessions', icon: FluentMeetingsIcon },
-        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: FluentActivityIcon },
-        { href: '/tickets', labelKey: 'nav.tickets', icon: FluentTicketsIcon },
-        { href: '/admin/school-profile', labelKey: 'nav.schoolProfile', icon: FluentBuildingIcon },
-        { href: '/admin/timetable', labelKey: 'nav.timetable', icon: FluentTimetableIcon },
-        { href: '/admin/calendar', labelKey: 'nav.calendar', icon: FluentCalendarIcon },
-        { href: '/reports', labelKey: 'nav.reports', icon: FluentReportsIcon },
-        { href: '/admin/notes', labelKey: 'Admin Notes', icon: FluentNotesIcon },
-        { href: '/admin/defaulters', labelKey: 'Parent Alerts & Defaulters', icon: FluentDefaultersIcon },
-        { href: '/admin/roles-permissions', labelKey: 'Roles & Permissions', icon: FluentRolesIcon },
-        { href: '/admin/implementation-plans', labelKey: 'Implementation Plans', icon: FluentPlansIcon },
-        { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
+        { href: '/documents', labelKey: 'Office Suite', icon: FluentDocumentsIcon },
+        { href: '/grades', labelKey: 'Grades', icon: FluentGradesIcon },
+        { href: '/meetings', labelKey: 'Meetings & Collab', icon: FluentLiveCollabIcon },
+        { href: '/quiz', labelKey: 'Quizzes', icon: FluentQuizIcon },
+        { href: '/reports/progress', labelKey: 'Student Progress', icon: FluentStudentProgressIcon },
+        { href: '/admin/audit-logs', labelKey: 'Operations & Audit', icon: FluentInstituteOpsIcon },
+        { href: '/admin/timetable', labelKey: 'Timetable', icon: FluentTimetableIcon },
+        { href: '/admin/calendar', labelKey: 'Calendar', icon: FluentCalendarIcon },
+        { href: '/reports', labelKey: 'Reports', icon: FluentReportsIcon },
+        { href: '/admin/notes', labelKey: 'Notes', icon: FluentNotesIcon },
+        { href: '/admin/roles-permissions', labelKey: 'Roles & Access', icon: FluentRolesIcon },
+        { href: '/admin/implementation-plans', labelKey: 'Plans', icon: FluentPlansIcon },
+        { href: '/admin/school-profile', labelKey: 'School Profile', icon: FluentBuildingIcon },
+        { href: '/admin/storage', labelKey: 'Storage', icon: FluentStorageIcon },
+        { href: '/settings', labelKey: 'Settings', icon: FluentSettingsIcon },
     ],
     principal: [
-        { href: '/dashboard', labelKey: 'nav.dashboard', icon: FluentDashboardIcon },
-        { href: '/classes', labelKey: 'nav.classes', icon: FluentClassesIcon },
-        { href: '/users', labelKey: 'nav.manageUsers', icon: FluentManageUsersIcon },
-        { href: '/practice-ide', labelKey: 'Code Practice IDE (Python & SQL)', icon: FluentCodePracticeIcon },
-        { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
-        { href: '/admin/storage', labelKey: 'nav.storage', icon: FluentStorageIcon },
+        { href: '/dashboard', labelKey: 'Dashboard', icon: FluentDashboardIcon },
+        { href: '/classes', labelKey: 'Classes', icon: FluentClassesIcon },
+        { href: '/users', labelKey: 'Users', icon: FluentManageUsersIcon },
+        { href: '/practice-ide', labelKey: 'Practice IDE', icon: FluentCodePracticeIcon },
+        { href: '/admin/labs', labelKey: 'Labs & Hardware', icon: FluentLabSuiteIcon },
+        { href: '/assignments', labelKey: 'Assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/quiz', labelKey: 'AI Quiz Maker', icon: FluentQuizIcon },
-        { href: '/grades', labelKey: 'nav.grades', icon: FluentGradesIcon },
-        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: FluentActivityIcon },
-        { href: '/tickets', labelKey: 'nav.tickets', icon: FluentTicketsIcon },
-        { href: '/admin/school-profile', labelKey: 'nav.schoolProfile', icon: FluentBuildingIcon },
-        { href: '/admin/timetable', labelKey: 'nav.timetable', icon: FluentTimetableIcon },
-        { href: '/admin/calendar', labelKey: 'nav.calendar', icon: FluentCalendarIcon },
-        { href: '/reports', labelKey: 'nav.reports', icon: FluentReportsIcon },
-        { href: '/admin/notes', labelKey: 'Admin Notes', icon: FluentNotesIcon },
-        { href: '/admin/defaulters', labelKey: 'Parent Alerts & Defaulters', icon: FluentDefaultersIcon },
-        { href: '/admin/roles-permissions', labelKey: 'Roles & Permissions', icon: FluentRolesIcon },
-        { href: '/admin/implementation-plans', labelKey: 'Implementation Plans', icon: FluentPlansIcon },
-        { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
+        { href: '/documents', labelKey: 'Office Suite', icon: FluentDocumentsIcon },
+        { href: '/grades', labelKey: 'Grades', icon: FluentGradesIcon },
+        { href: '/meetings', labelKey: 'Meetings & Collab', icon: FluentLiveCollabIcon },
+        { href: '/quiz', labelKey: 'Quizzes', icon: FluentQuizIcon },
+        { href: '/reports/progress', labelKey: 'Student Progress', icon: FluentStudentProgressIcon },
+        { href: '/admin/audit-logs', labelKey: 'Operations & Audit', icon: FluentInstituteOpsIcon },
+        { href: '/admin/timetable', labelKey: 'Timetable', icon: FluentTimetableIcon },
+        { href: '/admin/calendar', labelKey: 'Calendar', icon: FluentCalendarIcon },
+        { href: '/reports', labelKey: 'Reports', icon: FluentReportsIcon },
+        { href: '/admin/notes', labelKey: 'Notes', icon: FluentNotesIcon },
+        { href: '/admin/roles-permissions', labelKey: 'Roles & Access', icon: FluentRolesIcon },
+        { href: '/admin/implementation-plans', labelKey: 'Plans', icon: FluentPlansIcon },
+        { href: '/admin/school-profile', labelKey: 'School Profile', icon: FluentBuildingIcon },
+        { href: '/admin/storage', labelKey: 'Storage', icon: FluentStorageIcon },
+        { href: '/settings', labelKey: 'Settings', icon: FluentSettingsIcon },
     ],
     instructor: [
-        { href: '/dashboard', labelKey: 'nav.dashboard', icon: FluentDashboardIcon },
-        { href: '/classes', labelKey: 'nav.myClasses', icon: FluentClassesIcon },
-        { href: '/practice-ide', labelKey: 'Code Practice IDE (Python & SQL)', icon: FluentCodePracticeIcon },
-        { href: '/teaching', labelKey: 'nav.teachingDashboard', icon: FluentTeachingIcon },
-        { href: '/teaching/plans', labelKey: 'nav.lecturePlans', icon: FluentLecturePlansIcon },
-        { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
+        { href: '/dashboard', labelKey: 'Dashboard', icon: FluentDashboardIcon },
+        { href: '/classes', labelKey: 'Classes', icon: FluentClassesIcon },
+        { href: '/practice-ide', labelKey: 'Practice IDE', icon: FluentCodePracticeIcon },
+        { href: '/teaching', labelKey: 'Teaching', icon: FluentTeachingIcon },
+        { href: '/teaching/plans', labelKey: 'Lecture Plans', icon: FluentLecturePlansIcon },
+        { href: '/assignments', labelKey: 'Assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
-        { href: '/grades', labelKey: 'nav.grades', icon: FluentGradesIcon },
-        { href: '/meetings', labelKey: 'Meetings', icon: FluentMeetingsIcon },
-        { href: '/whiteboard', labelKey: 'nav.whiteboard', icon: FluentWhiteboardIcon },
-        { href: '/quiz', labelKey: 'AI Quiz Maker', icon: FluentQuizIcon },
-        { href: '/activity-logs', labelKey: 'nav.activityLogs', icon: FluentActivityIcon },
-        { href: '/timetable', labelKey: 'nav.myTimetable', icon: FluentTimetableIcon },
-        { href: '/tickets', labelKey: 'nav.tickets', icon: FluentTicketsIcon },
-        { href: '/reports', labelKey: 'nav.reports', icon: FluentReportsIcon },
-        { href: '/admin/defaulters', labelKey: 'Parent Alerts & Defaulters', icon: FluentDefaultersIcon },
-        { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
+        { href: '/documents', labelKey: 'Office Suite', icon: FluentDocumentsIcon },
+        { href: '/grades', labelKey: 'Grades', icon: FluentGradesIcon },
+        { href: '/meetings', labelKey: 'Meetings & Collab', icon: FluentLiveCollabIcon },
+        { href: '/quiz', labelKey: 'Quizzes', icon: FluentQuizIcon },
+        { href: '/reports/progress', labelKey: 'Student Progress', icon: FluentStudentProgressIcon },
+        { href: '/timetable', labelKey: 'Timetable', icon: FluentTimetableIcon },
+        { href: '/tickets', labelKey: 'Support Desk', icon: FluentTicketsIcon },
+        { href: '/reports', labelKey: 'Reports', icon: FluentReportsIcon },
+        { href: '/settings', labelKey: 'Settings', icon: FluentSettingsIcon },
     ],
     lab_assistant: [
-        { href: '/dashboard', labelKey: 'nav.dashboard', icon: FluentDashboardIcon },
-        { href: '/classes', labelKey: 'nav.classes', icon: FluentClassesIcon },
-        { href: '/admin/labs', labelKey: 'nav.labsPCs', icon: FluentLabsIcon },
-        { href: '/practice-ide', labelKey: 'Code Practice IDE (Python & SQL)', icon: FluentCodePracticeIcon },
-        { href: '/assignments', labelKey: 'nav.assignments', icon: FluentAssignmentsIcon },
+        { href: '/dashboard', labelKey: 'Dashboard', icon: FluentDashboardIcon },
+        { href: '/classes', labelKey: 'Classes', icon: FluentClassesIcon },
+        { href: '/admin/labs', labelKey: 'Labs & Hardware', icon: FluentLabSuiteIcon },
+        { href: '/practice-ide', labelKey: 'Practice IDE', icon: FluentCodePracticeIcon },
+        { href: '/assignments', labelKey: 'Assignments', icon: FluentAssignmentsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/quiz', labelKey: 'AI Quiz Maker', icon: FluentQuizIcon },
-        { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
-        { href: '/tickets', labelKey: 'nav.tickets', icon: FluentTicketsIcon },
-        { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
+        { href: '/quiz', labelKey: 'Quizzes', icon: FluentQuizIcon },
+        { href: '/documents', labelKey: 'Office Suite', icon: FluentDocumentsIcon },
+        { href: '/tickets', labelKey: 'Support Desk', icon: FluentTicketsIcon },
+        { href: '/settings', labelKey: 'Settings', icon: FluentSettingsIcon },
     ],
     student: [
-        { href: '/dashboard', labelKey: 'nav.dashboard', icon: FluentDashboardIcon },
-        { href: '/my-work', labelKey: 'nav.myWork', icon: FluentAssignedWorkIcon },
-        { href: '/practice-ide', labelKey: 'Code Practice IDE (Python & SQL)', icon: FluentCodePracticeIcon },
-        { href: '/submissions', labelKey: 'nav.mySubmissions', icon: FluentReviewSubmissionsIcon },
+        { href: '/dashboard', labelKey: 'Dashboard', icon: FluentDashboardIcon },
+        { href: '/my-work', labelKey: 'My Work', icon: FluentAssignedWorkIcon },
+        { href: '/practice-ide', labelKey: 'Practice IDE', icon: FluentCodePracticeIcon },
+        { href: '/submissions', labelKey: 'Submissions', icon: FluentReviewSubmissionsIcon },
         { href: '/training', labelKey: 'Training', icon: FluentTrainingIcon },
-        { href: '/quiz', labelKey: 'Quizzes & Tests', icon: FluentQuizIcon },
-        { href: '/documents', labelKey: 'Documents & Office Suite', icon: FluentDocumentsIcon },
-        { href: '/grades', labelKey: 'nav.myGrades', icon: FluentGradesIcon },
-        { href: '/meetings', labelKey: 'Meetings', icon: FluentMeetingsIcon },
-        { href: '/live-board', labelKey: 'nav.liveBoard', icon: FluentWhiteboardIcon },
-        { href: '/timetable', labelKey: 'nav.myTimetable', icon: FluentTimetableIcon },
-        { href: '/tickets', labelKey: 'nav.reportIssue', icon: FluentTicketsIcon },
-        { href: '/settings', labelKey: 'nav.settings', icon: FluentSettingsIcon },
+        { href: '/quiz', labelKey: 'Quizzes', icon: FluentQuizIcon },
+        { href: '/documents', labelKey: 'Office Suite', icon: FluentDocumentsIcon },
+        { href: '/grades', labelKey: 'Grades', icon: FluentGradesIcon },
+        { href: '/meetings', labelKey: 'Meetings & Collab', icon: FluentLiveCollabIcon },
+        { href: '/timetable', labelKey: 'Timetable', icon: FluentTimetableIcon },
+        { href: '/tickets', labelKey: 'Support Desk', icon: FluentTicketsIcon },
+        { href: '/settings', labelKey: 'Settings', icon: FluentSettingsIcon },
     ],
 };
 
@@ -324,17 +323,50 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
             <nav className="flex-1 p-3 overflow-y-auto">
                 <ul className="space-y-1">
                     {items.map((item) => {
-                        // Highlight /assignments for the entire assignment suite (assignments, assigned-work, submissions)
-                        const isActive = item.href === '/assignments'
-                            ? pathname === '/assignments' ||
-                              pathname.startsWith('/assignments/') ||
-                              pathname === '/assigned-work' ||
-                              pathname.startsWith('/assigned-work/') ||
-                              pathname === '/submissions' ||
-                              pathname.startsWith('/submissions/')
-                            : item.href === '/training' 
-                                ? pathname === '/training' || pathname.startsWith('/training/')
-                                : pathname === item.href || pathname.startsWith(item.href + '/');
+                        // Hub-aware active route matching
+                        let isActive = false;
+                        if (item.href === '/assignments') {
+                            isActive = pathname === '/assignments' ||
+                                pathname.startsWith('/assignments/') ||
+                                pathname === '/assigned-work' ||
+                                pathname.startsWith('/assigned-work/') ||
+                                (pathname.startsWith('/submissions') && user?.role !== 'student');
+                        } else if (item.href === '/meetings') {
+                            isActive = pathname === '/meetings' ||
+                                pathname.startsWith('/meetings/') ||
+                                pathname === '/meeting' ||
+                                pathname.startsWith('/meeting/') ||
+                                pathname === '/whiteboard' ||
+                                pathname.startsWith('/whiteboard/') ||
+                                pathname === '/admin/whiteboards' ||
+                                pathname.startsWith('/admin/whiteboards/') ||
+                                pathname === '/live-board' ||
+                                pathname.startsWith('/live-board/') ||
+                                pathname === '/recordings' ||
+                                pathname.startsWith('/recordings/') ||
+                                pathname === '/admin/recordings' ||
+                                pathname.startsWith('/admin/recordings/');
+                        } else if (item.href === '/admin/labs') {
+                            isActive = pathname === '/admin/labs' ||
+                                pathname.startsWith('/admin/labs/') ||
+                                (pathname.startsWith('/tickets') && ['admin', 'principal', 'lab_assistant'].includes(user?.role)) ||
+                                pathname.startsWith('/admin/laptop-issuances') ||
+                                pathname.startsWith('/admin/barcode-generator') ||
+                                pathname.startsWith('/admin/procurement');
+                        } else if (item.href === '/admin/audit-logs') {
+                            isActive = pathname === '/admin/audit-logs' ||
+                                pathname.startsWith('/admin/audit-logs/') ||
+                                pathname.startsWith('/activity-logs') ||
+                                pathname.startsWith('/admin/query-logs') ||
+                                pathname.startsWith('/admin/sql-console');
+                        } else if (item.href === '/reports/progress') {
+                            isActive = pathname === '/reports/progress' ||
+                                pathname.startsWith('/reports/progress');
+                        } else if (item.href === '/training') {
+                            isActive = pathname === '/training' || pathname.startsWith('/training/');
+                        } else {
+                            isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+                        }
                         const Icon = item.icon;
                         const label = !item.labelKey.startsWith('nav.') ? item.labelKey : t(item.labelKey);
                         return (

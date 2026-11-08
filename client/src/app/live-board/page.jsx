@@ -7,6 +7,8 @@ import { useAuthStore } from '@/lib/store';
 import { Pencil, ArrowLeft, AlertCircle, Radio, Maximize2, Minimize2 } from 'lucide-react';
 import Whiteboard from '@/components/Whiteboard';
 import CameraOverlay from '@/components/CameraOverlay';
+import CollaborationSuiteTabs from '@/components/CollaborationSuiteTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import io from 'socket.io-client';
 import api from '@/lib/api';
 
@@ -126,19 +128,16 @@ export default function LiveBoardPage() {
     }, [_hasHydrated, isAuthenticated, user, router]);
 
     if (!_hasHydrated) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
         <div className={`min-h-screen bg-slate-50 ${isFullscreen ? 'overflow-hidden' : ''}`}>
             {/* Standard Header - only shown when not maximized */}
             {!isFullscreen && (
-                <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
-                    <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+                <>
+                    <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
                         <div className="flex items-center gap-4">
                             <Link href="/dashboard" className="text-slate-500 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition">
                                 <ArrowLeft className="w-5 h-5" />
@@ -177,6 +176,8 @@ export default function LiveBoardPage() {
                         </div>
                     </div>
                 </header>
+                <CollaborationSuiteTabs activeTab="live-sessions" />
+                </>
             )}
 
             <main className={isFullscreen ? '' : 'w-full max-w-[1920px] mx-auto px-2 sm:px-4 py-2 sm:py-3'}>

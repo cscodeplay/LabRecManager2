@@ -13,6 +13,7 @@ import FloatingChatbot from './FloatingChatbot';
 import GlobalSearch from './GlobalSearch';
 import VoiceHUD from './VoiceHUD';
 import GlobalQuickActions from './GlobalQuickActions';
+import GreenSegmentedSpinner from './GreenSegmentedSpinner';
 import { useAuthStore } from '@/lib/store';
 
 export default function AppLayout({ children }) {
@@ -99,11 +100,7 @@ export default function AppLayout({ children }) {
 
     // Wait for hydration (with mounted safety fallback)
     if (!_hasHydrated && !mounted) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     // If not authenticated and not on auth page, render children (they will handle redirect)

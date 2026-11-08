@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const ITEM_TYPE_LABELS = {
     pc: { label: 'Computer / Desktop', icon: '🖥️' },
@@ -273,6 +275,7 @@ export default function TicketsPage() {
                     </button>
                 </div>
             </div>
+            <LabInfrastructureTabs activeTab="tickets" className="mb-6 -mt-6" />
 
             <div className="max-w-7xl mx-auto px-4">
 
@@ -325,9 +328,8 @@ export default function TicketsPage() {
 
                 {/* Tickets List */}
                 {loading ? (
-                    <div className="text-center py-12">
-                        <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto"></div>
-                        <p className="mt-2 text-slate-500">Loading tickets...</p>
+                    <div className="text-center py-16 flex flex-col items-center justify-center">
+                        <GreenSegmentedSpinner size="lg" label="Loading tickets..." />
                     </div>
                 ) : filteredTickets.length === 0 ? (
                     <div className="text-center py-12 bg-white rounded-xl border border-slate-200">

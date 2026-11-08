@@ -10,6 +10,8 @@ import toast from 'react-hot-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 const ITEM_TYPE_ICONS = {
@@ -187,11 +189,7 @@ export default function LabsPage() {
     );
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
@@ -215,7 +213,7 @@ export default function LabsPage() {
                             <ClipboardList className="w-4 h-4" /> Procurement
                         </Link>
                         <Link href="/admin/laptop-issuances" className="btn btn-secondary">
-                            <Laptop className="w-4 h-4" /> Laptop Issuances
+                            <Laptop className="w-4 h-4" /> Device Issuance
                         </Link>
                         <Link href="/admin/labs/shift-requests" className="btn btn-secondary">
                             <ArrowRightLeft className="w-4 h-4" /> Shift Requests
@@ -232,6 +230,7 @@ export default function LabsPage() {
                     </div>
                 </div>
             </header>
+            <LabInfrastructureTabs activeTab="labs" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* AI Lab Health & Maintenance Copilot */}

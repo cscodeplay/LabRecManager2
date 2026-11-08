@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import AssignmentSuiteTabs from '@/components/AssignmentSuiteTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 export default function AssignedWorkPage() {
@@ -363,11 +364,7 @@ export default function AssignedWorkPage() {
     );
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (

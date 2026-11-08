@@ -11,6 +11,8 @@ import {
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 const STATUS_COLORS = {
@@ -339,11 +341,7 @@ export default function LaptopIssuancesPage() {
     );
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
@@ -357,14 +355,15 @@ export default function LaptopIssuancesPage() {
                         </Link>
                         <div className="flex items-center gap-2">
                             <Laptop className="w-6 h-6 text-blue-500" />
-                            <h1 className="text-xl font-semibold text-slate-900">Laptop Issuances</h1>
+                            <h1 className="text-xl font-semibold text-slate-900">Device Issuance</h1>
                         </div>
                     </div>
                     <button onClick={openIssueModal} className="btn btn-primary">
-                        <Plus className="w-4 h-4" /> Issue Laptop
+                        <Plus className="w-4 h-4" /> Issue Device
                     </button>
                 </div>
             </header>
+            <LabInfrastructureTabs activeTab="device-issuance" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
                 {/* Filters */}
@@ -415,7 +414,7 @@ export default function LaptopIssuancesPage() {
                 {filteredIssuances.length === 0 ? (
                     <div className="card p-12 text-center">
                         <Laptop className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                        <p className="text-slate-500">No laptop issuances found</p>
+                        <p className="text-slate-500">No device issuances found</p>
                         <button onClick={openIssueModal} className="btn btn-primary mt-4">
                             <Plus className="w-4 h-4" /> Issue First Laptop
                         </button>

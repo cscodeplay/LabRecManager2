@@ -57,7 +57,7 @@ export default function DashboardPage() {
         { title: 'Lab Inventory & Hardware', href: '/admin/labs', icon: FluentWorkstationIcon, category: 'labs', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
         { title: 'Equipment Shift Requests', href: '/admin/labs/shift-requests', icon: Truck, category: 'labs', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
         { title: 'Hardware Audit Reports', href: '/admin/labs/inventory-reports', icon: BarChart3, category: 'labs', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
-        { title: 'Laptop Issuances', href: '/admin/laptop-issuances', icon: Laptop, category: 'labs', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
+        { title: 'Device Issuance', href: '/admin/laptop-issuances', icon: Laptop, category: 'labs', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
         { title: 'Barcode & QR Labels', href: '/admin/barcode-generator', icon: QrCode, category: 'labs', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
 
         // Live & Collaboration

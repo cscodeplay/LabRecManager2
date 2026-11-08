@@ -12,6 +12,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import CollaborationSuiteTabs from '@/components/CollaborationSuiteTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDateTime } from '@/lib/dateUtils';
 
 export default function AdminWhiteboardsPage() {
@@ -96,20 +98,18 @@ export default function AdminWhiteboardsPage() {
     };
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     return (
-        <div className="p-6">
-            <PageHeader
-                title="Live Classes & Whiteboards"
-                subtitle="Schedule, monitor, and review live classroom sessions"
-                icon={Radio}
-            />
+        <div className="min-h-screen bg-slate-50">
+            <CollaborationSuiteTabs activeTab="live-sessions" />
+            <div className="p-6 max-w-7xl mx-auto">
+                <PageHeader
+                    title="Live Classes & Broadcasts"
+                    subtitle="Schedule, monitor, and review active classroom sessions"
+                    icon={Radio}
+                />
 
             {/* Filters */}
             <div className="flex items-center justify-between mb-6">
@@ -289,6 +289,7 @@ export default function AdminWhiteboardsPage() {
                     ))}
                 </div>
             )}
+            </div>
         </div>
     );
 }

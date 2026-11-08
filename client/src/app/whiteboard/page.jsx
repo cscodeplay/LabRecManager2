@@ -15,6 +15,8 @@ import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
 import CameraOverlay from '@/components/CameraOverlay';
+import CollaborationSuiteTabs from '@/components/CollaborationSuiteTabs';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import api from '@/lib/api';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -421,22 +423,11 @@ export default function WhiteboardPage() {
     };
 
     if (!_hasHydrated) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen />;
     }
 
     if (user?.role === 'student') {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="animate-spin w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full"></div>
-                    <p className="text-sm font-medium text-slate-600">Connecting to Student Live Board...</p>
-                </div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Connecting to Student Live Board..." />;
     }
 
     // PHASE 2: CANVAS VIEW
@@ -591,6 +582,7 @@ export default function WhiteboardPage() {
                     </button>
                 </div>
             </header>
+            <CollaborationSuiteTabs activeTab="whiteboard" />
 
             <main className="flex-1 max-w-7xl w-full mx-auto p-6 md:p-8">
                 {loadingFiles ? (
