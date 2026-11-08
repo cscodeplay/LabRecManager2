@@ -7,7 +7,7 @@ import {
     GraduationCap, Plus, Trash2, RotateCcw, Calendar, Filter, Clock,
     Video, Mic, MicOff, VideoOff, CheckCircle, XCircle, AlertTriangle,
     Volume2, Play, Square, Cloud, HardDrive, Key, Copy, Check, ExternalLink,
-    RefreshCw, Eye, EyeOff, Server, Database, Sparkles, Zap, Cpu, CheckCircle2
+    RefreshCw, Eye, EyeOff, Server, Database, Sparkles, Zap, Cpu, CheckCircle2, CircleDot
 } from 'lucide-react';
 import { useAuthStore, useThemeStore, useLanguageStore, useVoiceStore } from '@/lib/store';
 import useSpeechSynthesis from '@/hooks/useSpeechSynthesis';
@@ -18,6 +18,7 @@ import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
 import UserAvatar from '@/components/UserAvatar';
 import AvatarPickerModal from '@/components/AvatarPickerModal';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
+import SpinnerConfigurator from '@/components/SpinnerConfigurator';
 import { formatDate, formatDateTime, formatTime, formatDateRange } from '@/lib/dateUtils';
 
 export default function SettingsPage() {
@@ -859,6 +860,7 @@ export default function SettingsPage() {
         { id: 'voice', icon: Volume2, label: 'AI Teacher Voice' },
         { id: 'notifications', icon: Bell, label: 'Notifications' },
         { id: 'appearance', icon: Palette, label: 'Appearance' },
+        { id: 'loader', icon: CircleDot, label: 'Page Loader' },
         { id: 'security', icon: Shield, label: 'Security' },
         ...(isAdmin ? [
             { id: 'cloud_drives', icon: Cloud, label: 'Cloud Storage & Drives' },
@@ -1431,46 +1433,52 @@ export default function SettingsPage() {
                             </div>
                         )}
 
-                        {activeTab === 'appearance' && (
-                            <div className="card p-6">
-                                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Appearance</h2>
-                                <div className="space-y-6">
-                                    <div>
-                                        <label className="label">Theme</label>
-                                        <div className="grid grid-cols-3 gap-3">
-                                            {[
-                                                { value: 'light', label: '☀️ Light', desc: 'Light background' },
-                                                { value: 'dark', label: '🌙 Dark', desc: 'Dark background' },
-                                                { value: 'system', label: '💻 System', desc: 'Match device' }
-                                            ].map(opt => (
-                                                <button
-                                                    key={opt.value}
-                                                    type="button"
-                                                    onClick={() => setTheme(opt.value)}
-                                                    className={`p-4 rounded-xl border-2 text-center transition-all ${theme === opt.value
-                                                        ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
-                                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                                                        }`}
+                        {(activeTab === 'appearance' || activeTab === 'loader') && (
+                            <div className="space-y-6">
+                                {activeTab === 'appearance' && (
+                                    <div className="card p-6">
+                                        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4">Appearance</h2>
+                                        <div className="space-y-6">
+                                            <div>
+                                                <label className="label">Theme</label>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    {[
+                                                        { value: 'light', label: '☀️ Light', desc: 'Light background' },
+                                                        { value: 'dark', label: '🌙 Dark', desc: 'Dark background' },
+                                                        { value: 'system', label: '💻 System', desc: 'Match device' }
+                                                    ].map(opt => (
+                                                        <button
+                                                            key={opt.value}
+                                                            type="button"
+                                                            onClick={() => setTheme(opt.value)}
+                                                            className={`p-4 rounded-xl border-2 text-center transition-all ${theme === opt.value
+                                                                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/30'
+                                                                : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                                                                }`}
+                                                        >
+                                                            <span className="text-2xl block mb-1">{opt.label.split(' ')[0]}</span>
+                                                            <span className="font-medium text-slate-900 dark:text-slate-100 block">{opt.label.split(' ')[1]}</span>
+                                                            <span className="text-xs text-slate-500 dark:text-slate-400">{opt.desc}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="label">Language</label>
+                                                <select
+                                                    className="input"
+                                                    value={language}
+                                                    onChange={(e) => setLanguage(e.target.value)}
                                                 >
-                                                    <span className="text-2xl block mb-1">{opt.label.split(' ')[0]}</span>
-                                                    <span className="font-medium text-slate-900 dark:text-slate-100 block">{opt.label.split(' ')[1]}</span>
-                                                    <span className="text-xs text-slate-500 dark:text-slate-400">{opt.desc}</span>
-                                                </button>
-                                            ))}
+                                                    <option value="en">English</option>
+                                                    <option value="hi">Hindi (हिंदी)</option>
+                                                </select>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="label">Language</label>
-                                        <select
-                                            className="input"
-                                            value={language}
-                                            onChange={(e) => setLanguage(e.target.value)}
-                                        >
-                                            <option value="en">English</option>
-                                            <option value="hi">Hindi (हिंदी)</option>
-                                        </select>
-                                    </div>
-                                </div>
+                                )}
+
+                                <SpinnerConfigurator />
                             </div>
                         )}
 

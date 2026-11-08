@@ -1,63 +1,76 @@
 'use client';
 
-import React, { useEffect, useRef, useId } from 'react';
-
-// Exact 24 radial block paths pre-computed from:
-// cx=130, cy=130, count=24, outer=108, inner=66, gap=1.8deg
-const BLOCK_PATHS = [
-    "M 122.414 64.437 L 117.587 22.716 A 108 108 0 0 1 142.413 22.716 L 137.586 64.437 A 66 66 0 0 0 122.414 64.437 Z",
-    "M 139.641 64.708 L 145.777 23.159 A 108 108 0 0 1 169.757 29.584 L 154.296 68.635 A 66 66 0 0 0 139.641 64.708 Z",
-    "M 156.212 69.428 L 172.892 30.883 A 108 108 0 0 1 194.392 43.296 L 169.351 77.014 A 66 66 0 0 0 156.212 69.428 Z",
-    "M 170.996 78.276 L 197.084 45.361 A 108 108 0 0 1 214.639 62.916 L 181.724 89.004 A 66 66 0 0 0 170.996 78.276 Z",
-    "M 182.986 90.649 L 216.704 65.608 A 108 108 0 0 1 229.117 87.108 L 190.572 103.788 A 66 66 0 0 0 182.986 90.649 Z",
-    "M 191.365 105.704 L 230.416 90.243 A 108 108 0 0 1 236.841 114.223 L 195.292 120.359 A 66 66 0 0 0 191.365 105.704 Z",
-    "M 195.563 122.414 L 237.284 117.587 A 108 108 0 0 1 237.284 142.413 L 195.563 137.586 A 66 66 0 0 0 195.563 122.414 Z",
-    "M 195.292 139.641 L 236.841 145.777 A 108 108 0 0 1 230.416 169.757 L 191.365 154.296 A 66 66 0 0 0 195.292 139.641 Z",
-    "M 190.572 156.212 L 229.117 172.892 A 108 108 0 0 1 216.704 194.392 L 182.986 169.351 A 66 66 0 0 0 190.572 156.212 Z",
-    "M 181.724 170.996 L 214.639 197.084 A 108 108 0 0 1 197.084 214.639 L 170.996 181.724 A 66 66 0 0 0 181.724 170.996 Z",
-    "M 169.351 182.986 L 194.392 216.704 A 108 108 0 0 1 172.892 229.117 L 156.212 190.572 A 66 66 0 0 0 169.351 182.986 Z",
-    "M 154.296 191.365 L 169.757 230.416 A 108 108 0 0 1 145.777 236.841 L 139.641 195.292 A 66 66 0 0 0 154.296 191.365 Z",
-    "M 137.586 195.563 L 142.413 237.284 A 108 108 0 0 1 117.587 237.284 L 122.414 195.563 A 66 66 0 0 0 137.586 195.563 Z",
-    "M 120.359 195.292 L 114.223 236.841 A 108 108 0 0 1 90.243 230.416 L 105.704 191.365 A 66 66 0 0 0 120.359 195.292 Z",
-    "M 103.788 190.572 L 87.108 229.117 A 108 108 0 0 1 65.608 216.704 L 90.649 182.986 A 66 66 0 0 0 103.788 190.572 Z",
-    "M 89.004 181.724 L 62.916 214.639 A 108 108 0 0 1 45.361 197.084 L 78.276 170.996 A 66 66 0 0 0 89.004 181.724 Z",
-    "M 77.014 169.351 L 43.296 194.392 A 108 108 0 0 1 30.883 172.892 L 69.428 156.212 A 66 66 0 0 0 77.014 169.351 Z",
-    "M 68.635 154.296 L 29.584 169.757 A 108 108 0 0 1 23.159 145.777 L 64.708 139.641 A 66 66 0 0 0 68.635 154.296 Z",
-    "M 64.437 137.586 L 22.716 142.413 A 108 108 0 0 1 22.716 117.587 L 64.437 122.414 A 66 66 0 0 0 64.437 137.586 Z",
-    "M 64.708 120.359 L 23.159 114.223 A 108 108 0 0 1 29.584 90.243 L 68.635 105.704 A 66 66 0 0 0 64.708 120.359 Z",
-    "M 69.428 103.788 L 30.883 87.108 A 108 108 0 0 1 43.296 65.608 L 77.014 90.649 A 66 66 0 0 0 69.428 103.788 Z",
-    "M 78.276 89.004 L 45.361 62.916 A 108 108 0 0 1 62.916 45.361 L 89.004 78.276 A 66 66 0 0 0 78.276 89.004 Z",
-    "M 90.649 77.014 L 65.608 43.296 A 108 108 0 0 1 87.108 30.883 L 103.788 69.428 A 66 66 0 0 0 90.649 77.014 Z",
-    "M 105.704 68.635 L 90.243 29.584 A 108 108 0 0 1 114.223 23.159 L 120.359 64.708 A 66 66 0 0 0 105.704 68.635 Z"
-];
+import React, { useEffect, useRef, useId, useMemo } from 'react';
+import {
+    useSpinnerStore,
+    SPINNER_PALETTES,
+    THICKNESS_PRESETS,
+    DEFAULT_SPINNER_CONFIG,
+    generateRadialPaths
+} from '@/lib/spinnerStore';
 
 /**
- * GreenSegmentedSpinner (ULRMS Progressive Green Loader)
+ * GreenSegmentedSpinner (Configurable ULRMS Progressive Loader)
  * 
  * Features:
- * - 24 progressive radial blocks with graduated emerald gradient (#bbf7d0 -> #4ade80 -> #15803d)
- * - Metallic green ULRMS center typography with edge stroke & specular shine sweep
+ * - Dynamic color palettes (Emerald, Sapphire, Cyber, Sunset Amber, Ruby Crimson, Oceanic Teal, Titanium Slate, Custom Hex)
+ * - Configurable block count (8 to 32 blocks)
+ * - Configurable speed, ring thickness, and slot gap
+ * - Configurable center brand text ("ULRMS" or custom) & specular shine
+ * - Real-time sync with Settings via `useSpinnerStore` (Zustand with localStorage persistence)
  * - Zero React re-rendering overhead (direct RAF DOM sync)
- * - Responsive sizing matrix: xs (24px), sm (40px), md (64px), lg (96px), xl (112px), fullscreen (128px)
- * - Light and Dark theme support with faint radial track guide
+ * - Full backward compatibility with existing component call sites
  */
 export default function GreenSegmentedSpinner({
     size = 'md',
     label = '',
     fullscreen = false,
-    showPercent = null, // defaults to true on fullscreen, false otherwise
+    palette: propPalette,
+    blockCount: propBlockCount,
+    speed: propSpeed,
+    showPercent = null,
     showText = true,
     className = ''
 }) {
     const rawId = useId();
     const uid = rawId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
+    const store = useSpinnerStore();
+    // Use store values once hydrated; otherwise use default config to maintain SSR purity
+    const config = store.isHydrated ? store : DEFAULT_SPINNER_CONFIG;
+
+    const activePaletteKey = propPalette || config.palette || 'emerald';
+    const paletteDef = SPINNER_PALETTES[activePaletteKey] || SPINNER_PALETTES.emerald;
+
+    // Custom gradient colors if palette is 'custom'
+    const startColor = activePaletteKey === 'custom' && config.customColors?.start ? config.customColors.start : paletteDef.start;
+    const midColor = activePaletteKey === 'custom' && config.customColors?.mid ? config.customColors.mid : paletteDef.mid;
+    const endColor = activePaletteKey === 'custom' && config.customColors?.end ? config.customColors.end : paletteDef.end;
+
+    const activeBlockCount = propBlockCount || config.blockCount || 24;
+    const activeSpeed = propSpeed || config.speed || 12;
+    const thicknessKey = config.ringThickness || 'standard';
+    const activeThickness = THICKNESS_PRESETS[thicknessKey] || THICKNESS_PRESETS.standard;
+    const activeGap = config.slotGap || 1.8;
+    const activeBrandText = config.brandText !== undefined ? config.brandText : 'ULRMS';
+    const isTextVisible = (showText && config.showBrandText !== false) && size !== 'xs';
+    const isShineVisible = config.showSpecularShine !== false;
+    const isPercentVisible = showPercent !== null ? showPercent : (config.showPercent && fullscreen);
+    const isTrackVisible = config.showTrackGuide !== false;
+
+    // Pre-calculate radial paths for current geometry
+    const paths = useMemo(() => {
+        return generateRadialPaths(
+            activeBlockCount,
+            activeThickness.inner,
+            activeThickness.outer,
+            activeGap
+        );
+    }, [activeBlockCount, activeThickness.inner, activeThickness.outer, activeGap]);
+
     const svgRef = useRef(null);
     const shineRef = useRef(null);
     const percentRef = useRef(null);
-
-    const isPercentVisible = showPercent !== null ? showPercent : fullscreen;
-    const isTextVisible = showText && size !== 'xs';
 
     // Size mappings
     const sizeMap = {
@@ -75,8 +88,8 @@ export default function GreenSegmentedSpinner({
         let animId;
         let progress = 0;
         let lastTime = performance.now();
-        const count = 24;
-        const speed = 12; // 2 seconds per complete revolution
+        const count = activeBlockCount;
+        const speed = activeSpeed;
 
         const svg = svgRef.current;
         if (!svg) return;
@@ -117,7 +130,7 @@ export default function GreenSegmentedSpinner({
         return () => {
             if (animId) cancelAnimationFrame(animId);
         };
-    }, []);
+    }, [activeBlockCount, activeSpeed]);
 
     const spinnerSvg = (
         <svg
@@ -128,11 +141,11 @@ export default function GreenSegmentedSpinner({
             aria-label="Loading"
         >
             <defs>
-                {/* Emerald Progressive Radial Gradient */}
-                <linearGradient id={`greenGradient-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#bbf7d0" />
-                    <stop offset="48%" stopColor="#4ade80" />
-                    <stop offset="100%" stopColor="#15803d" />
+                {/* Dynamic Progressive Radial Gradient */}
+                <linearGradient id={`radialGradient-${uid}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor={startColor} />
+                    <stop offset="48%" stopColor={midColor} />
+                    <stop offset="100%" stopColor={endColor} />
                 </linearGradient>
 
                 {/* Specular Shine Gradient for Brand Sweep */}
@@ -148,94 +161,93 @@ export default function GreenSegmentedSpinner({
 
                 {/* Metallic Text Gradient */}
                 <linearGradient id={`metalText-${uid}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#f8fff9" />
-                    <stop offset="13%" stopColor="#a7f3d0" />
-                    <stop offset="27%" stopColor="#ffffff" />
-                    <stop offset="43%" stopColor="#34d399" />
-                    <stop offset="58%" stopColor="#047857" />
-                    <stop offset="72%" stopColor="#d1fae5" />
-                    <stop offset="86%" stopColor="#059669" />
-                    <stop offset="100%" stopColor="#064e3b" />
+                    {paletteDef.textGradient.map((stop, i) => (
+                        <stop key={i} offset={stop.offset} stopColor={stop.color} />
+                    ))}
                 </linearGradient>
 
                 {/* Metallic Stroke Gradient */}
                 <linearGradient id={`metalEdge-${uid}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                    <stop offset="0%" stopColor="#ecfdf5" />
-                    <stop offset="50%" stopColor="#065f46" />
-                    <stop offset="100%" stopColor="#022c22" />
+                    {paletteDef.edgeGradient.map((stop, i) => (
+                        <stop key={i} offset={stop.offset} stopColor={stop.color} />
+                    ))}
                 </linearGradient>
 
-                {/* Clipping Path for ULRMS Metallic Typography */}
+                {/* Clipping Path for Brand Typography */}
                 <clipPath id={`wordClip-${uid}`}>
                     <text
                         x="130"
                         y="137"
                         textAnchor="middle"
                         fontFamily="Inter, system-ui, -apple-system, sans-serif"
-                        fontSize="25"
+                        fontSize={activeBrandText.length > 5 ? '20' : '25'}
                         fontWeight="900"
                         letterSpacing="1.5"
                     >
-                        ULRMS
+                        {activeBrandText}
                     </text>
                 </clipPath>
             </defs>
 
-            {/* Faint Background Track & Active Illuminating Blocks */}
+            {/* Background Track & Active Progressive Blocks */}
             <g className="text-slate-400 dark:text-slate-600">
-                {BLOCK_PATHS.map((d, i) => (
+                {paths.map((d, i) => (
                     <React.Fragment key={i}>
                         {/* Static track block */}
-                        <path d={d} fill="currentColor" opacity="0.08" />
+                        {isTrackVisible && (
+                            <path d={d} fill="currentColor" opacity="0.08" />
+                        )}
                         {/* Dynamic active progressive block */}
                         <path
                             d={d}
                             className="ulrms-active-block"
-                            fill={`url(#greenGradient-${uid})`}
+                            fill={`url(#radialGradient-${uid})`}
                             style={{ opacity: 0 }}
                         />
                     </React.Fragment>
                 ))}
             </g>
 
-            {/* Central Metallic ULRMS Badge */}
-            {isTextVisible && (
+            {/* Central Metallic Brand Badge */}
+            {isTextVisible && Boolean(activeBrandText) && (
                 <>
                     <text
                         x="130"
                         y="137"
                         textAnchor="middle"
                         fontFamily="Inter, system-ui, -apple-system, sans-serif"
-                        fontSize="25"
+                        fontSize={activeBrandText.length > 5 ? '20' : '25'}
                         fontWeight="900"
                         letterSpacing="1.5"
                         fill={`url(#metalText-${uid})`}
                         stroke={`url(#metalEdge-${uid})`}
                         strokeWidth="0.65"
                         paintOrder="stroke fill"
-                        style={{ filter: 'drop-shadow(0 1px 1px #064e3b88)' }}
+                        style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.3))' }}
                     >
-                        ULRMS
+                        {activeBrandText}
                     </text>
 
-                    {/* Specular Shine Streak Sweeping Across ULRMS */}
-                    <g clipPath={`url(#wordClip-${uid})`}>
-                        <rect
-                            ref={shineRef}
-                            x="-55"
-                            y="101"
-                            width="38"
-                            height="46"
-                            fill={`url(#shineGradient-${uid})`}
-                            opacity="0"
-                        />
-                        <path
-                            d="M0 104 H260"
-                            stroke="#ffffff"
-                            strokeWidth="0.55"
-                            opacity="0.35"
-                        />
-                    </g>
+                    {/* Specular Shine Reflection Sweeping Across Center Brand */}
+                    {isShineVisible && (
+                        <g clipPath={`url(#wordClip-${uid})`}>
+                            <rect
+                                ref={shineRef}
+                                x="-55"
+                                y="101"
+                                width="38"
+                                height="46"
+                                fill={`url(#shineGradient-${uid})`}
+                                opacity="0"
+                            />
+                            <path
+                                d="M0 104 H260"
+                                stroke="#ffffff"
+                                strokeWidth="0.55"
+                                opacity="0.35"
+                            />
+                        </g>
+                    )}
                 </>
             )}
         </svg>
@@ -249,7 +261,7 @@ export default function GreenSegmentedSpinner({
                     {isPercentVisible && (
                         <div
                             ref={percentRef}
-                            className="mt-3.5 text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums tracking-tight"
+                            className={`mt-3.5 text-sm font-bold ${paletteDef.badgeColor} tabular-nums tracking-tight`}
                         >
                             0%
                         </div>
@@ -260,7 +272,7 @@ export default function GreenSegmentedSpinner({
                         </p>
                     ) : (
                         <p className="mt-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 tracking-wider uppercase">
-                            Loading ULRMS...
+                            Loading {activeBrandText || 'ULRMS'}...
                         </p>
                     )}
                 </div>
@@ -275,7 +287,7 @@ export default function GreenSegmentedSpinner({
                 {isPercentVisible && (
                     <span
                         ref={percentRef}
-                        className="text-xs font-bold text-emerald-600 dark:text-emerald-400 tabular-nums"
+                        className={`text-xs font-bold ${paletteDef.badgeColor} tabular-nums`}
                     >
                         0%
                     </span>
