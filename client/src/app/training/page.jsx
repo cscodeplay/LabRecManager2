@@ -16,6 +16,7 @@ import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function TrainingModulesPage() {
     const router = useRouter();
@@ -89,6 +90,10 @@ export default function TrainingModulesPage() {
         }
         fetchModules();
     }, [_hasHydrated, isAuthenticated, router]);
+
+    if (!_hasHydrated || loading) {
+        return <GreenSegmentedSpinner fullscreen label="Loading training curriculum..." />;
+    }
 
     const totalAvailableExercises = modules.reduce((acc, m) => acc + (m.totalExercises || 0), 0);
 
@@ -183,7 +188,7 @@ export default function TrainingModulesPage() {
 
             {loading ? (
                 <div className="flex items-center justify-center h-64">
-                    <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+                    <GreenSegmentedSpinner size="lg" label="Loading training curriculum..." />
                 </div>
             ) : modules.length === 0 ? (
                 <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-12 text-center shadow-lg">

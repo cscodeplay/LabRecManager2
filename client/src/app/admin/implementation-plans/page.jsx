@@ -16,6 +16,7 @@ import { implementationPlansAPI } from '@/lib/api';
 import { useConfirm } from '@/components/ConfirmDialog';
 import toast from 'react-hot-toast';
 import { formatDateTime, formatDate } from '@/lib/dateUtils';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 // Helper to convert ISO string to datetime-local input value (YYYY-MM-DDTHH:mm)
 function toDatetimeLocal(isoStr) {
@@ -652,9 +653,8 @@ export default function ImplementationPlansPage() {
 
                 {/* Plans List / Table View */}
                 {loading ? (
-                    <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                        <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading implementation plans...</p>
+                    <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center">
+                        <GreenSegmentedSpinner size="lg" label="Loading implementation plans..." />
                     </div>
                 ) : plans.length === 0 ? (
                     <div className="p-12 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">

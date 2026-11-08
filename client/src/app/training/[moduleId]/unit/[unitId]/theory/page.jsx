@@ -7,6 +7,7 @@ import { trainingAPI } from '@/lib/api';
 import { ArrowLeft, CheckCircle, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 import StudentTheoryViewer from '@/components/StudentTheoryViewer';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function UnitTheoryPage() {
     const { moduleId, unitId } = useParams();
@@ -66,12 +67,7 @@ export default function UnitTheoryPage() {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-center text-slate-400 gap-3">
-                <div className="w-9 h-9 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm font-medium">Loading Concept Notes & Mini-Exercises...</span>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading Concept Notes & Mini-Exercises..." />;
     }
 
     if (!unit) {

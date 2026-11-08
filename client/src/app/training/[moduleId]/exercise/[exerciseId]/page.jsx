@@ -18,6 +18,7 @@ import MathRenderer from '@/components/MathRenderer';
 import CodeEditorWithConfig from '@/components/CodeEditorWithConfig';
 import TrainingLiveBanner from '@/components/TrainingLiveBanner';
 import StudentWorkspaceModal from '@/components/StudentWorkspaceModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 // Helper to detect input() occurrences and prompts in Python code
 function parseInputOccurrences(codeText) {
@@ -554,12 +555,7 @@ export default function ExerciseEditorPage() {
     };
 
     if (!exercise) {
-        return (
-            <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-slate-400 gap-3">
-                <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                <span className="text-sm font-medium">Loading exercise...</span>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading interactive coding laboratory..." />;
     }
 
     return (

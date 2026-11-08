@@ -12,6 +12,7 @@ import {
 import toast from 'react-hot-toast';
 import TrainingLiveBanner from '@/components/TrainingLiveBanner';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function TrainingModulePage() {
     const { moduleId } = useParams();
@@ -51,7 +52,7 @@ export default function TrainingModulePage() {
         fetchModule();
     }, [moduleId, isAuthenticated]);
 
-    if (loading) return <div className="p-8 text-center">Loading module...</div>;
+    if (loading) return <GreenSegmentedSpinner fullscreen label="Loading training module units..." />;
     if (!module) return <div className="p-8 text-center text-red-500">Module not found</div>;
 
     const isMastered = (unitId) => masteries.find(m => m.unitId === unitId)?.status === 'mastered';

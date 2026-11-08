@@ -241,7 +241,6 @@ export const DEFAULT_SPINNER_CONFIG = {
     brandText: 'ULRMS',
     showBrandText: true,
     showSpecularShine: true,
-    showPercent: true,
     showTrackGuide: true
 };
 

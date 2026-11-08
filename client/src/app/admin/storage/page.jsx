@@ -6,6 +6,7 @@ import { HardDrive, Users, Settings, Save, RefreshCw, ChevronDown, ChevronUp, Se
 import { useAuthStore } from '@/lib/store';
 import { storageAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const ROLE_LABELS = {
     student: 'Students',
@@ -244,11 +245,7 @@ export default function StorageManagementPage() {
     };
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="p-6 flex items-center justify-center min-h-screen">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary-600 border-t-transparent"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading institutional cloud storage analytics..." />;
     }
 
     return (

@@ -17,6 +17,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { formatDate, formatDateRange } from '@/lib/dateUtils';
 import PeriodWorkLogModal from '@/components/PeriodWorkLogModal';
 import AITimetableGeneratorModal from '@/components/AITimetableGeneratorModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat' };
@@ -1018,7 +1019,7 @@ export default function AdminTimetablePage() {
 
                 {loading ? (
                     <div className="card p-12 flex justify-center">
-                        <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+                        <GreenSegmentedSpinner size="lg" label="Loading institutional timetable..." />
                     </div>
                 ) : (
                     <>

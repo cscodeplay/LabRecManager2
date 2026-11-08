@@ -12,14 +12,12 @@ import {
 /**
  * GreenSegmentedSpinner (Configurable ULRMS Progressive Loader)
  * 
- * Features:
+ * Clean, percentage-free radial loader:
  * - Dynamic color palettes (Emerald, Sapphire, Cyber, Sunset Amber, Ruby Crimson, Oceanic Teal, Titanium Slate, Custom Hex)
  * - Configurable block count (8 to 32 blocks)
  * - Configurable speed, ring thickness, and slot gap
  * - Configurable center brand text ("ULRMS" or custom) & specular shine
- * - Real-time sync with Settings via `useSpinnerStore` (Zustand with localStorage persistence)
  * - Zero React re-rendering overhead (direct RAF DOM sync)
- * - Full backward compatibility with existing component call sites
  */
 export default function GreenSegmentedSpinner({
     size = 'md',
@@ -28,7 +26,6 @@ export default function GreenSegmentedSpinner({
     palette: propPalette,
     blockCount: propBlockCount,
     speed: propSpeed,
-    showPercent = null,
     showText = true,
     className = ''
 }) {
@@ -55,7 +52,6 @@ export default function GreenSegmentedSpinner({
     const activeBrandText = config.brandText !== undefined ? config.brandText : 'ULRMS';
     const isTextVisible = (showText && config.showBrandText !== false) && size !== 'xs';
     const isShineVisible = config.showSpecularShine !== false;
-    const isPercentVisible = showPercent !== null ? showPercent : (config.showPercent && fullscreen);
     const isTrackVisible = config.showTrackGuide !== false;
 
     // Pre-calculate radial paths for current geometry
@@ -70,7 +66,6 @@ export default function GreenSegmentedSpinner({
 
     const svgRef = useRef(null);
     const shineRef = useRef(null);
-    const percentRef = useRef(null);
 
     // Size mappings
     const sizeMap = {
@@ -96,7 +91,6 @@ export default function GreenSegmentedSpinner({
 
         const activeBlocks = svg.querySelectorAll('.ulrms-active-block');
         const shine = shineRef.current;
-        const percentEl = percentRef.current;
 
         const animate = (now) => {
             const dt = Math.min((now - lastTime) / 1000, 0.1);
@@ -117,10 +111,6 @@ export default function GreenSegmentedSpinner({
                 const shineX = -55 + fraction * 260;
                 shine.setAttribute('x', String(shineX));
                 shine.setAttribute('opacity', visible > 0 && visible < count ? '1' : '0');
-            }
-
-            if (percentEl) {
-                percentEl.textContent = `${Math.round(fraction * 100)}%`;
             }
 
             animId = requestAnimationFrame(animate);
@@ -258,20 +248,12 @@ export default function GreenSegmentedSpinner({
             <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-900 transition-colors p-6">
                 <div className="flex flex-col items-center text-center">
                     {spinnerSvg}
-                    {isPercentVisible && (
-                        <div
-                            ref={percentRef}
-                            className={`mt-3.5 text-sm font-bold ${paletteDef.badgeColor} tabular-nums tracking-tight`}
-                        >
-                            0%
-                        </div>
-                    )}
                     {label ? (
-                        <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide animate-pulse">
+                        <p className="mt-3.5 text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide animate-pulse">
                             {label}
                         </p>
                     ) : (
-                        <p className="mt-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 tracking-wider uppercase">
+                        <p className="mt-3 text-xs font-medium text-slate-400 dark:text-slate-500 tracking-wider uppercase">
                             Loading {activeBrandText || 'ULRMS'}...
                         </p>
                     )}
@@ -284,14 +266,6 @@ export default function GreenSegmentedSpinner({
         return (
             <div className={`inline-flex flex-col items-center gap-2.5 ${className}`}>
                 {spinnerSvg}
-                {isPercentVisible && (
-                    <span
-                        ref={percentRef}
-                        className={`text-xs font-bold ${paletteDef.badgeColor} tabular-nums`}
-                    >
-                        0%
-                    </span>
-                )}
                 <span className="text-xs font-medium text-slate-600 dark:text-slate-400 tracking-wide text-center">
                     {label}
                 </span>

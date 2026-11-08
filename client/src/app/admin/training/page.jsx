@@ -15,6 +15,7 @@ import TrainingModuleWizard from '@/components/TrainingModuleWizard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function AdminTrainingModules() {
     const router = useRouter();
@@ -124,6 +125,10 @@ export default function AdminTrainingModules() {
             setDeleteModalState(prev => ({ ...prev, isDeleting: false }));
         }
     };
+
+    if (!_hasHydrated || loading) {
+        return <GreenSegmentedSpinner fullscreen label="Loading course modules & curriculum..." />;
+    }
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950">

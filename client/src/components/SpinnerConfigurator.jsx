@@ -38,7 +38,6 @@ export default function SpinnerConfigurator() {
         brandText,
         showBrandText,
         showSpecularShine,
-        showPercent,
         showTrackGuide,
         updateConfig,
         setPalette,
@@ -483,23 +482,6 @@ export default function SpinnerConfigurator() {
                                 </span>
                                 <span className="text-2xs text-slate-500 dark:text-slate-400">
                                     Sweeps across center text
-                                </span>
-                            </div>
-                        </label>
-
-                        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={showPercent}
-                                onChange={(e) => updateConfig({ showPercent: e.target.checked })}
-                                className="rounded text-emerald-600 focus:ring-emerald-500 w-4 h-4"
-                            />
-                            <div>
-                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
-                                    Percentage Progress Readout
-                                </span>
-                                <span className="text-2xs text-slate-500 dark:text-slate-400">
-                                    Display 0% to 100% on fullscreen
                                 </span>
                             </div>
                         </label>
