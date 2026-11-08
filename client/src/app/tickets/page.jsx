@@ -7,7 +7,8 @@ import { formatDate, formatDateTime, formatRelativeTime } from '@/lib/dateUtils'
 import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
     MessageSquare, User, Monitor, Building2, ChevronRight, X, Send,
-    Zap, Laptop, Server, Tv, Printer, Radio, Wifi, Copy, Check
+    Zap, Laptop, Server, Tv, Printer, Radio, Wifi, Copy, Check,
+    Calendar, Lock
 } from 'lucide-react';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
@@ -58,7 +59,7 @@ const categoryLabels = {
 };
 
 export default function TicketsPage() {
-    const { user } = useAuthStore();
+    const { user, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -77,6 +78,7 @@ export default function TicketsPage() {
     const [priorityFilter, setPriorityFilter] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [myTicketsOnly, setMyTicketsOnly] = useState(false);
+    const [sessionFilterMode, setSessionFilterMode] = useState('selected'); // 'selected' | 'all'
 
     // Create form
     const [form, setForm] = useState({
@@ -98,7 +100,7 @@ export default function TicketsPage() {
         if (user?.role === 'student') {
             loadStudentProfile();
         }
-    }, [statusFilter, priorityFilter, myTicketsOnly]);
+    }, [statusFilter, priorityFilter, myTicketsOnly, selectedSessionId, sessionFilterMode]);
 
     const loadStudentProfile = async () => {
         try {
@@ -123,6 +125,11 @@ export default function TicketsPage() {
             if (statusFilter !== 'all') params.status = statusFilter;
             if (priorityFilter) params.priority = priorityFilter;
             if (myTicketsOnly) params.myTickets = 'true';
+            if (sessionFilterMode === 'all') {
+                params.all = 'true';
+            } else if (selectedSessionId) {
+                params.academicYearId = selectedSessionId;
+            }
 
             const res = await ticketsAPI.getAll(params);
             setTickets(res.data?.data?.tickets || res.data?.tickets || []);
@@ -167,12 +174,18 @@ export default function TicketsPage() {
             return;
         }
 
+        if (isReadOnlyMode) {
+            toast.error('Cannot create tickets in historical / read-only session mode');
+            return;
+        }
+
         try {
             const data = {
                 title: form.title,
                 description: form.description,
                 category: form.category,
-                priority: form.priority
+                priority: form.priority,
+                academicYearId: selectedSessionId || undefined
             };
             // For students, auto-use their assigned PC if available
             if (user?.role === 'student' && studentProfile?.assignedPc) {
@@ -267,9 +280,15 @@ export default function TicketsPage() {
                         </div>
                     </div>
                     <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                        title="Create Ticket"
+                        onClick={() => {
+                            if (isReadOnlyMode) {
+                                toast.error('Cannot create tickets in historical / read-only session mode');
+                                return;
+                            }
+                            setShowCreateModal(true);
+                        }}
+                        className={`p-3 rounded-xl transition shadow-sm ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}
+                        title={isReadOnlyMode ? 'Tickets are locked in historical session' : 'Create Ticket'}
                     >
                         <Plus className="w-5 h-5" />
                     </button>
@@ -278,6 +297,46 @@ export default function TicketsPage() {
             <LabInfrastructureTabs activeTab="tickets" className="mb-6 -mt-6" />
 
             <div className="max-w-7xl mx-auto px-4">
+                {/* Academic Session Scope Banner */}
+                {selectedSession && (
+                    <div className={`rounded-xl p-3 mb-4 flex flex-wrap items-center justify-between gap-3 ${isReadOnlyMode
+                        ? 'bg-amber-50 border border-amber-200'
+                        : 'bg-primary-50/60 border border-primary-100'
+                        }`}>
+                        <div className="flex items-center gap-2">
+                            <Calendar className={`w-4 h-4 ${isReadOnlyMode ? 'text-amber-600' : 'text-primary-600'}`} />
+                            <span className="text-sm font-semibold text-slate-800">
+                                Academic Session: {selectedSession.yearLabel}
+                            </span>
+                            {selectedSession.isCurrent ? (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">
+                                    Current Session
+                                </span>
+                            ) : (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-bold flex items-center gap-1">
+                                    <Lock className="w-3 h-3" /> Historical (Read-Only)
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">Filter Scope:</span>
+                            <button
+                                type="button"
+                                onClick={() => setSessionFilterMode('selected')}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'selected' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                This Session Only
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSessionFilterMode('all')}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'all' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                All Sessions
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
@@ -354,6 +413,12 @@ export default function TicketsPage() {
                                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${priorityColors[ticket.priority]}`}>
                                                 {ticket.priority.toUpperCase()}
                                             </span>
+                                            {ticket.academicYear && (
+                                                <span className="flex items-center gap-1 text-[11px] font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                                                    <Calendar size={11} />
+                                                    {ticket.academicYear.yearLabel}
+                                                </span>
+                                            )}
                                         </div>
                                         <h3 className="font-semibold text-slate-800 mb-1">{ticket.title}</h3>
                                         <p className="text-sm text-slate-500 line-clamp-1">{ticket.description}</p>
@@ -659,7 +724,15 @@ export default function TicketsPage() {
                     <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white">
                             <div>
-                                <span className="text-sm font-mono text-slate-400">{selectedTicket.ticketNumber}</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-mono text-slate-400">{selectedTicket.ticketNumber}</span>
+                                    {selectedTicket.academicYear && (
+                                        <span className="flex items-center gap-1 text-xs font-semibold text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                                            <Calendar size={12} />
+                                            Session: {selectedTicket.academicYear.yearLabel}
+                                        </span>
+                                    )}
+                                </div>
                                 <h2 className="text-xl font-bold">{selectedTicket.title}</h2>
                             </div>
                             <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600">

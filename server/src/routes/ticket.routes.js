@@ -63,7 +63,8 @@ router.post('/', authenticate, [
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
     body('itemId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid item ID format'),
     body('labId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid lab ID format'),
-    body('issueTypeId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid issue type ID format')
+    body('issueTypeId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid issue type ID format'),
+    body('academicYearId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid academic year ID format')
 ], asyncHandler(async (req, res) => {
     console.log('=== POST /api/tickets - Create Ticket ===');
     console.log('User:', req.user?.email, 'Role:', req.user?.role, 'ID:', req.user?.id);
@@ -75,9 +76,18 @@ router.post('/', authenticate, [
         return res.status(400).json({ success: false, errors: errors.array() });
     }
 
-    const { title, description, category, priority, itemId, labId, issueTypeId } = req.body;
+    const { title, description, category, priority, itemId, labId, issueTypeId, academicYearId } = req.body;
 
-    console.log('Parsed values:', { title, description, category, priority, itemId, labId, issueTypeId });
+    // Resolve academic year: explicit body param > X-Academic-Session header > school's current active session
+    let resolvedYearId = academicYearId || req.headers['x-academic-session'] || null;
+    if (!resolvedYearId && req.user?.schoolId) {
+        const currentYear = await prisma.academicYear.findFirst({
+            where: { schoolId: req.user.schoolId, isCurrent: true }
+        });
+        if (currentYear) resolvedYearId = currentYear.id;
+    }
+
+    console.log('Parsed values:', { title, description, category, priority, itemId, labId, issueTypeId, academicYearId: resolvedYearId });
 
     try {
         const ticketNumber = await generateTicketNumber();
@@ -93,6 +103,7 @@ router.post('/', authenticate, [
             itemId: itemId || null,
             labId: labId || null,
             issueTypeId: issueTypeId || null,
+            academicYearId: resolvedYearId || null,
             createdById: req.user.id
         };
         console.log('Ticket data to create:', JSON.stringify(ticketData, null, 2));
@@ -145,8 +156,14 @@ router.post('/', authenticate, [
  * @access  Private
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
-    const { status, priority, category, labId, myTickets, page = 1, limit = 20 } = req.query;
+    const { status, priority, category, labId, myTickets, academicYearId, all, page = 1, limit = 20 } = req.query;
+    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
     const where = {};
+
+    // Filter by academic session
+    if (sessionId) {
+        where.academicYearId = sessionId;
+    }
 
     // Filter by status
     if (status && status !== 'all') {
@@ -197,6 +214,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 assignedTo: { select: { id: true, firstName: true, lastName: true } },
                 item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
                 lab: { select: { id: true, name: true, roomNumber: true } },
+                academicYear: { select: { id: true, yearLabel: true, isCurrent: true } },
                 _count: { select: { comments: true } }
             },
             orderBy: [
@@ -230,22 +248,32 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
  * @access  Private (Admin/Lab Assistant)
  */
 router.get('/stats', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { academicYearId, all } = req.query;
+    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const statsWhere = sessionId ? { academicYearId: sessionId } : {};
+
     const [byStatus, byPriority, byCategory, recentActivity] = await Promise.all([
         prisma.ticket.groupBy({
             by: ['status'],
+            where: statsWhere,
             _count: { id: true }
         }),
         prisma.ticket.groupBy({
             by: ['priority'],
+            where: statsWhere,
             _count: { id: true }
         }),
         prisma.ticket.groupBy({
             by: ['category'],
+            where: statsWhere,
             _count: { id: true }
         }),
         prisma.ticket.findMany({
-            where: { updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } },
-            select: { id: true, ticketNumber: true, title: true, status: true, updatedAt: true },
+            where: {
+                ...statsWhere,
+                updatedAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+            },
+            select: { id: true, ticketNumber: true, title: true, status: true, updatedAt: true, academicYear: { select: { id: true, yearLabel: true } } },
             orderBy: { updatedAt: 'desc' },
             take: 10
         })
@@ -276,6 +304,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
             resolvedBy: { select: { id: true, firstName: true, lastName: true } },
             item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true, lab: { select: { id: true, name: true } } } },
             lab: { select: { id: true, name: true, roomNumber: true } },
+            academicYear: { select: { id: true, yearLabel: true, isCurrent: true, startDate: true, endDate: true } },
             comments: {
                 include: {
                     user: { select: { id: true, firstName: true, lastName: true, role: true } }

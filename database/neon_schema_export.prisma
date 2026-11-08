@@ -102,8 +102,10 @@ model AcademicYear {
   classes       Class[]
   feeStructures FeeStructure[]
   finalLabMarks FinalLabMarks[]
-  grades        Grade[]
-  studentFees   StudentFee[]
+  grades              Grade[]
+  studentFees         StudentFee[]
+  tickets             Ticket[]
+  procurementRequests ProcurementRequest[]
 
   @@map("academic_years")
 }
@@ -1445,6 +1447,8 @@ model Ticket {
   
   resolutionNotes String?         @map("resolution_notes")
   
+  academicYearId  String?         @map("academic_year_id") @db.Uuid
+  academicYear    AcademicYear?   @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   item            LabItem?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
   lab             Lab?            @relation(fields: [labId], references: [id], onDelete: SetNull)
   issueType       TicketIssueType? @relation(fields: [issueTypeId], references: [id])
@@ -1453,6 +1457,7 @@ model Ticket {
   resolvedBy      User?           @relation("TicketResolver", fields: [resolvedById], references: [id])
   comments        TicketComment[]
   
+  @@index([academicYearId])
   @@index([status])
   @@index([createdById])
   @@index([labId])
@@ -1606,18 +1611,22 @@ model ProcurementRequest {
   receivingNotes String?           @map("receiving_notes")
   // Common
   schoolId       String            @map("school_id") @db.Uuid
+  academicYearId String?           @map("academic_year_id") @db.Uuid
   createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamp(6)
 
-  school     School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
-  createdBy  User              @relation("ProcurementCreatedBy", fields: [createdById], references: [id])
-  approvedBy User?             @relation("ProcurementApprovedBy", fields: [approvedById], references: [id])
-  receivedBy User?             @relation("ProcurementReceivedBy", fields: [receivedById], references: [id])
-  items      ProcurementItem[]
-  quotations VendorQuotation[]
-  committee  ProcurementCommittee[]
+  school       School            @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear?     @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  createdBy    User              @relation("ProcurementCreatedBy", fields: [createdById], references: [id])
+  approvedBy   User?             @relation("ProcurementApprovedBy", fields: [approvedById], references: [id])
+  receivedBy   User?             @relation("ProcurementReceivedBy", fields: [receivedById], references: [id])
+  items        ProcurementItem[]
+  quotations   VendorQuotation[]
+  committee    ProcurementCommittee[]
 
   @@index([schoolId])
+  @@index([academicYearId])
+  @@index([schoolId, academicYearId])
   @@index([status])
   @@map("procurement_requests")
 }

@@ -97,19 +97,22 @@ router.delete('/vendors/:id', authenticate, authorize('admin', 'principal'), asy
  * @desc    Get all procurement requests
  */
 router.get('/requests', authenticate, asyncHandler(async (req, res) => {
-    const { status } = req.query;
+    const { status, academicYearId, all } = req.query;
+    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
     const where = { schoolId: req.user.schoolId };
     if (status) where.status = status;
+    if (sessionId) where.academicYearId = sessionId;
 
     try {
-        console.log('Fetching requests for schoolId:', req.user.schoolId);
+        console.log('Fetching requests for schoolId:', req.user.schoolId, 'sessionId:', sessionId);
         const requests = await prisma.procurementRequest.findMany({
             where,
             include: {
                 createdBy: { select: { firstName: true, lastName: true } },
                 approvedBy: { select: { firstName: true, lastName: true } },
                 items: { select: { id: true, itemName: true, quantity: true, estimatedUnitPrice: true } },
-                quotations: { select: { id: true, vendorId: true, totalAmount: true } }
+                quotations: { select: { id: true, vendorId: true, totalAmount: true } },
+                academicYear: { select: { id: true, yearLabel: true, isCurrent: true } }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -154,7 +157,8 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
                     items: true
                 }
             },
-            school: { select: { name: true, nameHindi: true, address: true, district: true } }
+            school: { select: { name: true, nameHindi: true, address: true, district: true } },
+            academicYear: { select: { id: true, yearLabel: true, isCurrent: true, startDate: true, endDate: true } }
         }
     });
 
@@ -202,8 +206,18 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
  */
 router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
     try {
-        const { title, description, purpose, department, budgetCode, memoVideNo, items } = req.body;
-        console.log('Creating request:', { title, purpose, department, itemCount: items?.length, schoolId: req.user.schoolId });
+        const { title, description, purpose, department, budgetCode, memoVideNo, items, academicYearId } = req.body;
+
+        // Resolve academic year: explicit body param > X-Academic-Session header > school's current active session
+        let resolvedYearId = academicYearId || req.headers['x-academic-session'] || null;
+        if (!resolvedYearId && req.user?.schoolId) {
+            const currentYear = await prisma.academicYear.findFirst({
+                where: { schoolId: req.user.schoolId, isCurrent: true }
+            });
+            if (currentYear) resolvedYearId = currentYear.id;
+        }
+
+        console.log('Creating request:', { title, purpose, department, itemCount: items?.length, schoolId: req.user.schoolId, academicYearId: resolvedYearId });
 
         const request = await prisma.procurementRequest.create({
             data: {
@@ -216,6 +230,7 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
                 status: 'draft',
                 createdById: req.user.id,
                 schoolId: req.user.schoolId,
+                academicYearId: resolvedYearId || null,
                 items: {
                     create: items?.map(item => ({
                         itemName: item.itemName,
@@ -227,7 +242,7 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
                     })) || []
                 }
             },
-            include: { items: true }
+            include: { items: true, academicYear: { select: { id: true, yearLabel: true } } }
         });
 
         console.log('Created request:', request.id);

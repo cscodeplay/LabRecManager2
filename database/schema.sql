@@ -672,11 +672,13 @@ CREATE TABLE IF NOT EXISTS procurement_requests (
     receiving_notes TEXT,
     -- Common
     school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+    academic_year_id UUID REFERENCES academic_years(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_procurement_requests_school ON procurement_requests(school_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_requests_academic_year ON procurement_requests(academic_year_id);
 CREATE INDEX IF NOT EXISTS idx_procurement_requests_status ON procurement_requests(status);
 
 -- Procurement Items (items to be procured)

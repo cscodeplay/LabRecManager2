@@ -116,9 +116,11 @@ model AcademicYear {
   grades          Grade[]
   studentFees     StudentFee[]
   timetables      Timetable[]
-  schoolCalendar  SchoolCalendar[]
-  lecturePlans    LecturePlan[]
-  trainingModules TrainingModule[]
+  schoolCalendar      SchoolCalendar[]
+  lecturePlans        LecturePlan[]
+  trainingModules     TrainingModule[]
+  tickets             Ticket[]
+  procurementRequests ProcurementRequest[]
 
   @@map("academic_years")
 }
@@ -1420,7 +1422,9 @@ model Ticket {
   updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamp(6)
   resolvedAt      DateTime?        @map("resolved_at") @db.Timestamp(6)
   resolutionNotes String?          @map("resolution_notes")
+  academicYearId  String?          @map("academic_year_id") @db.Uuid
   comments        TicketComment[]
+  academicYear    AcademicYear?    @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   assignedTo      User?            @relation("TicketAssignee", fields: [assignedToId], references: [id])
   createdBy       User             @relation("TicketCreator", fields: [createdById], references: [id])
   issueType       TicketIssueType? @relation(fields: [issueTypeId], references: [id])
@@ -1428,6 +1432,7 @@ model Ticket {
   lab             Lab?             @relation(fields: [labId], references: [id])
   resolvedBy      User?            @relation("TicketResolver", fields: [resolvedById], references: [id])
 
+  @@index([academicYearId])
   @@index([status])
   @@index([createdById])
   @@index([labId])
@@ -1550,10 +1555,12 @@ model ProcurementRequest {
   memoVideNo         String?                @map("memo_vide_no") @db.VarChar(100)
   proceedingsDate    DateTime?              @map("proceedings_date") @db.Date
   schoolId           String                 @map("school_id") @db.Uuid
+  academicYearId     String?                @map("academic_year_id") @db.Uuid
   createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt          DateTime               @updatedAt @map("updated_at") @db.Timestamp(6)
   committee          ProcurementCommittee[]
   items              ProcurementItem[]
+  academicYear       AcademicYear?          @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
   approvedBy         User?                  @relation("ProcurementApprovedBy", fields: [approvedById], references: [id])
   createdBy          User                   @relation("ProcurementCreatedBy", fields: [createdById], references: [id])
   receivedBy         User?                  @relation("ProcurementReceivedBy", fields: [receivedById], references: [id])
@@ -1562,6 +1569,8 @@ model ProcurementRequest {
   labEventHistory    LabEventHistory[]
 
   @@index([schoolId])
+  @@index([academicYearId])
+  @@index([schoolId, academicYearId])
   @@index([status])
   @@map("procurement_requests")
 }

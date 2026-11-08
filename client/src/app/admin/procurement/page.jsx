@@ -7,7 +7,8 @@ import {
     ArrowLeft, Plus, FileText, Users, ShoppingCart, Package,
     Check, X, Printer, Edit2, Trash2, ChevronDown, ChevronUp,
     Building, Calculator, ClipboardList, UserPlus, Eye,
-    Truck, CreditCard, Receipt, ScanLine, Video, CheckCircle2
+    Truck, CreditCard, Receipt, ScanLine, Video, CheckCircle2,
+    Calendar, Lock
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI } from '@/lib/api';
@@ -44,12 +45,13 @@ const STATUS_LABELS = {
 
 export default function ProcurementPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [requests, setRequests] = useState([]);
     const [vendors, setVendors] = useState([]);
     const [staffList, setStaffList] = useState([]);
     const [activeTab, setActiveTab] = useState('requests'); // requests, vendors
+    const [sessionFilterMode, setSessionFilterMode] = useState('selected'); // 'selected' | 'all'
     const [showCommitteeModal, setShowCommitteeModal] = useState(false);
     const [selectedStaffId, setSelectedStaffId] = useState('');
     const [committeeRole, setCommitteeRole] = useState('member');
@@ -507,13 +509,20 @@ export default function ProcurementPage() {
         if (_hasHydrated && user?.school?.id) {
             loadData();
         }
-    }, [_hasHydrated, user?.school?.id]);
+    }, [_hasHydrated, user?.school?.id, selectedSessionId, sessionFilterMode]);
 
     const loadData = async () => {
         try {
             console.log('Loading procurement data...');
+            const reqQuery = {};
+            if (sessionFilterMode === 'all') {
+                reqQuery.all = 'true';
+            } else if (selectedSessionId) {
+                reqQuery.academicYearId = selectedSessionId;
+            }
+
             const [reqRes, vendorRes, staffRes] = await Promise.all([
-                procurementAPI.getRequests().catch(e => { console.error('Requests error:', e); return { data: { data: [] } }; }),
+                procurementAPI.getRequests(reqQuery).catch(e => { console.error('Requests error:', e); return { data: { data: [] } }; }),
                 procurementAPI.getVendors().catch(e => { console.error('Vendors error:', e); return { data: { data: [] } }; }),
                 procurementAPI.getStaff().catch(e => { console.error('Staff error:', e); return { data: { data: [] } }; })
             ]);
@@ -1327,6 +1336,10 @@ export default function ProcurementPage() {
 
     // Start new request workflow
     const startNewRequest = () => {
+        if (isReadOnlyMode) {
+            toast.error('Cannot create procurement requests in historical / read-only session mode');
+            return;
+        }
         setIsCreatingNew(true);
         setRequestForm({ title: '', description: '', purpose: '', department: '', budgetCode: '', items: [] });
         setSelectedRequest(null);
@@ -1338,12 +1351,19 @@ export default function ProcurementPage() {
     };
 
     const handleCreateRequest = async () => {
+        if (isReadOnlyMode) {
+            toast.error('Cannot create procurement requests in historical / read-only session mode');
+            return false;
+        }
         if (!requestForm.title.trim()) {
             toast.error('Title is required');
             return false;
         }
         try {
-            const res = await procurementAPI.createRequest(requestForm);
+            const res = await procurementAPI.createRequest({
+                ...requestForm,
+                academicYearId: selectedSessionId || undefined
+            });
             toast.success('Request created! Proceeding to next steps...');
             // After creation, load the new request and continue with the flow
             const newRequest = res.data.data;
@@ -1691,7 +1711,11 @@ export default function ProcurementPage() {
                         <button onClick={() => setShowVendorModal(true)} className="btn btn-secondary">
                             <Building className="w-4 h-4" /> Add Vendor
                         </button>
-                        <button onClick={startNewRequest} className="btn btn-primary">
+                        <button 
+                            onClick={startNewRequest} 
+                            className={`btn ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'btn-primary'}`}
+                            title={isReadOnlyMode ? 'Procurement requests are locked in historical session' : 'New Request'}
+                        >
                             <Plus className="w-4 h-4" /> New Request
                         </button>
                     </div>
@@ -1699,6 +1723,47 @@ export default function ProcurementPage() {
             </header>
 
             <main className="max-w-7xl mx-auto px-4 py-6">
+                {/* Academic Session Banner */}
+                {selectedSession && (
+                    <div className={`rounded-xl p-3 mb-6 flex flex-wrap items-center justify-between gap-3 ${isReadOnlyMode
+                        ? 'bg-amber-50 border border-amber-200'
+                        : 'bg-primary-50/60 border border-primary-100'
+                        }`}>
+                        <div className="flex items-center gap-2">
+                            <Calendar className={`w-4 h-4 ${isReadOnlyMode ? 'text-amber-600' : 'text-primary-600'}`} />
+                            <span className="text-sm font-semibold text-slate-800">
+                                Academic Session: {selectedSession.yearLabel}
+                            </span>
+                            {selectedSession.isCurrent ? (
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">
+                                    Current Session
+                                </span>
+                            ) : (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-bold flex items-center gap-1">
+                                    <Lock className="w-3 h-3" /> Historical (Read-Only)
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">Filter Scope:</span>
+                            <button
+                                type="button"
+                                onClick={() => setSessionFilterMode('selected')}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'selected' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                This Session Only
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setSessionFilterMode('all')}
+                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'all' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
+                            >
+                                All Sessions
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Tabs */}
                 <div className="flex gap-2 mb-6">
                     <button
@@ -1765,7 +1830,15 @@ export default function ProcurementPage() {
                                     <div key={req.id} className="bg-white rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow">
                                         <div className="flex items-start justify-between mb-3">
                                             <div className="flex-1">
-                                                <h3 className="font-semibold text-lg">{req.title}</h3>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <h3 className="font-semibold text-lg">{req.title}</h3>
+                                                    {req.academicYear && (
+                                                        <span className="flex items-center gap-1 text-primary-700 bg-primary-50 px-2 py-0.5 rounded text-xs font-semibold border border-primary-200">
+                                                            <Calendar className="w-3 h-3" />
+                                                            {req.academicYear.yearLabel}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <p className="text-sm text-slate-500 line-clamp-1">{req.purpose || req.description || 'No description'}</p>
                                             </div>
                                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${STATUS_COLORS[req.status]}`}>
@@ -2051,9 +2124,17 @@ export default function ProcurementPage() {
                                     {isCreatingNew ? 'New Procurement Request' : requestDetail?.request?.title}
                                 </h2>
                                 {!isCreatingNew && (
-                                    <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[requestDetail?.request?.status]}`}>
-                                        {STATUS_LABELS[requestDetail?.request?.status]}
-                                    </span>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[requestDetail?.request?.status]}`}>
+                                            {STATUS_LABELS[requestDetail?.request?.status]}
+                                        </span>
+                                        {requestDetail?.request?.academicYear && (
+                                            <span className="flex items-center gap-1 text-xs font-semibold text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                                                <Calendar className="w-3 h-3" />
+                                                Session: {requestDetail.request.academicYear.yearLabel}
+                                            </span>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                             <div className="flex gap-2">

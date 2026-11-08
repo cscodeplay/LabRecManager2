@@ -19,6 +19,7 @@ CREATE TABLE tickets (
     status ticket_status DEFAULT 'open',
     item_id UUID REFERENCES lab_items(id) ON DELETE SET NULL,
     lab_id UUID REFERENCES labs(id) ON DELETE SET NULL,
+    academic_year_id UUID REFERENCES academic_years(id) ON DELETE SET NULL,
     created_by_id UUID NOT NULL REFERENCES users(id),
     assigned_to_id UUID REFERENCES users(id),
     resolved_by_id UUID REFERENCES users(id),
