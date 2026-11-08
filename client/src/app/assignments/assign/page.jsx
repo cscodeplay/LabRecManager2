@@ -8,6 +8,7 @@ import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 function AssignWorkContent() {
     const router = useRouter();
@@ -240,11 +241,7 @@ function AssignWorkContent() {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading assignment parameters..." />;
     }
 
     const selectedAssignmentData = assignments.find(a => a.id === selectedAssignment);
@@ -665,11 +662,7 @@ function AssignWorkContent() {
 
 export default function AssignWorkPage() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        }>
+        <Suspense fallback={<GreenSegmentedSpinner fullscreen />}>
             <AssignWorkContent />
         </Suspense>
     );

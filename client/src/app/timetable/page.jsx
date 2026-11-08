@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '@/components/PageHeader';
 import { formatDate } from '@/lib/dateUtils';
 import PeriodWorkLogModal from '@/components/PeriodWorkLogModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_LABELS = { monday: 'Monday', tuesday: 'Tuesday', wednesday: 'Wednesday', thursday: 'Thursday', friday: 'Friday', saturday: 'Saturday' };
@@ -237,11 +238,7 @@ export default function TimetablePage() {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading live timetable..." />;
     }
 
     const isHoliday = liveData?.isHoliday;

@@ -9,6 +9,7 @@ import { useAuthStore } from '@/lib/store';
 import { assignmentsAPI, submissionsAPI, compilerAPI } from '@/lib/api';
 import InteractiveTerminal from '@/components/InteractiveTerminal';
 import toast from 'react-hot-toast';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function SubmitAssignmentPage() {
     const router = useRouter();
@@ -146,11 +147,7 @@ export default function SubmitAssignmentPage() {
     };
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading submission portal..." />;
     }
 
     return (

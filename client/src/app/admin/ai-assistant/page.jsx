@@ -20,6 +20,7 @@ import ThinkingStepsCollapsible from '@/components/ThinkingStepsCollapsible';
 import { ChatChart, BotSettingsModal, loadBotSettings, getActivePaletteColors, DEFAULT_BOT_SETTINGS, GRAPH_PALETTES } from '@/components/FloatingChatbot';
 import MathRenderer from '@/components/MathRenderer';
 import { formatTime } from '@/lib/dateUtils';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 // Markdown-like renderer for AI messages
 function RenderMessage({ content, model, provider, defaultOpenThinking = false, hasQueryResult = false }) {
@@ -1568,11 +1569,7 @@ export default function AIAssistantPage() {
     ];
 
     if (!_hasHydrated || !isAuthenticated) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Initializing ULRMS AI Copilot..." />;
     }
 
     return (

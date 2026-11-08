@@ -19,6 +19,7 @@ import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
 import AssignmentCalendar from '@/components/AssignmentCalendar';
 import { formatDate } from '@/lib/dateUtils';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -139,11 +140,7 @@ export default function DashboardPage() {
     );
 
     if (!isAuthenticated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-[#F3F2EF]">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Initializing ULRMS Dashboard..." />;
     }
 
     return (

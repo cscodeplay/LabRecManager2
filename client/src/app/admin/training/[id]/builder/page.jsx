@@ -20,6 +20,7 @@ import MathRenderer from '@/components/MathRenderer';
 import StudentTheoryViewer from '@/components/StudentTheoryViewer';
 import ModuleAssignmentModal from '@/components/ModuleAssignmentModal';
 import AdminTrainingProgressModal from '@/components/AdminTrainingProgressModal';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 // --- Pedagogy Score Engine ---
 function computePedagogyScore(moduleData) {
@@ -967,11 +968,9 @@ export default function PedagogyBuilderPage() {
     const removeHint = (idx) => setExerciseForm(f => ({ ...f, hints: f.hints.filter((_, i) => i !== idx) }));
     const updateHint = (idx, value) => setExerciseForm(f => ({ ...f, hints: f.hints.map((h, i) => i === idx ? value : h) }));
 
-    if (loading || !moduleData) return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-            <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-        </div>
-    );
+    if (loading || !moduleData) {
+        return <GreenSegmentedSpinner fullscreen label="Loading training curriculum builder..." />;
+    }
 
     // --- Circular Score Gauge ---
     const ScoreGauge = ({ score }) => {

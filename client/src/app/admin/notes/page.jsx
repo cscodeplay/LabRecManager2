@@ -21,6 +21,7 @@ import DOMPurify from 'dompurify';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import { formatDate, formatDateTime, formatTime, formatRelativeTime } from '@/lib/dateUtils';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const ReactQuill = dynamic(() => import('react-quill'), { ssr: false });
 import 'react-quill/dist/quill.snow.css';
@@ -755,14 +756,7 @@ export default function AdminNotesPage() {
     };
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="text-center">
-                    <div className="animate-spin w-10 h-10 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                    <p className="text-slate-500 text-sm font-medium">Loading Notes & Editor...</p>
-                </div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading Notes & Editor..." />;
     }
 
     return (

@@ -14,6 +14,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { formatDateRange } from '@/lib/dateUtils';
 import ConfirmDialog, { useConfirm } from '@/components/ConfirmDialog';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 const STREAMS = ['General', 'Science', 'Commerce', 'Arts', 'Medical', 'Non-Medical', 'Vocational'];
 
@@ -148,11 +149,7 @@ export default function ClassesPage() {
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
     if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading classes roster..." />;
     }
 
     return (

@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import HtmlPreview from '@/components/HtmlPreview';
 import PdfViewer from '@/components/PdfViewer';
 import ConfirmDialog from '@/components/ConfirmDialog';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function AssignmentDetailPage() {
     const router = useRouter();
@@ -114,11 +115,7 @@ export default function AssignmentDetailPage() {
     };
 
     if (loading || !assignment) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading assignment details..." />;
     }
 
     const isInstructor = user?.role === 'instructor' || user?.role === 'admin' || user?.role === 'lab_assistant';

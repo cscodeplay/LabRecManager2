@@ -11,6 +11,7 @@ import {
 import { useAuthStore } from '@/lib/store';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function NotificationsPage() {
     const router = useRouter();
@@ -175,11 +176,7 @@ export default function NotificationsPage() {
     const readCount = notifications.filter(n => n.isRead).length;
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading notifications..." />;
     }
 
     return (

@@ -11,6 +11,7 @@ import { BookMarked, Video, CalendarDays, LineChart, Play, Users, Clock, Award, 
 import { formatDate } from '@/lib/dateUtils';
 import Link from 'next/link';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function TeachingDashboard() {
     const router = useRouter();
@@ -65,11 +66,7 @@ export default function TeachingDashboard() {
     }, [_hasHydrated, isAuthenticated]);
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading teaching console & lecture schedule..." />;
     }
 
     const chartData = [

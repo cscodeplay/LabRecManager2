@@ -12,6 +12,7 @@ import { useAuthStore } from '@/lib/store';
 import UserAvatar from '@/components/UserAvatar';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
+import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 
 export default function ProfilePage() {
     const router = useRouter();
@@ -54,11 +55,7 @@ export default function ProfilePage() {
     };
 
     if (!_hasHydrated || loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
-            </div>
-        );
+        return <GreenSegmentedSpinner fullscreen label="Loading institutional profile..." />;
     }
 
     const institutionalId = user?.studentId || user?.admissionNumber || user?.employeeId;
