@@ -570,3 +570,13 @@ img.img-frame-polaroid, .notes-content img.img-frame-polaroid, .ql-editor img.im
     font-size: 16px !important;
   }
 }
+
+/* Utility to hide scrollbars while retaining fluid horizontal scrolling */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

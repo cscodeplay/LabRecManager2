@@ -84,6 +84,7 @@ import MermaidRenderer from '@/components/MermaidRenderer';
 import FindReplaceModal from '@/components/FindReplaceModal';
 import ExportBundleModal from '@/components/ExportBundleModal';
 import DebugVariableInspectorModal from '@/components/DebugVariableInspectorModal';
+import MobileCodingAccessoryBar from '@/components/MobileCodingAccessoryBar';
 
 // Dynamically load Monaco Editor to avoid SSR conflicts
 const Editor = dynamic(() => import('@monaco-editor/react'), {
@@ -399,6 +400,8 @@ function PracticeIDEPage() {
 
     // Responsive Mobile Views ('code_output' | 'editor' | 'diagram')
     const [mobileView, setMobileView] = useState('code_output');
+    // Mobile Coding Quick Delimiters & Operators Bar (Design 1)
+    const [isMobileAccessoryBarOpen, setIsMobileAccessoryBarOpen] = useState(true);
 
     // Python Tutor style interactive in-console stdin input state
     const [consoleInputText, setConsoleInputText] = useState('');
@@ -2710,6 +2713,13 @@ Date:          ${dateStr}
                         />
                     </div>
 
+                    {/* DIRECT MOBILE CODING ACCESSORY BAR (DESIGN 1: SINGLE CONTINUOUS SYMBOL STRIP) */}
+                    {isMobileAccessoryBarOpen && (
+                        <div className="block lg:hidden shrink-0">
+                            <MobileCodingAccessoryBar editorRef={editorRef} isLightMode={isLightMode} />
+                        </div>
+                    )}
+
                     {/* INPUT STATUS BAR DIRECTLY BELOW MONACO EDITOR */}
                     <div className={`px-3 py-1 border-t text-[11px] font-mono flex items-center justify-between select-none shrink-0 ${
                         isLightMode ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-900 border-slate-800 text-slate-400'
@@ -2718,6 +2728,18 @@ Date:          ${dateStr}
                             <span className="font-semibold text-slate-700 dark:text-slate-300">
                                 Ln {cursorPosition.lineNumber}, Col {cursorPosition.column}
                             </span>
+                            <button
+                                type="button"
+                                onClick={() => setIsMobileAccessoryBarOpen((prev) => !prev)}
+                                className={`lg:hidden px-1.5 py-0.5 rounded text-[10px] font-mono font-bold flex items-center gap-1 border transition-colors cursor-pointer ${
+                                    isMobileAccessoryBarOpen
+                                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+                                }`}
+                                title={isMobileAccessoryBarOpen ? "Hide Coding Symbols Bar" : "Show Coding Symbols Bar"}
+                            >
+                                <span>{isMobileAccessoryBarOpen ? '⌨️ Symbols' : '+ Symbols'}</span>
+                            </button>
                             <span className="hidden sm:inline opacity-40">•</span>
                             <span className="hidden sm:inline">UTF-8</span>
                             <span className="hidden sm:inline opacity-40">•</span>
