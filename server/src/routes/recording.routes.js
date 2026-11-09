@@ -145,41 +145,38 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
 
     let whereClause = { schoolId };
 
-    if (!isAdmin) {
-        if (req.user.role === 'student') {
-            const enrollments = await prisma.classEnrollment.findMany({
-                where: { studentId: userId, status: 'active' },
-                select: { classId: true }
-            });
-            const classIds = enrollments.map(e => e.classId);
+    if (req.user.role === 'student') {
+        const enrollments = await prisma.classEnrollment.findMany({
+            where: { studentId: userId, status: 'active' },
+            select: { classId: true }
+        });
+        const classIds = enrollments.map(e => e.classId);
 
-            const groupMembers = await prisma.groupMember.findMany({
-                where: { studentId: userId },
-                select: { groupId: true }
-            });
-            const groupIds = groupMembers.map(g => g.groupId);
+        const groupMembers = await prisma.groupMember.findMany({
+            where: { studentId: userId },
+            select: { groupId: true }
+        });
+        const groupIds = groupMembers.map(g => g.groupId);
 
-            const orConditions = [
-                { userId } // Own recordings
-            ];
-            
-            if (classIds.length > 0) {
-                orConditions.push({ shares: { some: { targetClassId: { in: classIds } } } });
-            }
-            if (groupIds.length > 0) {
-                orConditions.push({ shares: { some: { targetGroupId: { in: groupIds } } } });
-            }
-            orConditions.push({ shares: { some: { targetUserId: userId } } });
-            
-            whereClause.OR = orConditions;
-        } else {
-            whereClause.userId = userId; // Instructors typically see their own, unless we allow sharing to instructors
-            // Let's also include shares specifically to them just in case
-            whereClause.OR = [
-                { userId },
-                { shares: { some: { targetUserId: userId } } }
-            ];
+        const orConditions = [
+            { userId } // Own recordings
+        ];
+        
+        if (classIds.length > 0) {
+            orConditions.push({ shares: { some: { targetClassId: { in: classIds } } } });
         }
+        if (groupIds.length > 0) {
+            orConditions.push({ shares: { some: { targetGroupId: { in: groupIds } } } });
+        }
+        orConditions.push({ shares: { some: { targetUserId: userId } } });
+        
+        whereClause.OR = orConditions;
+    } else {
+        // Instructors and Admins see only their own recordings, or recordings explicitly shared with them
+        whereClause.OR = [
+            { userId },
+            { shares: { some: { targetUserId: userId } } }
+        ];
     }
 
     const [recordings, total] = await Promise.all([

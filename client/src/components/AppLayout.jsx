@@ -183,16 +183,18 @@ export default function AppLayout({ children }) {
                 </main>
             </div>
 
-            {/* Mobile & iPad Floating Search Shortcut Button */}
-            <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
-                className="md:hidden fixed bottom-6 left-5 z-40 w-11 h-11 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all border border-white/20 cursor-pointer"
-                title="Search anything (tap to open)"
-                aria-label="Quick Search"
-            >
-                <Search className="w-5 h-5" />
-            </button>
+            {/* Mobile & iPad Floating Search Shortcut Button (Suppressed on Practice IDE to maximize student touch & coding workspace) */}
+            {!pathname?.startsWith('/practice-ide') && (
+                <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
+                    className="md:hidden fixed bottom-6 left-5 z-40 w-11 h-11 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-all border border-white/20 cursor-pointer"
+                    title="Search anything (tap to open)"
+                    aria-label="Quick Search"
+                >
+                    <Search className="w-5 h-5" />
+                </button>
+            )}
 
             {/* Keyboard-Invoked Global Search Dialog (⌘K / Ctrl+K) */}
             <GlobalSearch />

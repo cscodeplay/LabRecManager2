@@ -556,3 +556,17 @@ img.img-frame-polaroid, .notes-content img.img-frame-polaroid, .ql-editor img.im
   background-color: rgba(239, 68, 68, 0.2) !important;
   color: #ef4444 !important;
 }
+
+/* Mobile Viewport Anti-Zoom Stability:
+   iOS Safari and mobile WebKit automatically trigger viewport auto-zoom when focusing
+   inputs with font-size < 16px. Enforcing 16px font-size on the hidden Monaco inputarea
+   and form inputs keeps the layout rock-solid at scale 1.0 without drifting menus out of bounds. */
+@media screen and (max-width: 768px) {
+  .monaco-editor textarea.inputarea,
+  input[type="text"],
+  input[type="search"],
+  input[type="number"],
+  textarea {
+    font-size: 16px !important;
+  }
+}

@@ -123,6 +123,13 @@ router.get('/media-files', optionalAuth, asyncHandler(async (req, res) => {
         deletedAt: null
     };
 
+    // Strict privacy: user only sees their own media files
+    if (userId) {
+        whereConditions.uploadedById = userId;
+    } else {
+        return res.json({ success: true, data: [] });
+    }
+
     if (search) {
         whereConditions.name = { contains: search, mode: 'insensitive' };
     }
@@ -433,10 +440,11 @@ router.get('/', optionalAuth, asyncHandler(async (req, res) => {
         query += ` AND "title" ILIKE $${params.length}`;
     }
 
-    if (userId) {
-        params.push(userId);
-        query += ` AND ("created_by" = $${params.length}::uuid OR "created_by" IS NULL)`;
+    if (!userId) {
+        return res.json({ success: true, data: [] });
     }
+    params.push(userId);
+    query += ` AND "created_by" = $${params.length}::uuid`;
 
     query += ` ORDER BY "updated_at" DESC LIMIT $${params.length + 1}`;
     params.push(parseInt(limit, 10));
@@ -759,7 +767,11 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
             `, docId);
 
             if (docs.length > 0) {
-                return res.json({ success: true, data: docs[0] });
+                const doc = docs[0];
+                if (req.user && doc.created_by && doc.created_by !== req.user.id) {
+                    return res.status(403).json({ success: false, message: 'You do not have permission to view this document' });
+                }
+                return res.json({ success: true, data: doc });
             }
         } catch (_) {}
 
@@ -769,6 +781,9 @@ router.get('/:id', optionalAuth, asyncHandler(async (req, res) => {
                 where: { id: docId }
             });
             if (standardDoc) {
+                if (req.user && standardDoc.uploadedById && standardDoc.uploadedById !== req.user.id) {
+                    return res.status(403).json({ success: false, message: 'You do not have permission to view this document' });
+                }
                 return res.json({
                     success: true,
                     data: {

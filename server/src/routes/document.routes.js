@@ -108,39 +108,81 @@ function formatSize(bytes) {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+// Helper to determine if user has permission to access a document (strict isolation)
+async function canUserAccessDocument(doc, user) {
+    if (!doc || !user) return false;
+    if (doc.schoolId && user.schoolId && doc.schoolId !== user.schoolId) return false;
+    // Direct owner always has access
+    if (doc.uploadedById === user.id || doc.uploadedBy === user.id) return true;
+
+    // Check explicit sharing to user, user's class, or user's group
+    const [enrollments, groupMembers] = await Promise.all([
+        prisma.classEnrollment.findMany({
+            where: { studentId: user.id, status: 'active' },
+            select: { classId: true }
+        }),
+        prisma.groupMember.findMany({
+            where: { studentId: user.id },
+            select: { groupId: true }
+        })
+    ]);
+    const classIds = enrollments.map(e => e.classId);
+    const groupIds = groupMembers.map(g => g.groupId);
+
+    const shareTargets = [{ targetUserId: user.id }];
+    if (classIds.length > 0) shareTargets.push({ targetClassId: { in: classIds } });
+    if (groupIds.length > 0) shareTargets.push({ targetGroupId: { in: groupIds } });
+
+    const share = await prisma.documentShare.findFirst({
+        where: {
+            documentId: doc.id,
+            OR: shareTargets
+        }
+    });
+
+    return Boolean(share);
+}
+
 /**
  * @route   GET /api/documents
- * @desc    Get all documents for the school
+ * @desc    Get user's documents and explicitly shared documents (strict isolation)
  * @access  Private
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { category, search, folderId } = req.query;
+    const userId = req.user.id;
+    const schoolId = req.user.schoolId;
 
+    // Resolve user's class enrollments and group memberships
+    const [enrollments, groupMembers] = await Promise.all([
+        prisma.classEnrollment.findMany({
+            where: { studentId: userId, status: 'active' },
+            select: { classId: true }
+        }),
+        prisma.groupMember.findMany({
+            where: { studentId: userId },
+            select: { groupId: true }
+        })
+    ]);
+    const classIds = enrollments.map(e => e.classId);
+    const groupIds = groupMembers.map(g => g.groupId);
+
+    const shareTargets = [{ targetUserId: userId }];
+    if (classIds.length > 0) shareTargets.push({ targetClassId: { in: classIds } });
+    if (groupIds.length > 0) shareTargets.push({ targetGroupId: { in: groupIds } });
+
+    // STRICT USER ISOLATION: Every user (student, instructor, admin) ONLY sees their own documents
+    // or documents explicitly shared with them. Zero cross-user leakage!
     const conditions = [
-        { schoolId: req.user.schoolId },
-        { deletedAt: null }
-    ];
-
-    const isAdmin = ['admin', 'principal'].includes(req.user.role);
-    if (!isAdmin) {
-        if (category === 'code') {
-            // In Code Practice Studio, students can access all school code programs & exercises
-            conditions.push({
-                OR: [
-                    { uploadedById: req.user.id },
-                    { isPublic: true },
-                    { schoolId: req.user.schoolId }
-                ]
-            });
-        } else {
-            conditions.push({
-                OR: [
-                    { uploadedById: req.user.id },
-                    { isPublic: true }
-                ]
-            });
+        { schoolId },
+        { deletedAt: null },
+        {
+            OR: [
+                { uploadedById: userId },
+                { shares: { some: { OR: shareTargets } } }
+            ]
         }
-    }
+    ];
 
     if (category) conditions.push({ category });
 
@@ -263,6 +305,11 @@ router.get('/:id', authenticate, asyncHandler(async (req, res, next) => {
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     res.json({
         success: true,
         data: {
@@ -309,10 +356,10 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     const targetFolderId = (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null;
     if (targetFolderId) {
         const folder = await prisma.documentFolder.findFirst({
-            where: { id: targetFolderId, schoolId: req.user.schoolId, deletedAt: null }
+            where: { id: targetFolderId, schoolId: req.user.schoolId, createdById: req.user.id, deletedAt: null }
         });
         if (!folder) {
-            return res.status(404).json({ success: false, message: 'Target folder not found' });
+            return res.status(404).json({ success: false, message: 'Target folder not found or access denied' });
         }
     }
 
@@ -328,7 +375,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
         });
 
         if (targetDoc) {
-            const isAuthorizedOwnerOrAdmin = ['admin', 'principal'].includes(req.user.role) || targetDoc.uploadedById === req.user.id;
+            const isAuthorizedOwnerOrAdmin = targetDoc.uploadedById === req.user.id;
             const isCodeDoc = targetDoc.category === 'code' || category === 'code' || targetDoc.name?.endsWith('.py') || targetDoc.name?.endsWith('.sql') || targetDoc.fileName?.endsWith('.py') || targetDoc.fileName?.endsWith('.sql');
 
             if (isAuthorizedOwnerOrAdmin) {
@@ -755,6 +802,11 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Not authorized to modify this document' });
     }
@@ -957,6 +1009,11 @@ router.delete('/:id', authenticate, authorize('admin', 'principal', 'instructor'
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Not authorized to delete this document' });
     }
@@ -1056,6 +1113,11 @@ router.delete('/:id/permanent', authenticate, authorize('admin', 'principal', 'i
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     if (!['admin', 'principal'].includes(req.user.role) && doc.uploadedById !== req.user.id) {
         return res.status(403).json({ success: false, message: 'Not authorized to permanently delete this document' });
     }
@@ -1134,16 +1196,8 @@ router.get('/:id/download', optionalAuth, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
-    // Check permission if not public
-    const isOwner = req.user && (
-        doc.uploadedBy === req.user.id ||
-        doc.uploadedById === req.user.id
-    );
-    const isSuperAdmin = req.user && req.user.role === 'superadmin';
-    const sameSchool = req.user && req.user.schoolId && doc.schoolId && req.user.schoolId === doc.schoolId;
-    const isCodeCategory = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
-
-    if (!doc.isPublic && !isSuperAdmin && !isOwner && !sameSchool && !isCodeCategory) {
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
         return res.status(403).json({ success: false, message: 'Not authorized to download this document' });
     }
 
@@ -1226,15 +1280,8 @@ router.get('/:id/file', optionalAuth, asyncHandler(async (req, res) => {
         return res.status(404).send('Document not found');
     }
 
-    const isOwner = req.user && (
-        doc.uploadedBy === req.user.id ||
-        doc.uploadedById === req.user.id
-    );
-    const isSuperAdmin = req.user && req.user.role === 'superadmin';
-    const sameSchool = req.user && req.user.schoolId && doc.schoolId && req.user.schoolId === doc.schoolId;
-    const isCodeCategory = doc.category === 'code' || doc.name?.endsWith('.py') || doc.name?.endsWith('.sql') || doc.fileName?.endsWith('.py') || doc.fileName?.endsWith('.sql');
-
-    if (!doc.isPublic && !isSuperAdmin && !isOwner && !sameSchool && !isCodeCategory) {
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
         return res.status(403).send('Not authorized');
     }
 
@@ -1475,6 +1522,11 @@ router.post('/:id/share', authenticate, authorize('admin', 'principal', 'lab_ass
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
     }
 
     // Deduplicate targets by type + id
@@ -1752,6 +1804,11 @@ router.get('/:id/shares', authenticate, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     const shares = await prisma.documentShare.findMany({
         where: { documentId: req.params.id },
         include: {
@@ -1876,6 +1933,11 @@ router.post('/:id/extract-ai-inventory', authenticate, authorize('admin', 'princ
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     if (!doc.url) {
         return res.status(400).json({ success: false, message: 'Document has no file URL to process' });
     }
@@ -1964,6 +2026,11 @@ router.post('/:id/view', authenticate, asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
+    }
+
     await prisma.documentViewLog.create({
         data: {
             documentId: docId,
@@ -1989,6 +2056,11 @@ router.get('/:id/analytics', authenticate, authorize('admin', 'principal', 'lab_
 
     if (!doc) {
         return res.status(404).json({ success: false, message: 'Document not found' });
+    }
+
+    const hasAccess = await canUserAccessDocument(doc, req.user);
+    if (!hasAccess) {
+        return res.status(403).json({ success: false, message: 'You do not have permission to access this document' });
     }
 
     const logs = await prisma.documentViewLog.findMany({

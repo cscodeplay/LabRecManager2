@@ -17,16 +17,31 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         { deletedAt: null }
     ];
 
-    const isAdmin = ['admin', 'principal'].includes(req.user.role);
-    if (!isAdmin) {
-        conditions.push({
-            OR: [
-                { createdById: req.user.id },
-                { name: 'Office Media Files' },
-                { parent: { name: 'Office Media Files' } }
-            ]
-        });
-    }
+    const userId = req.user.id;
+    const [enrollments, groupMembers] = await Promise.all([
+        prisma.classEnrollment.findMany({
+            where: { studentId: userId, status: 'active' },
+            select: { classId: true }
+        }),
+        prisma.groupMember.findMany({
+            where: { studentId: userId },
+            select: { groupId: true }
+        })
+    ]);
+    const classIds = enrollments.map(e => e.classId);
+    const groupIds = groupMembers.map(g => g.groupId);
+
+    const shareTargets = [{ targetUserId: userId }];
+    if (classIds.length > 0) shareTargets.push({ targetClassId: { in: classIds } });
+    if (groupIds.length > 0) shareTargets.push({ targetGroupId: { in: groupIds } });
+
+    // Strict user folder isolation: users only see folders they created or folders explicitly shared with them
+    conditions.push({
+        OR: [
+            { createdById: userId },
+            { shares: { some: { OR: shareTargets } } }
+        ]
+    });
 
     if (search) {
         conditions.push({ name: { contains: search, mode: 'insensitive' } });

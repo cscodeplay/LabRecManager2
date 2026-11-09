@@ -80,10 +80,12 @@ function getCallbackUrl(req) {
 }
 
 function getDriveService(req) {
-    if (req?.user) {
-        return googleDriveService.forUser(req.user) || googleDriveService;
+    if (req?.user?.id) {
+        return googleDriveService.forUser(req.user);
     }
-    return googleDriveService;
+    const err = new Error('Authentication required for Google Drive services');
+    err.statusCode = 401;
+    throw err;
 }
 
 /**
