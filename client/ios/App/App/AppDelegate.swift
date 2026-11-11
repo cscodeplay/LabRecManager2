@@ -85,6 +85,19 @@ class LabRecBridgeViewController: CAPBridgeViewController {
             self.navigationProxy = proxy
             wv.navigationDelegate = proxy
         }
+        // Purge only HTTP disk/memory caches on cold launch so live Render deployments load immediately,
+        // while keeping localStorage, cookies, and IndexedDB login sessions intact.
+        URLCache.shared.removeAllCachedResponses()
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
+            modifiedSince: Date.distantPast
+        ) { [weak self] in
+            DispatchQueue.main.async {
+                if let wv = self?.webView, let scheme = wv.url?.scheme, scheme.hasPrefix("http") {
+                    wv.reloadFromOrigin()
+                }
+            }
+        }
     }
 }
 
@@ -94,6 +107,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Clear shared URLCache before the initial WebView navigation starts
+        URLCache.shared.removeAllCachedResponses()
         // Keep iPad screen awake during interactive whiteboard teaching sessions
         UIApplication.shared.isIdleTimerDisabled = true
         // Request native camera & microphone permissions cleanly on first app startup
