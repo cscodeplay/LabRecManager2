@@ -1,0 +1,22 @@
+{
+  "appId": "com.labrecmanager.whiteboard",
+  "appName": "LabRec Whiteboard",
+  "webDir": "native-www",
+  "server": {
+    "url": "https://192.168.1.220:3000",
+    "cleartext": true,
+    "androidScheme": "https",
+    "allowNavigation": ["*"],
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true,
+    "captureInput": true
+  },
+  "ios": {
+    "contentInset": "never",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true
+  }
+}

@@ -39,7 +39,7 @@ export default function FloatingWhiteboardIcon() {
     return (
         <div 
             onClick={() => router.push(activeSession.url || '/live-board')}
-            className="fixed bottom-24 right-8 z-[999] w-14 h-14 bg-indigo-600 rounded-full shadow-2xl flex items-center justify-center cursor-pointer hover:bg-indigo-700 hover:scale-110 transition-all group border-4 border-indigo-400/30"
+            className="fixed bottom-12 right-24 z-[999] w-14 h-14 bg-indigo-600 rounded-full shadow-2xl flex items-center justify-center cursor-pointer hover:bg-indigo-700 hover:scale-110 transition-all group border-4 border-indigo-400/30"
             title="Return to Active Whiteboard"
         >
             <Pencil className="w-6 h-6 text-white" />

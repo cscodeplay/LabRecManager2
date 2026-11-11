@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
     Settings as SettingsIcon, User, Bell, Shield, Palette, Save,
@@ -937,6 +938,13 @@ export default function SettingsPage() {
                                                     <User className="w-3.5 h-3.5" />
                                                     Change Avatar
                                                 </button>
+                                                <Link
+                                                    href="/profile"
+                                                    className="btn btn-sm btn-secondary flex items-center gap-1.5 text-xs"
+                                                >
+                                                    <ExternalLink className="w-3.5 h-3.5" />
+                                                    View Institutional Profile
+                                                </Link>
                                             </div>
                                         </div>
                                     </div>

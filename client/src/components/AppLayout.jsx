@@ -1,13 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { Menu, Search, GraduationCap } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { Search, Pin, PinOff, ChevronDown, ChevronUp } from 'lucide-react';
 import Sidebar from './Sidebar';
 import NotificationBell from './NotificationBell';
-import ProfileDropdown from './ProfileDropdown';
 import SessionSelector, { ReadOnlyBanner } from './SessionSelector';
-import { DatabaseStatusBadge } from './DatabaseStatus';
 import CommitInfoBadge from './CommitInfoBadge';
 import FloatingChatbot from './FloatingChatbot';
 import GlobalSearch from './GlobalSearch';
@@ -15,35 +13,24 @@ import VoiceHUD from './VoiceHUD';
 import GlobalQuickActions from './GlobalQuickActions';
 import GreenSegmentedSpinner from './GreenSegmentedSpinner';
 import { useAuthStore } from '@/lib/store';
+import { useEdgeHoverReveal, useLowMemoryDevice } from '@/hooks/useEdgeHoverReveal';
 
 export default function AppLayout({ children }) {
     const pathname = usePathname();
-    const router = useRouter();
-    const { isAuthenticated, _hasHydrated, user } = useAuthStore();
+    const { isAuthenticated, _hasHydrated } = useAuthStore();
+    const isLowMemory = useLowMemoryDevice();
 
-    const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [voiceHudOpen, setVoiceHudOpen] = useState(false);
-    const [schoolInfo, setSchoolInfo] = useState(() => {
-        try {
-            if (typeof window !== 'undefined') {
-                const cached = localStorage.getItem('school_branding');
-                if (cached) return JSON.parse(cached);
-            }
-        } catch (e) {}
-        return null;
-    });
+    const [topSearchValue, setTopSearchValue] = useState('');
+    const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+    const [notifMenuOpen, setNotifMenuOpen] = useState(false);
 
-    useEffect(() => {
-        if (user?.school?.logoUrl || user?.school?.name) {
-            setSchoolInfo(user.school);
-        } else {
-            try {
-                const cached = localStorage.getItem('school_branding');
-                if (cached) setSchoolInfo(JSON.parse(cached));
-            } catch (e) {}
-        }
-    }, [user?.school]);
+    const topBarReveal = useEdgeHoverReveal({
+        autoHideMs: 2500,
+        initialPeekMs: 2500,
+        storageKey: 'topHoverBarPinned',
+        isLocked: sessionMenuOpen || notifMenuOpen,
+    });
 
     // Global keyboard shortcut for Voice HUD (Ctrl+Shift+V / Cmd+Shift+V)
     useEffect(() => {
@@ -69,121 +56,150 @@ export default function AppLayout({ children }) {
     // Don't show layout on public auth pages
     const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/adminmoslogin' || pathname === '/reset-password-pin';
 
-    // Load sidebar collapsed state from localStorage
-    useEffect(() => {
-        const saved = localStorage.getItem('sidebarCollapsed');
-        if (saved) {
-            setSidebarCollapsed(JSON.parse(saved));
-        }
-    }, []);
-
-    // Save sidebar collapsed state
-    const handleToggleCollapse = () => {
-        const newState = !sidebarCollapsed;
-        setSidebarCollapsed(newState);
-        localStorage.setItem('sidebarCollapsed', JSON.stringify(newState));
-    };
-
-    // Universal menu toggle handler: collapses/expands sidebar on desktop, toggles drawer on mobile
-    const handleToggleMenu = () => {
-        if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
-            handleToggleCollapse();
-        } else {
-            setSidebarOpen(prev => !prev);
-        }
-    };
-
-    // If on auth page, just render children without layout
     if (isAuthPage) {
         return <>{children}</>;
     }
 
-    // Wait for hydration (with mounted safety fallback)
     if (!_hasHydrated && !mounted) {
         return <GreenSegmentedSpinner fullscreen />;
     }
 
-    // If not authenticated and not on auth page, render children (they will handle redirect)
     if (!isAuthenticated) {
         return <>{children}</>;
     }
 
+    const triggerGlobalSearch = (initialQuery = '') => {
+        window.dispatchEvent(new CustomEvent('open-global-search', { detail: { query: initialQuery } }));
+        setTopSearchValue('');
+    };
+
+    const topSurface = isLowMemory
+        ? 'bg-white/95 dark:bg-slate-900/95'
+        : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm';
+
     return (
-        <div className="min-h-screen bg-slate-50">
-            {/* Sidebar */}
-            <Sidebar
-                isOpen={sidebarOpen}
-                onClose={() => setSidebarOpen(false)}
-                isCollapsed={sidebarCollapsed}
-                onToggleCollapse={handleToggleCollapse}
-            />
+        <div className="min-h-[100dvh] w-full bg-slate-50 dark:bg-slate-950">
+            {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
+            <Sidebar />
 
-            {/* Main Content */}
-            <div className={`transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'}`}>
-                {/* Top Header */}
-                <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200">
-                    <div className="px-4 h-16 flex items-center justify-between gap-4">
-                        {/* Left side - Menu toggle button & Branding */}
-                        <div className="flex items-center gap-3 flex-1">
-                            {/* Universal Collapse / Expand Hamburger Menu Button */}
-                            <button
-                                type="button"
-                                onClick={handleToggleMenu}
-                                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer flex items-center justify-center shrink-0 border border-slate-200 shadow-2xs"
-                                title={sidebarCollapsed ? 'Expand navigation sidebar' : 'Collapse navigation sidebar'}
-                                aria-label="Toggle navigation menu"
-                            >
-                                <Menu className="w-5 h-5 text-slate-700" />
-                            </button>
+            {/* Top-Edge Mouse & Pen Hover Hot-Zone (0ms reveal for Top Bar + Bell Circle) */}
+            <div
+                {...topBarReveal.triggerProps}
+                className="fixed top-0 left-16 right-0 h-3.5 z-[78] flex justify-center"
+                aria-hidden="true"
+            >
+                {!topBarReveal.isVisible && (
+                    <span className="mt-1 h-1 w-20 rounded-full bg-slate-400/40 dark:bg-slate-500/40 transition-opacity" />
+                )}
+            </div>
 
-                            {/* Mobile Brand: School Logo to the left of ULRMS */}
-                            <div className="lg:hidden flex items-center gap-2 mr-1">
-                                <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 p-1 flex items-center justify-center overflow-hidden shadow-xs flex-shrink-0">
-                                    {schoolInfo?.logoUrl ? (
-                                        <img
-                                            src={schoolInfo.logoUrl}
-                                            alt={schoolInfo.name || 'School Logo'}
-                                            className="w-full h-full object-contain"
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full rounded-md bg-primary-600 flex items-center justify-center text-white">
-                                            <GraduationCap className="w-4 h-4" />
-                                        </div>
-                                    )}
-                                </div>
-                                <span className="font-extrabold text-primary-600 text-sm tracking-wide">
-                                    ULRMS
-                                </span>
-                            </div>
-                        </div>
+            {/* Touch-Only Top Pull Pill (Devices without hover capability) */}
+            <button
+                type="button"
+                onClick={topBarReveal.toggleOpen}
+                className={`[@media(hover:none)]:flex hidden fixed top-2 left-1/2 -translate-x-1/2 z-[78] px-3.5 h-11 rounded-full ${topSurface} border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-lg items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 transition-transform`}
+                aria-label={topBarReveal.isVisible ? 'Hide search and notifications bar' : 'Show search and notifications bar'}
+                aria-expanded={topBarReveal.isVisible}
+            >
+                <Search className="w-4 h-4" />
+                <span>Search</span>
+                {topBarReveal.isVisible ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
 
-                        {/* Right side - Session, Status, Notifications, Profile */}
-                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                            <div className="hidden md:flex items-center">
-                                <SessionSelector />
-                            </div>
-                            <div className="hidden sm:flex items-center">
-                                <CommitInfoBadge />
-                            </div>
-                            <div className="hidden sm:flex items-center">
-                                <DatabaseStatusBadge />
-                            </div>
-                            <NotificationBell />
-                            <ProfileDropdown />
-                        </div>
-                    </div>
-                </header>
+            {/* Centered Hover Top Bar (Search Input + Session Selector + Right-End Icon Pin, z-[80] over OfficeFloatingTopNav) */}
+            <header
+                {...topBarReveal.containerProps}
+                role="banner"
+                aria-label="Quick Search and Session Bar"
+                style={{ willChange: topBarReveal.isVisible ? 'transform, opacity' : 'auto' }}
+                className={`fixed top-2.5 left-1/2 -translate-x-1/2 z-[80] w-[min(580px,calc(100vw-168px))] sm:w-[min(580px,calc(100vw-220px))] rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl px-2 py-1.5 flex items-center gap-2 ${topSurface} transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                    topBarReveal.isVisible
+                        ? 'translate-y-0 opacity-100 pointer-events-auto'
+                        : '-translate-y-[140%] opacity-0 pointer-events-none'
+                }`}
+            >
+                {/* Centered Search Input */}
+                <div className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 focus-within:border-primary-500 focus-within:ring-2 focus-within:ring-primary-500/25 min-w-0">
+                    <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                    <input
+                        type="text"
+                        value={topSearchValue}
+                        onChange={(e) => {
+                            const val = e.target.value;
+                            setTopSearchValue(val);
+                            if (val.trim().length > 0) {
+                                triggerGlobalSearch(val);
+                            }
+                        }}
+                        onClick={() => triggerGlobalSearch(topSearchValue)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                triggerGlobalSearch(topSearchValue);
+                            }
+                        }}
+                        placeholder="Search labs, docs, assignments, users..."
+                        aria-label="Global search"
+                        className="w-full bg-transparent border-0 outline-none text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-0 min-w-0"
+                    />
+                    <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-[10px] font-mono font-semibold text-slate-500 dark:text-slate-300 shrink-0">
+                        ⌘K
+                    </kbd>
+                </div>
 
-                {/* Read-Only Mode Banner */}
+                {/* Session Selector */}
+                <div className="shrink-0">
+                    <SessionSelector variant="pill" onOpenChange={setSessionMenuOpen} />
+                </div>
+
+                {/* Small Icon-Only Pin at Right End of Centered Top Bar */}
+                <button
+                    type="button"
+                    onClick={topBarReveal.togglePinned}
+                    aria-label={topBarReveal.isPinned ? 'Unpin top bar' : 'Pin top bar open'}
+                    aria-pressed={topBarReveal.isPinned}
+                    title={topBarReveal.isPinned ? 'Unpin Top Bar (Auto-Hide)' : 'Pin Top Bar Open'}
+                    className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors active:scale-95 cursor-pointer ${
+                        topBarReveal.isPinned
+                            ? 'bg-primary-600 text-white border-primary-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                >
+                    {topBarReveal.isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                </button>
+            </header>
+
+            {/* Separate Top-Rightmost Notification Bell Circle (Auto-hides with Top Bar) */}
+            <div
+                {...topBarReveal.containerProps}
+                style={{ willChange: topBarReveal.isVisible ? 'transform, opacity' : 'auto' }}
+                className={`fixed top-2.5 right-3.5 z-[80] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                    topBarReveal.isVisible
+                        ? 'translate-y-0 opacity-100 pointer-events-auto'
+                        : '-translate-y-[140%] opacity-0 pointer-events-none'
+                }`}
+            >
+                <NotificationBell
+                    variant="floating-circle"
+                    onOpenChange={setNotifMenuOpen}
+                    lowMemory={isLowMemory}
+                />
+            </div>
+
+            {/* Bottom-Right Small-Font Commit Hash */}
+            <div className="fixed bottom-2.5 right-3.5 z-[70]">
+                <CommitInfoBadge placement="bottom-right" />
+            </div>
+
+            {/* Read-Only Mode Banner & Fullscreen Main Content */}
+            <div className="w-full min-h-[100dvh]">
                 <ReadOnlyBanner />
-
-                {/* Page Content */}
-                <main className="min-h-[calc(100vh-4rem)]">
+                <main className="min-h-[100dvh] w-full">
                     {children}
                 </main>
             </div>
 
-            {/* Mobile & iPad Floating Search Shortcut Button (Suppressed on Practice IDE to maximize student touch & coding workspace) */}
+            {/* Mobile & iPad Floating Search Shortcut Button (Suppressed on Practice IDE to maximize coding workspace) */}
             {!pathname?.startsWith('/practice-ide') && (
                 <button
                     type="button"
@@ -210,5 +226,3 @@ export default function AppLayout({ children }) {
         </div>
     );
 }
-
-

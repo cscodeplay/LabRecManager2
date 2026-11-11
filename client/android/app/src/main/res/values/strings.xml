@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LabRec Whiteboard</string>
+    <string name="title_activity_main">LabRec Whiteboard</string>
+    <string name="package_name">com.labrecmanager.whiteboard</string>
+    <string name="custom_url_scheme">com.labrecmanager.whiteboard</string>
+</resources>

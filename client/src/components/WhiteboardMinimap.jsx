@@ -216,10 +216,10 @@ export default function WhiteboardMinimap({
             containerH = window.innerHeight;
         }
 
-        const vpCanvasX = -panOffset.x / zoomLevel;
-        const vpCanvasY = -panOffset.y / zoomLevel;
         const vpCanvasW = containerW / zoomLevel;
         const vpCanvasH = containerH / zoomLevel;
+        const vpCanvasX = (canvasWidth / 2) - (vpCanvasW / 2) - panOffset.x;
+        const vpCanvasY = (canvasHeight / 2) - (vpCanvasH / 2) - panOffset.y;
 
         let minX = Math.min(0, vpCanvasX);
         let minY = Math.min(0, vpCanvasY);
@@ -296,11 +296,11 @@ export default function WhiteboardMinimap({
         const targetCanvasX = bounds.minX + (clickX / MAP_WIDTH) * bounds.totalW;
         const targetCanvasY = bounds.minY + (clickY / MAP_HEIGHT) * bounds.totalH;
 
-        const newPanX = (bounds.containerW / 2) - (targetCanvasX * zoomLevel);
-        const newPanY = (bounds.containerH / 2) - (targetCanvasY * zoomLevel);
+        const newPanX = (canvasWidth / 2) - targetCanvasX;
+        const newPanY = (canvasHeight / 2) - targetCanvasY;
 
         changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
-    }, [bounds, zoomLevel, changePan]);
+    }, [bounds, canvasWidth, canvasHeight, changePan]);
 
     // Zoom Controls (0.1x to 5.0x)
     const zoomIn = useCallback((e) => {
@@ -356,8 +356,8 @@ export default function WhiteboardMinimap({
 
         const targetCenterX = (minX + maxX) / 2;
         const targetCenterY = (minY + maxY) / 2;
-        const newPanX = (containerW / 2) - (targetCenterX * fitZoom);
-        const newPanY = (containerH / 2) - (targetCenterY * fitZoom);
+        const newPanX = (canvasWidth / 2) - targetCenterX;
+        const newPanY = (canvasHeight / 2) - targetCenterY;
         changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
         scheduleAutoHide(2500);
     }, [resolvedShapes, resolvedTexts, resolvedImages, canvasWidth, canvasHeight, containerRef, changeZoom, changePan, scheduleAutoHide]);

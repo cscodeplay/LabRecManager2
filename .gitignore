@@ -19,6 +19,11 @@ server/.env
 client/.env
 client/.env.local
 
+# Local TLS certificates & profiles
+certs/
+client/native-www/labrec-rootCA.cer
+client/ios/App/App/public/labrec-rootCA.cer
+
 # Debug logs
 npm-debug.log*
 yarn-debug.log*

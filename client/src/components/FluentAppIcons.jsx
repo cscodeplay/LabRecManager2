@@ -2,8 +2,8 @@
 
 import React from 'react';
 
-// Common shadow styling for Fluent depth
-const shadowClass = "filter drop-shadow-[0_1.5px_3px_rgba(0,0,0,0.18)]";
+// Crisp pure-vector rendering without CSS drop-shadow filter rasterization on Android/IFPD Skia
+const shadowClass = "";
 
 // Helper for Lucide polymorphism (accepts both className and size)
 const getStyle = (size, customStyle) => (size ? { width: size, height: size, ...customStyle } : customStyle);

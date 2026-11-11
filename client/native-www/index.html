@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>LabRec Whiteboard</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: #0f172a;
+      color: #f8fafc;
+      display: grid;
+      place-items: center;
+    }
+    main {
+      text-align: center;
+      padding: 2rem;
+      max-width: 28rem;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin: 0 0 0.75rem;
+    }
+    p {
+      margin: 0 0 1.25rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+    a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.75rem;
+      background: #2563eb;
+      color: #ffffff;
+      font-weight: 600;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>LabRec Whiteboard</h1>
+    <p id="status">Connecting to the LabRec server...</p>
+    <a href="./offline.html">Configure Server URL</a>
+  </main>
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('labrec_server_url');
+        if (saved && /^https?:\/\//i.test(saved)) {
+          if (saved.indexOf('http://192.168.1.220:3000') === 0) {
+            saved = saved.replace('http://', 'https://');
+            localStorage.setItem('labrec_server_url', saved);
+          }
+          window.location.replace(saved);
+        }
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>

@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import { dashboardAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
-export default function CommitInfoBadge() {
+export default function CommitInfoBadge({ placement = 'header' }) {
     const { user, _hasHydrated } = useAuthStore();
 
     const clientHash = process.env.NEXT_PUBLIC_COMMIT_HASH || '';
@@ -51,6 +51,15 @@ export default function CommitInfoBadge() {
             });
     }, [clientHash, clientFullHash]);
 
+    useEffect(() => {
+        if (!isHovered) return;
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') setIsHovered(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isHovered]);
+
     // Do not display commit hash for other users except for admin
     if (!user || user.role !== 'admin') {
         return null;
@@ -69,31 +78,58 @@ export default function CommitInfoBadge() {
         }
     };
 
+    const isBottomRight = placement === 'bottom-right';
+
     return (
-        <div 
+        <div
             className="relative inline-flex items-center"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
+            onPointerEnter={(e) => {
+                if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                    setIsHovered(true);
+                }
+            }}
+            onPointerLeave={(e) => {
+                if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                    setIsHovered(false);
+                }
+            }}
         >
-            {/* Upper Top Corner Pill */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-200/90 dark:hover:bg-slate-700/90 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] font-mono transition-all shadow-xs cursor-pointer select-none group">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="font-semibold text-slate-700 dark:text-slate-200">{shortHash}</span>
+            {/* Compact Commit Hash Pill */}
+            <div
+                onClick={() => setIsHovered((prev) => !prev)}
+                className={`flex items-center gap-1.5 font-mono transition-all cursor-pointer select-none group ${
+                    isBottomRight
+                        ? 'px-2 py-0.5 rounded-full bg-slate-900/85 hover:bg-slate-900 text-slate-200 border border-slate-700/80 text-[11px] shadow-sm'
+                        : 'px-2 py-1 rounded-lg bg-slate-100/90 dark:bg-slate-800/90 hover:bg-slate-200/90 dark:hover:bg-slate-700/90 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-[11px] shadow-xs'
+                }`}
+                title="Commit details (hover or click)"
+            >
+                <span className={`font-semibold ${isBottomRight ? 'text-slate-200' : 'text-slate-700 dark:text-slate-200'}`}>
+                    {shortHash}
+                </span>
 
                 {/* 'i' Info Symbol */}
                 <button
                     type="button"
-                    aria-label="Commit details"
-                    className="w-4 h-4 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 group-hover:bg-indigo-600 group-hover:text-white flex items-center justify-center transition-colors -mr-0.5"
+                    aria-label="Copy commit hash"
+                    className={`w-4 h-4 rounded-full flex items-center justify-center transition-colors -mr-0.5 cursor-pointer ${
+                        isBottomRight
+                            ? 'bg-slate-800 text-slate-300 group-hover:bg-indigo-600 group-hover:text-white'
+                            : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-300 group-hover:bg-indigo-600 group-hover:text-white'
+                    }`}
                     onClick={handleCopy}
                 >
                     <Info className="w-2.5 h-2.5" />
                 </button>
             </div>
 
-            {/* Hover Tooltip / Detail Card */}
+            {/* Hover Tooltip / Detail Card (Opens upward when bottom-right) */}
             {isHovered && (
-                <div className="absolute top-full right-0 mt-2 w-72 sm:w-80 p-3.5 bg-slate-900/95 text-slate-100 rounded-2xl border border-slate-700/80 shadow-2xl backdrop-blur-xl z-[999] animate-in fade-in-0 zoom-in-95 duration-150">
+                <div
+                    className={`absolute right-0 w-72 sm:w-80 p-3.5 bg-slate-900/95 text-slate-100 rounded-2xl border border-slate-700/80 shadow-2xl z-[999] animate-in fade-in-0 zoom-in-95 duration-150 ${
+                        isBottomRight ? 'bottom-full mb-2' : 'top-full mt-2'
+                    }`}
+                >
                     <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-800">
                         <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400">
                             <GitCommit className="w-3.5 h-3.5" />

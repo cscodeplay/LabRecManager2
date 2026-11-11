@@ -128,148 +128,148 @@ import { formatDate, formatTime } from '@/lib/dateUtils';
  */
 const TOOL_CLASSROOM_STYLES = {
     grab: {
-        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105',
-        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105',
+        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200',
         iconColor: 'text-emerald-400',
         badge: 'bg-emerald-500'
     },
     fill: {
-        bgActive: 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30 ring-2 ring-fuchsia-300 scale-105',
-        bgInactive: 'text-fuchsia-400 bg-fuchsia-500/15 hover:bg-fuchsia-500/30 hover:text-fuchsia-200 hover:scale-105',
+        bgActive: 'bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-500/30 ring-2 ring-fuchsia-300',
+        bgInactive: 'text-fuchsia-400 bg-fuchsia-500/15 hover:bg-fuchsia-500/30 hover:text-fuchsia-200',
         iconColor: 'text-fuchsia-400',
         badge: 'bg-fuchsia-500'
     },
     table: {
-        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
-        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105',
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200',
         iconColor: 'text-indigo-400',
         badge: 'bg-indigo-500'
     },
     select: {
-        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
-        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105',
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200',
         iconColor: 'text-indigo-400',
         badge: 'bg-indigo-500'
     },
     pen: {
-        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-300 scale-105',
-        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200 hover:scale-105',
+        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-300',
+        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200',
         iconColor: 'text-sky-400',
         badge: 'bg-sky-500'
     },
     highlighter: {
-        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200 scale-105',
-        bgInactive: 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-100 hover:scale-105',
+        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200',
+        bgInactive: 'text-amber-300 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-100',
         iconColor: 'text-amber-400',
         badge: 'bg-amber-400'
     },
     eraser: {
-        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300 scale-105',
-        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200 hover:scale-105',
+        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300',
+        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200',
         iconColor: 'text-rose-400',
         badge: 'bg-rose-500'
     },
     line: {
-        bgActive: 'bg-teal-500 text-slate-950 font-bold shadow-lg shadow-teal-500/30 ring-2 ring-teal-200 scale-105',
-        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200 hover:scale-105',
+        bgActive: 'bg-teal-500 text-slate-950 font-bold shadow-lg shadow-teal-500/30 ring-2 ring-teal-200',
+        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200',
         iconColor: 'text-teal-400',
         badge: 'bg-teal-500'
     },
     shape: {
-        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200 scale-105',
-        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105',
+        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200',
         iconColor: 'text-emerald-400',
         badge: 'bg-emerald-500'
     },
     text: {
-        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
-        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105',
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200',
         iconColor: 'text-purple-400',
         badge: 'bg-purple-500'
     },
     math_tablet: {
-        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
-        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105'
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200'
     },
     math_solver: {
-        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/30 ring-2 ring-amber-200 scale-105',
-        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+        bgActive: 'bg-amber-400 text-slate-950 font-bold shadow-lg shadow-amber-400/30 ring-2 ring-amber-200',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200'
     },
     parametric_shape: {
-        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
-        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200'
     },
     geometry_instruments: {
-        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
-        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200'
     },
     browser_panel: {
-        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105',
-        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
+        bgActive: 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200'
     },
     image: {
-        bgActive: 'bg-pink-600 text-white shadow-lg shadow-pink-500/30 ring-2 ring-pink-300 scale-105',
-        bgInactive: 'text-pink-400 bg-pink-500/15 hover:bg-pink-500/30 hover:text-pink-200 hover:scale-105'
+        bgActive: 'bg-pink-600 text-white shadow-lg shadow-pink-500/30 ring-2 ring-pink-300',
+        bgInactive: 'text-pink-400 bg-pink-500/15 hover:bg-pink-500/30 hover:text-pink-200'
     },
     media: {
-        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200 scale-105',
-        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200'
     },
     domain_3d: {
-        bgActive: 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-300 scale-105',
-        bgInactive: 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/30 hover:text-blue-200 hover:scale-105'
+        bgActive: 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-300',
+        bgInactive: 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/30 hover:text-blue-200'
     },
     graph_plotter: {
-        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-200 scale-105',
-        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200 hover:scale-105'
+        bgActive: 'bg-sky-500 text-slate-950 font-bold shadow-lg shadow-sky-500/30 ring-2 ring-sky-200',
+        bgInactive: 'text-sky-400 bg-sky-500/15 hover:bg-sky-500/30 hover:text-sky-200'
     },
     physics_space: {
-        bgActive: 'bg-violet-600 text-white shadow-lg shadow-violet-500/30 ring-2 ring-violet-300 scale-105',
-        bgInactive: 'text-violet-400 bg-violet-500/15 hover:bg-violet-500/30 hover:text-violet-200 hover:scale-105'
+        bgActive: 'bg-violet-600 text-white shadow-lg shadow-violet-500/30 ring-2 ring-violet-300',
+        bgInactive: 'text-violet-400 bg-violet-500/15 hover:bg-violet-500/30 hover:text-violet-200'
     },
     tasks: {
-        bgActive: 'bg-teal-600 text-white shadow-lg shadow-teal-500/30 ring-2 ring-teal-300 scale-105',
-        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200 hover:scale-105'
+        bgActive: 'bg-teal-600 text-white shadow-lg shadow-teal-500/30 ring-2 ring-teal-300',
+        bgInactive: 'text-teal-400 bg-teal-500/15 hover:bg-teal-500/30 hover:text-teal-200'
     },
     templates: {
-        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300 scale-105',
-        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200 hover:scale-105'
+        bgActive: 'bg-purple-600 text-white shadow-lg shadow-purple-500/30 ring-2 ring-purple-300',
+        bgInactive: 'text-purple-400 bg-purple-500/15 hover:bg-purple-500/30 hover:text-purple-200'
     },
     shortcuts: {
         bgActive: 'bg-slate-700 text-white shadow-md ring-2 ring-slate-400',
         bgInactive: 'text-slate-300 bg-slate-800/60 hover:bg-slate-700 hover:text-white'
     },
     timer: {
-        bgActive: 'bg-orange-500 text-white shadow-lg shadow-orange-500/30 ring-2 ring-orange-300 scale-105',
-        bgInactive: 'text-orange-400 bg-orange-500/15 hover:bg-orange-500/30 hover:text-orange-200 hover:scale-105'
+        bgActive: 'bg-orange-500 text-white shadow-lg shadow-orange-500/30 ring-2 ring-orange-300',
+        bgInactive: 'text-orange-400 bg-orange-500/15 hover:bg-orange-500/30 hover:text-orange-200'
     },
     spotlight: {
-        bgActive: 'bg-yellow-400 text-slate-950 font-bold shadow-lg shadow-yellow-400/40 ring-2 ring-yellow-200 scale-105',
-        bgInactive: 'text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/30 hover:text-yellow-200 hover:scale-105'
+        bgActive: 'bg-yellow-400 text-slate-950 font-bold shadow-lg shadow-yellow-400/40 ring-2 ring-yellow-200',
+        bgInactive: 'text-yellow-400 bg-yellow-500/15 hover:bg-yellow-500/30 hover:text-yellow-200'
     },
     curtain: {
-        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300 scale-105',
-        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200 hover:scale-105'
+        bgActive: 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 ring-2 ring-indigo-300',
+        bgInactive: 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/30 hover:text-indigo-200'
     },
     laser: {
-        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300 scale-105',
-        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200 hover:scale-105'
+        bgActive: 'bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-300',
+        bgInactive: 'text-rose-400 bg-rose-500/15 hover:bg-rose-500/30 hover:text-rose-200'
     },
     datetime: {
-        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105',
-        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
+        bgActive: 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200',
+        bgInactive: 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200'
     },
     recorder: {
-        bgActive: 'bg-red-600 text-white shadow-lg shadow-red-500/30 ring-2 ring-red-300 scale-105',
-        bgInactive: 'text-red-400 bg-red-500/15 hover:bg-red-500/30 hover:text-red-200 hover:scale-105'
+        bgActive: 'bg-red-600 text-white shadow-lg shadow-red-500/30 ring-2 ring-red-300',
+        bgInactive: 'text-red-400 bg-red-500/15 hover:bg-red-500/30 hover:text-red-200'
     },
     games: {
-        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200 scale-105',
-        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
+        bgActive: 'bg-emerald-500 text-slate-950 font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-200',
+        bgInactive: 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200'
     },
     permissions: {
-        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200 scale-105',
-        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
+        bgActive: 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-500/30 ring-2 ring-amber-200',
+        bgInactive: 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200'
     }
 };
 
@@ -382,11 +382,11 @@ const DEFAULT_COLORS = [
 
 // Highlighter colors with transparency
 const HIGHLIGHTER_COLORS = [
-    'rgba(255, 235, 59, 0.4)',  // Yellow
-    'rgba(76, 175, 80, 0.4)',   // Green
-    'rgba(33, 150, 243, 0.4)',  // Blue
-    'rgba(233, 30, 99, 0.4)',   // Pink
-    'rgba(255, 152, 0, 0.4)',   // Orange
+    'rgba(250, 204, 21, 0.5)',  // Bright Highlighter Yellow
+    'rgba(76, 175, 80, 0.45)',  // Green
+    'rgba(33, 150, 243, 0.45)', // Blue
+    'rgba(233, 30, 99, 0.45)',  // Pink
+    'rgba(255, 152, 0, 0.48)',  // Orange
 ];
 
 const STROKE_WIDTHS = [2, 4, 6, 8, 12];
@@ -769,8 +769,8 @@ export default function Whiteboard({
     onClose,
     isFullscreen = false,
     onToggleFullscreen,
-    width = 800,
-    height = 600,
+    width = 1920,
+    height = 1080,
     // Sharing props
     onShare,
     isSharing = false,
@@ -798,6 +798,7 @@ export default function Whiteboard({
     const canvasHeight = height;
 
     const canvasRef = useRef(null);
+    const liveStrokeCanvasRef = useRef(null);
     const canvasWrapperRef = useRef(null);
     const containerRef = useRef(null);
     const activePointerIdRef = useRef(null);
@@ -806,7 +807,84 @@ export default function Whiteboard({
     const penReleaseTimeoutRef = useRef(null);
     const lastPointRef = useRef(null);
     const currentPathPointsRef = useRef([]);
-    const preStrokeImageDataRef = useRef(null);
+    const preStrokeCanvasRef = useRef(null);
+
+    const clearLiveStrokeCanvas = useCallback(() => {
+        const liveCanvas = liveStrokeCanvasRef.current;
+        if (!liveCanvas) return;
+        const ctx = liveCanvas.getContext('2d');
+        if (!ctx) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+        ctx.restore();
+    }, []);
+
+    const getLiveStrokeCtx = useCallback((shouldClear = false) => {
+        const liveCanvas = liveStrokeCanvasRef.current;
+        const container = canvasContainerRef.current;
+        const wrapper = canvasWrapperRef.current;
+        if (!liveCanvas || !container || !wrapper) return null;
+
+        const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+        const cRect = container.getBoundingClientRect();
+        const targetW = Math.max(1, Math.round(cRect.width * dpr));
+        const targetH = Math.max(1, Math.round(cRect.height * dpr));
+        if (liveCanvas.width !== targetW || liveCanvas.height !== targetH) {
+            liveCanvas.width = targetW;
+            liveCanvas.height = targetH;
+        }
+
+        const ctx = liveCanvas.getContext('2d');
+        if (!ctx) return null;
+
+        if (shouldClear) {
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+        }
+
+        const rectEl = canvasRef.current || wrapper;
+        const wRect = rectEl.getBoundingClientRect();
+        if (!wRect.width || !wRect.height) return null;
+        const cw = canvasWidth || 1920;
+        const ch = canvasHeight || 1080;
+        const scaleX = wRect.width / cw;
+        const scaleY = wRect.height / ch;
+        const originX = wRect.left - cRect.left;
+        const originY = wRect.top - cRect.top;
+
+        ctx.setTransform(dpr * scaleX, 0, 0, dpr * scaleY, originX * dpr, originY * dpr);
+        ctx.imageSmoothingEnabled = true;
+        return ctx;
+    }, [canvasWidth, canvasHeight]);
+    const capturePreStrokeSnapshot = useCallback((canvas) => {
+        if (!canvas) return;
+        let snap = preStrokeCanvasRef.current;
+        if (!snap) {
+            snap = document.createElement('canvas');
+            preStrokeCanvasRef.current = snap;
+        }
+        if (snap.width !== canvas.width || snap.height !== canvas.height) {
+            snap.width = canvas.width;
+            snap.height = canvas.height;
+        }
+        const snapCtx = snap.getContext('2d');
+        if (snapCtx) {
+            snapCtx.clearRect(0, 0, snap.width, snap.height);
+            snapCtx.drawImage(canvas, 0, 0);
+        }
+    }, []);
+    const restorePreStrokeSnapshot = useCallback((ctx, canvas) => {
+        const snap = preStrokeCanvasRef.current;
+        if (!ctx || !canvas || !snap) return;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(snap, 0, 0);
+        ctx.restore();
+    }, []);
     const [isDrawing, setIsDrawing] = useState(false);
     const wasDraggingRef = useRef(false);
     const justCreatedShapeRef = useRef(false);
@@ -815,7 +893,7 @@ export default function Whiteboard({
     const [tool, setTool] = useState('pen'); // pen, eraser, select, highlighter, shape, laser, text, image
     const [color, setColor] = useState('#000000');
     const [fillColor, setFillColor] = useState('transparent');
-    const [strokeWidth, setStrokeWidth] = useState(2);
+    const [strokeWidth, setStrokeWidth] = useState(3);
     const [eraserSize, setEraserSize] = useState(20); // Separate eraser size
     const [strokeStyle, setStrokeStyle] = useState('solid'); // solid, dashed, dotted
     const [showColorPicker, setShowColorPicker] = useState(false);
@@ -1061,9 +1139,11 @@ export default function Whiteboard({
     const [pageHistories, setPageHistories] = useState({ 0: [] });
     const [pageHistoryIndices, setPageHistoryIndices] = useState({ 0: -1 });
 
-    // Drawing state
+    // Drawing state (with synchronous refs to prevent dropped fast strokes on Android/IFPD panels)
     const [startPos, setStartPos] = useState({ x: 0, y: 0 });
     const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+    const startPosRef = useRef({ x: 0, y: 0 });
+    const currentPosRef = useRef({ x: 0, y: 0 });
 
     // Text tool state
     const [showTextInput, setShowTextInput] = useState(false);
@@ -1495,6 +1575,10 @@ export default function Whiteboard({
     // ─── Canvas Zoom & Minimap Navigation State ──────────────────────────
     const [zoomLevel, setZoomLevel] = useState(1);
     const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+    const zoomLevelRef = useRef(1);
+    const panOffsetRef = useRef({ x: 0, y: 0 });
+    zoomLevelRef.current = zoomLevel;
+    panOffsetRef.current = panOffset;
     const [showMinimap, setShowMinimap] = useState(true);
 
     // ─── Export & Interactive Panel Sharing Modal State ──────────────────
@@ -2107,8 +2191,9 @@ export default function Whiteboard({
     const [pressureSensitivity, setPressureSensitivity] = useState(true);
     const currentPressureRef = useRef(0.5);
 
-    // Container responsive auto-fit scaling (ensures 100% bounds visibility on all screens)
+    // Container responsive viewport tracking & infinite screen-filling scaling
     const canvasContainerRef = useRef(null);
+    const [viewportSize, setViewportSize] = useState({ width: width || 1920, height: height || 1080 });
     const [containerFitScale, setContainerFitScale] = useState(1);
     useEffect(() => {
         const el = canvasContainerRef.current;
@@ -2118,13 +2203,30 @@ export default function Whiteboard({
             const cw = el.clientWidth || window.innerWidth;
             const ch = el.clientHeight || window.innerHeight;
             if (cw > 0 && ch > 0) {
-                const targetW = canvasWidth || width || 1200;
-                const targetH = canvasHeight || height || 700;
-                const scaleX = (cw - 24) / targetW;
-                const scaleY = (ch - 24) / targetH;
-                const fit = Math.min(scaleX, scaleY);
-                // Adaptive auto-fit scaling across all screen sizes from iPad Mini (down to 0.3x) up to 100" Smart Panels / 4K IFPs (up to 3.0x)
-                setContainerFitScale(Math.max(0.3, Math.min(fit, 3.0)));
+                setViewportSize(prev => (prev.width === cw && prev.height === ch ? prev : { width: cw, height: ch }));
+
+                const liveCanvas = liveStrokeCanvasRef.current;
+                if (liveCanvas) {
+                    const dpr = window.devicePixelRatio || 1;
+                    const lw = Math.max(1, Math.round(cw * dpr));
+                    const lh = Math.max(1, Math.round(ch * dpr));
+                    if (liveCanvas.width !== lw || liveCanvas.height !== lh) {
+                        liveCanvas.width = lw;
+                        liveCanvas.height = lh;
+                    }
+                }
+
+                if (isStudent) {
+                    const targetW = canvasWidth || width || 1920;
+                    const targetH = canvasHeight || height || 1080;
+                    const scaleX = cw / targetW;
+                    const scaleY = ch / targetH;
+                    const fit = Math.min(scaleX, scaleY);
+                    setContainerFitScale(Math.max(0.15, Math.min(fit, 4.0)));
+                } else {
+                    // Authoring starts at native 1:1 viewport scale across a full-bleed infinite canvas
+                    setContainerFitScale(1);
+                }
             }
         };
 
@@ -2136,24 +2238,24 @@ export default function Whiteboard({
             observer.disconnect();
             window.removeEventListener('resize', updateFit);
         };
-    }, [canvasWidth, canvasHeight, width, height]);
+    }, [canvasWidth, canvasHeight, width, height, isStudent]);
 
     // Fullscreen scaling
     const [fullscreenScale, setFullscreenScale] = useState(1);
     useEffect(() => {
-        if (!isFullscreen) {
+        if (!isFullscreen || !isStudent) {
             setFullscreenScale(1);
             return;
         }
         const updateScale = () => {
-            const wScale = window.innerWidth / width;
-            const hScale = window.innerHeight / height;
-            setFullscreenScale(Math.min(wScale, hScale) * 0.95);
+            const wScale = window.innerWidth / (canvasWidth || width || 1920);
+            const hScale = window.innerHeight / (canvasHeight || height || 1080);
+            setFullscreenScale(Math.max(0.15, Math.min(Math.min(wScale, hScale), 4.0)));
         };
         updateScale();
         window.addEventListener('resize', updateScale);
         return () => window.removeEventListener('resize', updateScale);
-    }, [isFullscreen, width, height]);
+    }, [isFullscreen, isStudent, canvasWidth, canvasHeight, width, height]);
 
     // Scale factors for constant-sized context toolbars across canvas zoom, auto-fit container bounds, and fullscreen
     const currentZoom = ((isFullscreen ? fullscreenScale : containerFitScale) * zoomLevel) || 1;
@@ -2247,27 +2349,46 @@ export default function Whiteboard({
 
     // ─── Touch & Apple Pencil Gestures (Two-Finger Pinch Zoom & Pan) ───
     useEffect(() => {
-        const wrapper = canvasWrapperRef.current;
-        if (!wrapper) return;
+        const container = canvasContainerRef.current;
+        if (!container) return;
 
         let initialDist = 0;
         let initialZoom = 1;
         let initialMidpoint = { x: 0, y: 0 };
         let initialPan = { x: 0, y: 0 };
         let isPinching = false;
+        const fitMultiplier = isFullscreen ? fullscreenScale : containerFitScale;
 
         const handleTouchStart = (e) => {
-            if (e.touches && e.touches.length === 2) {
+            if (e.touches && e.touches.length >= 2) {
                 isPinching = true;
+                // Abort any accidental 1-finger ink stroke when second finger lands for pinch/pan
+                if (isDrawingRef.current) {
+                    clearLiveStrokeCanvas();
+                    isDrawingRef.current = false;
+                    setIsDrawing(false);
+                    currentPathPointsRef.current = [];
+                    activePointerIdRef.current = null;
+                    activePointerTypeRef.current = null;
+                    lastPointRef.current = null;
+                    if (strokeHoldTimerRef.current) {
+                        clearTimeout(strokeHoldTimerRef.current);
+                        strokeHoldTimerRef.current = null;
+                    }
+                    if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                    }
+                }
                 const t1 = e.touches[0];
                 const t2 = e.touches[1];
                 initialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-                initialZoom = zoomLevel;
+                initialZoom = zoomLevelRef.current;
                 initialMidpoint = {
                     x: (t1.clientX + t2.clientX) / 2,
                     y: (t1.clientY + t2.clientY) / 2
                 };
-                initialPan = { ...panOffset };
+                initialPan = { ...panOffsetRef.current };
             }
         };
 
@@ -2279,20 +2400,23 @@ export default function Whiteboard({
                 const t1 = e.touches[0];
                 const t2 = e.touches[1];
                 const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+                let activeZoom = initialZoom;
                 if (initialDist > 0) {
                     const scaleFactor = currentDist / initialDist;
                     const newZoom = Math.max(0.2, Math.min(3.5, initialZoom * scaleFactor));
-                    setZoomLevel(Math.round(newZoom * 100) / 100);
+                    activeZoom = Math.round(newZoom * 100) / 100;
+                    setZoomLevel(activeZoom);
                 }
                 const currentMidpoint = {
                     x: (t1.clientX + t2.clientX) / 2,
                     y: (t1.clientY + t2.clientY) / 2
                 };
-                const dx = (currentMidpoint.x - initialMidpoint.x) / zoomLevel;
-                const dy = (currentMidpoint.y - initialMidpoint.y) / zoomLevel;
+                const effectiveScale = (fitMultiplier * activeZoom) || 1;
+                const dx = (currentMidpoint.x - initialMidpoint.x) / effectiveScale;
+                const dy = (currentMidpoint.y - initialMidpoint.y) / effectiveScale;
                 setPanOffset({
-                    x: initialPan.x + dx,
-                    y: initialPan.y + dy
+                    x: Math.round(initialPan.x + dx),
+                    y: Math.round(initialPan.y + dy)
                 });
             }
         };
@@ -2303,16 +2427,18 @@ export default function Whiteboard({
             }
         };
 
-        wrapper.addEventListener('touchstart', handleTouchStart, { passive: true });
-        wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
-        wrapper.addEventListener('touchend', handleTouchEnd, { passive: true });
+        container.addEventListener('touchstart', handleTouchStart, { passive: true });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchend', handleTouchEnd, { passive: true });
+        container.addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
         return () => {
-            wrapper.removeEventListener('touchstart', handleTouchStart);
-            wrapper.removeEventListener('touchmove', handleTouchMove);
-            wrapper.removeEventListener('touchend', handleTouchEnd);
+            container.removeEventListener('touchstart', handleTouchStart);
+            container.removeEventListener('touchmove', handleTouchMove);
+            container.removeEventListener('touchend', handleTouchEnd);
+            container.removeEventListener('touchcancel', handleTouchEnd);
         };
-    }, [zoomLevel, panOffset]);
+    }, [clearLiveStrokeCanvas, isFullscreen, fullscreenScale, containerFitScale]);
 
     // ─── Grab / Pan Tool Physics & Momentum Inertia Engine ───
     const [isGrabbing, setIsGrabbing] = useState(false);
@@ -2487,7 +2613,7 @@ export default function Whiteboard({
                     if (state.pages && state.pages[state.currentPage || 0]) {
                         const canvas = canvasRef.current;
                         if (canvas) {
-                            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                            const ctx = canvas.getContext('2d');
                             const img = new Image();
                             img.onload = () => {
                                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -2699,7 +2825,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         // Clear canvas (transparent) - CSS background will show through
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -2870,7 +2996,7 @@ export default function Whiteboard({
             const canvas = canvasRef.current;
             if (!canvas) return;
 
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
 
@@ -2953,7 +3079,7 @@ export default function Whiteboard({
             if (data.sessionId !== sessionId) return;
             const canvas = canvasRef.current;
             if (!canvas) return;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             setImageObjects([]);
             setTextObjects([]);
@@ -3036,7 +3162,7 @@ export default function Whiteboard({
             const canvas = canvasRef.current;
             if (!canvas || !data.imageData) return;
 
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             const img = new Image();
             img.onload = () => {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -3222,7 +3348,7 @@ export default function Whiteboard({
                     if (data.quizObjects) setQuizObjects(data.quizObjects);
                     if (data.aiPanels) setAiPanels(data.aiPanels);
                     if (data.imageData && canvasRef.current) {
-                        const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
+                        const ctx = canvasRef.current.getContext('2d');
                         const img = new Image();
                         img.onload = () => {
                             ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
@@ -3317,7 +3443,7 @@ export default function Whiteboard({
         const stateSnapshot = currentHistory[index];
         const imgData = typeof stateSnapshot === 'string' ? stateSnapshot : stateSnapshot.imageData;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         const img = new Image();
         img.onload = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -3390,7 +3516,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         // Clear canvas (transparent) to show CSS background
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -3427,7 +3553,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         let imageData;
         if (selection.path) {
             const offCanvas = document.createElement('canvas');
@@ -3479,7 +3605,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         if (selection.path) {
             ctx.save();
             ctx.beginPath();
@@ -3508,7 +3634,7 @@ export default function Whiteboard({
         if (width <= 0 || height <= 0) return;
 
         if (canvas) {
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             // Create temporary canvas of the selected region
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = width;
@@ -3931,7 +4057,7 @@ export default function Whiteboard({
         
         if (item.type === 'drawing') {
             if (!canvas) return;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             
             const x = Math.round(targetX - item.width / 2);
             const y = Math.round(targetY - item.height / 2);
@@ -4255,7 +4381,7 @@ export default function Whiteboard({
         const canvas = canvasRef.current;
         if (!canvas) return;
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         if (selection.path) {
             ctx.save();
             ctx.beginPath();
@@ -5519,7 +5645,7 @@ export default function Whiteboard({
                     const padding = 60;
                     const scaleX = (container.clientWidth - padding) / canvasWidth;
                     const scaleY = (container.clientHeight - padding) / canvasHeight;
-                    const fitScale = Math.max(0.2, Math.min(2, Math.min(scaleX, scaleY)));
+                    const fitScale = Math.max(0.15, Math.min(4, Math.min(scaleX, scaleY)));
                     setZoomLevel(Math.round(fitScale * 100) / 100);
                     setPanOffset({ x: 0, y: 0 });
                     toast('Fit to Screen', { icon: '📐' });
@@ -8092,17 +8218,11 @@ export default function Whiteboard({
         const snapped = classifyAndSnapStroke(pts, isAutoShape, color, strokeWidth, isShift);
         if (!snapped) return;
 
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const liveCtx = getLiveStrokeCtx(true);
+        if (!liveCtx) return;
 
-        // Restore clean pre-stroke bitmap to erase rough freehand stroke
-        if (preStrokeImageDataRef.current) {
-            ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-        }
-
-        // Draw neat snapped shape preview
-        drawSnappedShapePreview(ctx, snapped);
+        // Draw neat snapped shape preview on infinite live scratch layer
+        drawSnappedShapePreview(liveCtx, snapped);
 
         isStrokeSnappedRef.current = true;
         snappedShapeRef.current = snapped;
@@ -8120,7 +8240,7 @@ export default function Whiteboard({
             duration: 1500,
             icon: '✨'
         });
-    }, [tool, isAutoShape, color, strokeWidth, isShiftDown]);
+    }, [tool, isAutoShape, color, strokeWidth, isShiftDown, getLiveStrokeCtx]);
 
     const isPointInPolygon = (px, py, vertices) => {
         if (!vertices || vertices.length < 3) return false;
@@ -8246,7 +8366,7 @@ export default function Whiteboard({
         e.preventDefault();
         let pos = getPosition(e);
         if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            const currentSw = tool === 'highlighter' ? strokeWidth * 4 : strokeWidth;
+            const currentSw = tool === 'highlighter' ? Math.max(strokeWidth * 6, 18) : strokeWidth;
             pos = snapToGuides(pos, shapeObjects, currentSw);
             if (activeInstrumentBoundsRef.current) {
                 pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
@@ -8288,7 +8408,7 @@ export default function Whiteboard({
             // 2. Otherwise perform flood fill on the 2D canvas for freehand drawings
             const canvas = canvasRef.current;
             if (canvas) {
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                const ctx = canvas.getContext('2d');
                 const res = floodFill(ctx, Math.round(pos.x), Math.round(pos.y), {
                     type: fillMode,
                     color: color,
@@ -8322,7 +8442,7 @@ export default function Whiteboard({
         if (tool === 'eyedropper') {
             const canvas = canvasRef.current;
             if (canvas) {
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                const ctx = canvas.getContext('2d');
                 const sampled = sampleColor(ctx, Math.round(pos.x), Math.round(pos.y));
                 if (sampled) {
                     setColor(sampled);
@@ -8335,6 +8455,9 @@ export default function Whiteboard({
 
         // Handle text or shape tool - start drawing boundary area
         if (tool === 'text' || tool === 'shape') {
+            isDrawingRef.current = true;
+            startPosRef.current = pos;
+            currentPosRef.current = pos;
             setIsDrawing(true);
             setStartPos(pos);
             setCurrentPos(pos);
@@ -8363,21 +8486,31 @@ export default function Whiteboard({
             setSelectedMediaId(null);
         }
 
+        isDrawingRef.current = true;
+        startPosRef.current = pos;
+        currentPosRef.current = pos;
         setIsDrawing(true);
-        setStartPos(pos);
-        setCurrentPos(pos);
+        if (tool === 'line' || tool === 'arrow' || tool === 'shape' || tool === 'select' || tool === 'text') {
+            setStartPos(pos);
+            setCurrentPos(pos);
+        }
         lastPointRef.current = pos;
 
         if (tool === 'pen' || tool === 'sparkle' || tool === 'eraser' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.imageSmoothingEnabled = true;
-
-            // Save pre-stroke canvas image data for shape auto-detection/replacement
-            try {
-                preStrokeImageDataRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            } catch (err) {}
+            if (tool === 'eraser') {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.beginPath();
+                ctx.moveTo(pos.x, pos.y);
+            } else {
+                const liveCtx = getLiveStrokeCtx(true);
+                if (liveCtx) {
+                    liveCtx.beginPath();
+                    liveCtx.moveTo(pos.x, pos.y);
+                }
+            }
 
             currentPathPointsRef.current = [pos];
             if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
@@ -8397,9 +8530,6 @@ export default function Whiteboard({
                 }, 2000);
             }
 
-            ctx.beginPath();
-            ctx.moveTo(pos.x, pos.y);
-
             // Emit start event with action description
             const isSparkleAction = tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle');
             const currentAction = tool === 'eraser' ? 'erasing' : (tool === 'highlighter' ? 'highlighting' : (isSparkleAction ? 'sparkle drawing' : (tool === 'line' || tool === 'arrow' ? `drawing ${tool}` : 'drawing with pen')));
@@ -8410,7 +8540,7 @@ export default function Whiteboard({
                 x: pos.x,
                 y: pos.y,
                 color: tool === 'eraser' ? 'eraser' : (tool === 'highlighter' ? highlighterColor : color),
-                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
+                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? Math.max(strokeWidth * 6, 18) : strokeWidth),
                 isHighlighter: tool === 'highlighter',
                 isEraser: tool === 'eraser',
                 action: currentAction
@@ -8433,7 +8563,7 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [getPosition, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId, canUserDraw]);
+    }, [getPosition, getLiveStrokeCtx, tool, color, strokeWidth, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId, canUserDraw, triggerHoldSnap]);
 
     // Handle text submission - creates a text object for manipulation
     const handleTextSubmit = useCallback(() => {
@@ -8469,37 +8599,50 @@ export default function Whiteboard({
 
     // Draw
     const draw = useCallback((e) => {
-        if (!isDrawing) return;
+        if (!isDrawingRef.current) return;
         wasDraggingRef.current = true;
-        e.preventDefault();
+        if (e.cancelable) e.preventDefault();
 
-        let pos = getPosition(e);
-        if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
-            pos = snapToGuides(pos, shapeObjects);
-            if (activeInstrumentBoundsRef.current) {
-                pos = clampPointToInstrumentOuterEdge(pos, activeInstrumentBoundsRef.current);
-            }
-        }
+        const rawEvents = (
+            (tool === 'pen' || tool === 'highlighter' || tool === 'eraser' || tool === 'sparkle') &&
+            typeof e.nativeEvent?.getCoalescedEvents === 'function'
+        )
+            ? e.nativeEvent.getCoalescedEvents()
+            : null;
+        const pointerSamples = rawEvents && rawEvents.length > 0 ? rawEvents : [e];
 
-        // Filter sub-pixel jitter on tablet glass / digitizers
-        if (lastPointRef.current && (tool === 'pen' || tool === 'eraser' || tool === 'highlighter')) {
-            const dist = Math.hypot(pos.x - lastPointRef.current.x, pos.y - lastPointRef.current.y);
-            if (dist < 1.0) {
-                return; // Ignore sub-pixel vibration
+        const resolvePoint = (sampleEvt) => {
+            let p = getPosition(sampleEvt);
+            if (tool === 'pen' || tool === 'highlighter' || tool === 'line' || tool === 'arrow') {
+                p = snapToGuides(p, shapeObjects);
+                if (activeInstrumentBoundsRef.current) {
+                    p = clampPointToInstrumentOuterEdge(p, activeInstrumentBoundsRef.current);
+                }
             }
-        }
-        lastPointRef.current = pos;
-        setCurrentPos(pos);
+            if (lastPointRef.current && (tool === 'pen' || tool === 'eraser' || tool === 'highlighter')) {
+                const dist = Math.hypot(p.x - lastPointRef.current.x, p.y - lastPointRef.current.y);
+                if (dist < 0.5) {
+                    return null;
+                }
+            }
+            lastPointRef.current = p;
+            currentPosRef.current = p;
+            return p;
+        };
 
         if (tool === 'select') {
+            const pos = resolvePoint(e);
+            if (!pos) return;
+            setCurrentPos(pos);
+            const sp = startPosRef.current;
             if (selectMode === 'lasso') {
                 setLassoPath(prev => [...prev, { x: pos.x, y: pos.y }]);
             } else {
                 setSelection({
-                    x: Math.min(startPos.x, pos.x),
-                    y: Math.min(startPos.y, pos.y),
-                    width: Math.abs(pos.x - startPos.x),
-                    height: Math.abs(pos.y - startPos.y)
+                    x: Math.min(sp.x, pos.x),
+                    y: Math.min(sp.y, pos.y),
+                    width: Math.abs(pos.x - sp.x),
+                    height: Math.abs(pos.y - sp.y)
                 });
             }
             return;
@@ -8507,272 +8650,293 @@ export default function Whiteboard({
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
 
         if (tool === 'highlighter') {
             const pts = currentPathPointsRef.current;
-            pts.push(pos);
-
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+            let added = false;
+            for (const sEvt of pointerSamples) {
+                const p = resolvePoint(sEvt);
+                if (p) {
+                    pts.push(p);
+                    added = true;
+                }
             }
+            if (!added || pts.length === 0) return;
 
-            ctx.beginPath();
-            ctx.strokeStyle = highlighterColor;
-            ctx.lineWidth = strokeWidth * 4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.globalCompositeOperation = 'source-over';
+            const liveCtx = getLiveStrokeCtx(true);
+            if (!liveCtx) return;
 
-            ctx.moveTo(pts[0].x, pts[0].y);
+            liveCtx.beginPath();
+            liveCtx.strokeStyle = highlighterColor;
+            liveCtx.lineWidth = Math.max(strokeWidth * 6, 18);
+            liveCtx.lineCap = 'round';
+            liveCtx.lineJoin = 'round';
+            liveCtx.globalCompositeOperation = 'source-over';
+
+            liveCtx.moveTo(pts[0].x, pts[0].y);
             if (pts.length < 3) {
-                ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                liveCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
             } else {
                 for (let i = 1; i < pts.length - 2; i++) {
                     const c = (pts[i].x + pts[i + 1].x) / 2;
                     const d = (pts[i].y + pts[i + 1].y) / 2;
-                    ctx.quadraticCurveTo(pts[i].x, pts[i].y, c, d);
+                    liveCtx.quadraticCurveTo(pts[i].x, pts[i].y, c, d);
                 }
-                ctx.quadraticCurveTo(
+                liveCtx.quadraticCurveTo(
                     pts[pts.length - 2].x,
                     pts[pts.length - 2].y,
                     pts[pts.length - 1].x,
                     pts[pts.length - 1].y
                 );
             }
-            ctx.stroke();
-            ctx.globalCompositeOperation = 'source-over';
+            liveCtx.stroke();
         } else if (tool === 'pen' || tool === 'eraser' || tool === 'sparkle') {
             const pts = currentPathPointsRef.current;
+            let lastProcessedPos = null;
 
-            // Live dragging while hold-snapped (rubber-banding straight line or resizing snapped shape)
-            if (tool === 'pen' && isStrokeSnappedRef.current && snappedShapeRef.current) {
-                const canvas = canvasRef.current;
-                if (!canvas) return;
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                if (preStrokeImageDataRef.current) {
-                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                }
-                const cur = snappedShapeRef.current;
-                if (cur.type === 'line') {
-                    cur.endX = pos.x;
-                    cur.endY = pos.y;
-                    cur.x = Math.min(cur.startX, pos.x);
-                    cur.y = Math.min(cur.startY, pos.y);
-                    cur.width = Math.max(1, Math.abs(pos.x - cur.startX));
-                    cur.height = Math.max(1, Math.abs(pos.y - cur.startY));
-                } else {
-                    cur.width = Math.max(15, Math.abs(pos.x - cur.x));
-                    cur.height = Math.max(15, Math.abs(pos.y - cur.y));
-                }
-                drawSnappedShapePreview(ctx, cur);
-                wasDraggingRef.current = true;
-                return;
-            }
+            for (const sEvt of pointerSamples) {
+                const pos = resolvePoint(sEvt);
+                if (!pos) continue;
+                lastProcessedPos = pos;
 
-            // Hold-to-straighten movement detection & timer management (hold stationary for 2 seconds)
-            if (tool === 'pen' && !isStrokeSnappedRef.current) {
-                const dHold = Math.hypot(pos.x - lastHoldPtRef.current.x, pos.y - lastHoldPtRef.current.y);
-                if (dHold > 12) {
-                    if (strokeHoldTimerRef.current) {
-                        clearTimeout(strokeHoldTimerRef.current);
-                        strokeHoldTimerRef.current = null;
+                // Cancel radial long-press timer once real ink motion has started
+                if (longPressTimerRef.current && pts.length >= 2) {
+                    clearTimeout(longPressTimerRef.current);
+                    longPressTimerRef.current = null;
+                }
+
+                // Live dragging while hold-snapped (rubber-banding straight line or resizing snapped shape)
+                if (tool === 'pen' && isStrokeSnappedRef.current && snappedShapeRef.current) {
+                    const cur = snappedShapeRef.current;
+                    if (cur.type === 'line') {
+                        cur.endX = pos.x;
+                        cur.endY = pos.y;
+                        cur.x = Math.min(cur.startX, pos.x);
+                        cur.y = Math.min(cur.startY, pos.y);
+                        cur.width = Math.max(1, Math.abs(pos.x - cur.startX));
+                        cur.height = Math.max(1, Math.abs(pos.y - cur.startY));
+                    } else {
+                        cur.width = Math.max(15, Math.abs(pos.x - cur.x));
+                        cur.height = Math.max(15, Math.abs(pos.y - cur.y));
                     }
-                    lastHoldPtRef.current = pos;
-                    strokeHoldTimerRef.current = setTimeout(() => {
-                        triggerHoldSnap(pos);
-                    }, 2000);
+                    const liveCtx = getLiveStrokeCtx(true);
+                    if (liveCtx) drawSnappedShapePreview(liveCtx, cur);
+                    wasDraggingRef.current = true;
+                    continue;
                 }
-            }
 
-            if (tool === 'pen' && (e.shiftKey || isShiftDown)) {
-                let snapPos = pos;
-                const dx = pos.x - pts[0].x;
-                const dy = pos.y - pts[0].y;
-                const angle = Math.atan2(dy, dx);
-                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-                const dist = Math.hypot(dx, dy);
-                snapPos = {
-                    x: pts[0].x + Math.cos(snapAngle) * dist,
-                    y: pts[0].y + Math.sin(snapAngle) * dist
-                };
-                currentPathPointsRef.current = [pts[0], snapPos];
-                if (preStrokeImageDataRef.current) {
-                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                // Hold-to-straighten movement detection & timer management (hold stationary for 2 seconds)
+                if (tool === 'pen' && !isStrokeSnappedRef.current) {
+                    const dHold = Math.hypot(pos.x - lastHoldPtRef.current.x, pos.y - lastHoldPtRef.current.y);
+                    if (dHold > 12) {
+                        if (strokeHoldTimerRef.current) {
+                            clearTimeout(strokeHoldTimerRef.current);
+                            strokeHoldTimerRef.current = null;
+                        }
+                        lastHoldPtRef.current = pos;
+                        strokeHoldTimerRef.current = setTimeout(() => {
+                            triggerHoldSnap(pos);
+                        }, 2000);
+                    }
                 }
-                ctx.beginPath();
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.setLineDash(getDashArray(strokeStyle));
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.moveTo(pts[0].x, pts[0].y);
-                ctx.lineTo(snapPos.x, snapPos.y);
-                ctx.stroke();
-                wasDraggingRef.current = true;
-                return;
-            }
-            
-            const ptObj = {
-                x: pos.x,
-                y: pos.y,
-                pressure: currentPressureRef.current || 0.5,
-                timestamp: Date.now()
-            };
-            pts.push(ptObj);
 
-            // If an advanced brush engine is active, render with realistic brush physics
-            if (tool === 'pen' && brushType && brushType !== 'normal') {
-                if (preStrokeImageDataRef.current) {
-                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
+                if (tool === 'pen' && (e.shiftKey || isShiftDown)) {
+                    let snapPos = pos;
+                    const dx = pos.x - pts[0].x;
+                    const dy = pos.y - pts[0].y;
+                    const angle = Math.atan2(dy, dx);
+                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    const dist = Math.hypot(dx, dy);
+                    snapPos = {
+                        x: pts[0].x + Math.cos(snapAngle) * dist,
+                        y: pts[0].y + Math.sin(snapAngle) * dist
+                    };
+                    currentPathPointsRef.current = [pts[0], snapPos];
+                    const liveCtx = getLiveStrokeCtx(true);
+                    if (liveCtx) {
+                        liveCtx.beginPath();
+                        liveCtx.strokeStyle = color;
+                        liveCtx.lineWidth = strokeWidth;
+                        liveCtx.lineCap = 'round';
+                        liveCtx.lineJoin = 'round';
+                        liveCtx.setLineDash(getDashArray(strokeStyle));
+                        liveCtx.globalCompositeOperation = 'source-over';
+                        liveCtx.moveTo(pts[0].x, pts[0].y);
+                        liveCtx.lineTo(snapPos.x, snapPos.y);
+                        liveCtx.stroke();
+                    }
+                    wasDraggingRef.current = true;
+                    continue;
                 }
-                const brushOpts = { color, strokeWidth, opacity: 1 };
-                if (brushType === 'calligraphy') {
-                    renderCalligraphy(ctx, pts, brushOpts);
-                } else if (brushType === 'crayon') {
-                    renderCrayon(ctx, pts, brushOpts);
-                } else if (brushType === 'watercolor') {
-                    renderWatercolor(ctx, pts, brushOpts);
-                } else if (brushType === 'fountain') {
-                    renderFountainPen(ctx, pts, brushOpts);
-                }
-                emitDrawEvent({
-                    type: 'path',
-                    isStart: false,
+
+                const samplePressure = (pressureSensitivity && e.pointerType === 'pen')
+                    ? (sEvt.pressure || currentPressureRef.current || 0.5)
+                    : 0.5;
+                const ptObj = {
                     x: pos.x,
                     y: pos.y,
-                    color: color,
-                    strokeWidth: strokeWidth,
-                    brushType: brushType
-                });
-                return;
-            }
+                    pressure: samplePressure,
+                    timestamp: Date.now()
+                };
+                pts.push(ptObj);
 
-            if (tool === 'pen' && strokeStyle !== 'solid') {
-                if (preStrokeImageDataRef.current) {
-                    ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-                }
-                ctx.beginPath();
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.setLineDash(getDashArray(strokeStyle, strokeWidth));
-                if (pts.length > 0) {
-                    ctx.moveTo(pts[0].x, pts[0].y);
-                    if (pts.length < 3) {
-                        ctx.lineTo(pos.x, pos.y);
-                    } else {
-                        for (let i = 1; i < pts.length - 1; i++) {
-                            const xc = (pts[i].x + pts[i + 1].x) / 2;
-                            const yc = (pts[i].y + pts[i + 1].y) / 2;
-                            ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                // If an advanced brush engine is active, render with realistic brush physics
+                if (tool === 'pen' && brushType && brushType !== 'normal') {
+                    const liveCtx = getLiveStrokeCtx(true);
+                    if (liveCtx) {
+                        const brushOpts = { color, strokeWidth, opacity: 1 };
+                        if (brushType === 'calligraphy') {
+                            renderCalligraphy(liveCtx, pts, brushOpts);
+                        } else if (brushType === 'crayon') {
+                            renderCrayon(liveCtx, pts, brushOpts);
+                        } else if (brushType === 'watercolor') {
+                            renderWatercolor(liveCtx, pts, brushOpts);
+                        } else if (brushType === 'fountain') {
+                            renderFountainPen(liveCtx, pts, brushOpts);
                         }
-                        ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
                     }
-                    ctx.stroke();
-                }
-            } else {
-                ctx.beginPath();
-                if (tool === 'eraser') {
-                    ctx.globalCompositeOperation = 'destination-out';
-                    ctx.strokeStyle = 'rgba(0,0,0,1)';
-                    ctx.lineWidth = eraserSize;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.setLineDash([]);
-                } else if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = color || '#f59e0b';
-                    ctx.lineWidth = strokeWidth || 3;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.setLineDash([]);
-                } else { // pen solid
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = color;
-                    ctx.lineWidth = strokeWidth;
-                    ctx.lineCap = 'round';
-                    ctx.lineJoin = 'round';
-                    ctx.setLineDash([]);
+                    emitDrawEvent({
+                        type: 'path',
+                        isStart: false,
+                        x: pos.x,
+                        y: pos.y,
+                        color: color,
+                        strokeWidth: strokeWidth,
+                        brushType: brushType
+                    });
+                    continue;
                 }
 
-                if (pts.length < 3) {
-                    const b = pts[0];
-                    ctx.moveTo(b.x, b.y);
-                    ctx.lineTo(pos.x, pos.y);
-                    ctx.stroke();
+                if (tool === 'pen' && strokeStyle !== 'solid') {
+                    const liveCtx = getLiveStrokeCtx(true);
+                    if (liveCtx) {
+                        liveCtx.beginPath();
+                        liveCtx.globalCompositeOperation = 'source-over';
+                        liveCtx.strokeStyle = color;
+                        liveCtx.lineWidth = strokeWidth;
+                        liveCtx.lineCap = 'round';
+                        liveCtx.lineJoin = 'round';
+                        liveCtx.setLineDash(getDashArray(strokeStyle, strokeWidth));
+                        if (pts.length > 0) {
+                            liveCtx.moveTo(pts[0].x, pts[0].y);
+                            if (pts.length < 3) {
+                                liveCtx.lineTo(pos.x, pos.y);
+                            } else {
+                                for (let i = 1; i < pts.length - 1; i++) {
+                                    const xc = (pts[i].x + pts[i + 1].x) / 2;
+                                    const yc = (pts[i].y + pts[i + 1].y) / 2;
+                                    liveCtx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+                                }
+                                liveCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+                            }
+                            liveCtx.stroke();
+                        }
+                    }
                 } else {
-                    // Smooth quadratic curve for smooth antialiased writing
-                    const lastTwo = pts.slice(-3);
-                    const p0 = lastTwo[0];
-                    const p1 = lastTwo[1];
-                    const p2 = lastTwo[2];
-                    const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-                    const mid2 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+                    const drawCtx = tool === 'eraser' ? ctx : getLiveStrokeCtx(false);
+                    if (!drawCtx) continue;
+                    drawCtx.beginPath();
+                    if (tool === 'eraser') {
+                        drawCtx.globalCompositeOperation = 'destination-out';
+                        drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+                        drawCtx.lineWidth = eraserSize;
+                        drawCtx.lineCap = 'round';
+                        drawCtx.lineJoin = 'round';
+                        drawCtx.setLineDash([]);
+                    } else if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
+                        drawCtx.globalCompositeOperation = 'source-over';
+                        drawCtx.strokeStyle = color || '#f59e0b';
+                        drawCtx.lineWidth = strokeWidth || 3;
+                        drawCtx.lineCap = 'round';
+                        drawCtx.lineJoin = 'round';
+                        drawCtx.setLineDash([]);
+                    } else { // pen solid
+                        drawCtx.globalCompositeOperation = 'source-over';
+                        drawCtx.strokeStyle = color;
+                        drawCtx.lineWidth = strokeWidth;
+                        drawCtx.lineCap = 'round';
+                        drawCtx.lineJoin = 'round';
+                        drawCtx.setLineDash([]);
+                    }
 
-                    ctx.moveTo(mid1.x, mid1.y);
-                    ctx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y);
-                    ctx.stroke();
-                }
+                    if (pts.length < 3) {
+                        const b = pts[0];
+                        drawCtx.moveTo(b.x, b.y);
+                        drawCtx.lineTo(pos.x, pos.y);
+                        drawCtx.stroke();
+                    } else {
+                        // Smooth quadratic curve for smooth antialiased writing
+                        const lastTwo = pts.slice(-3);
+                        const p0 = lastTwo[0];
+                        const p1 = lastTwo[1];
+                        const p2 = lastTwo[2];
+                        const mid1 = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+                        const mid2 = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 
-                if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
-                    if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
-                    const particles = currentSparkleParticlesRef.current;
-                    const lastP = particles[particles.length - 1];
-                    const curWidth = tool === 'sparkle' ? 4 : strokeWidth;
-                    if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > Math.max(8, curWidth * 1.5)) {
-                        // Confine sparkle star strictly within the drawn stroke line:
-                        const pSize = Math.max(1.8, Math.min(curWidth * 0.42, 5.5));
-                        const pRot = Math.random() * 90;
-                        const jitterLimit = Math.min(curWidth * 0.2, 2.5);
-                        const pX = pos.x + (Math.random() - 0.5) * jitterLimit;
-                        const pY = pos.y + (Math.random() - 0.5) * jitterLimit;
-                        let pStroke = '#f59e0b';
-                        if (sparkleTheme === 'galaxy') {
-                            const galaxyColors = ['#ffffff', '#c084fc', '#67e8f9', '#a7f3d0', '#fde047', '#e879f9'];
-                            pStroke = galaxyColors[Math.floor(Math.random() * galaxyColors.length)];
-                        } else if (sparkleTheme === 'rainbow') {
-                            const rainbowColors = ['#ffffff', '#fde047', '#f43f5e', '#38bdf8', '#4ade80', '#fb923c'];
-                            pStroke = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
-                        } else if (sparkleTheme === 'gold') {
-                            const goldColors = ['#ffffff', '#fbbf24', '#f59e0b', '#fef3c7', '#d97706'];
-                            pStroke = goldColors[Math.floor(Math.random() * goldColors.length)];
-                        } else if (sparkleTheme === 'emerald') {
-                            const emeraldColors = ['#ffffff', '#6ee7b7', '#34d399', '#10b981', '#06b6d4', '#a7f3d0'];
-                            pStroke = emeraldColors[Math.floor(Math.random() * emeraldColors.length)];
-                        } else {
-                            pStroke = color || '#f59e0b';
+                        drawCtx.moveTo(mid1.x, mid1.y);
+                        drawCtx.quadraticCurveTo(p1.x, p1.y, mid2.x, mid2.y);
+                        drawCtx.stroke();
+                    }
+
+                    if (tool === 'sparkle' || (tool === 'pen' && penMode === 'sparkle')) {
+                        if (!currentSparkleParticlesRef.current) currentSparkleParticlesRef.current = [];
+                        const particles = currentSparkleParticlesRef.current;
+                        const lastP = particles[particles.length - 1];
+                        const curWidth = tool === 'sparkle' ? 4 : strokeWidth;
+                        if (!lastP || Math.hypot(pos.x - lastP.x, pos.y - lastP.y) > Math.max(8, curWidth * 1.5)) {
+                            const pSize = Math.max(1.8, Math.min(curWidth * 0.42, 5.5));
+                            const pRot = Math.random() * 90;
+                            const jitterLimit = Math.min(curWidth * 0.2, 2.5);
+                            const pX = pos.x + (Math.random() - 0.5) * jitterLimit;
+                            const pY = pos.y + (Math.random() - 0.5) * jitterLimit;
+                            let pStroke = '#f59e0b';
+                            if (sparkleTheme === 'galaxy') {
+                                const galaxyColors = ['#ffffff', '#c084fc', '#67e8f9', '#a7f3d0', '#fde047', '#e879f9'];
+                                pStroke = galaxyColors[Math.floor(Math.random() * galaxyColors.length)];
+                            } else if (sparkleTheme === 'rainbow') {
+                                const rainbowColors = ['#ffffff', '#fde047', '#f43f5e', '#38bdf8', '#4ade80', '#fb923c'];
+                                pStroke = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
+                            } else if (sparkleTheme === 'gold') {
+                                const goldColors = ['#ffffff', '#fbbf24', '#f59e0b', '#fef3c7', '#d97706'];
+                                pStroke = goldColors[Math.floor(Math.random() * goldColors.length)];
+                            } else if (sparkleTheme === 'emerald') {
+                                const emeraldColors = ['#ffffff', '#6ee7b7', '#34d399', '#10b981', '#06b6d4', '#a7f3d0'];
+                                pStroke = emeraldColors[Math.floor(Math.random() * emeraldColors.length)];
+                            } else {
+                                pStroke = color || '#f59e0b';
+                            }
+                            const newP = { x: pX, y: pY, size: pSize, rotation: pRot, color: pStroke, opacity: 0.95 };
+                            particles.push(newP);
+                            drawCtx.save();
+                            drawCtx.translate(pX, pY);
+                            drawCtx.rotate((pRot * Math.PI) / 180);
+                            const rOut = pSize;
+                            const rIn = pSize * 0.22;
+                            drawCtx.beginPath();
+                            for (let i = 0; i < 8; i++) {
+                                const r = i % 2 === 0 ? rOut : rIn;
+                                const a = (i * Math.PI) / 4;
+                                const px = Math.cos(a) * r;
+                                const py = Math.sin(a) * r;
+                                if (i === 0) drawCtx.moveTo(px, py);
+                                else drawCtx.lineTo(px, py);
+                            }
+                            drawCtx.closePath();
+                            drawCtx.fillStyle = '#ffffff';
+                            drawCtx.fill();
+                            drawCtx.strokeStyle = pStroke;
+                            drawCtx.lineWidth = 0.75;
+                            drawCtx.stroke();
+                            drawCtx.restore();
                         }
-                        const newP = { x: pX, y: pY, size: pSize, rotation: pRot, color: pStroke, opacity: 0.95 };
-                        particles.push(newP);
-                        ctx.save();
-                        ctx.translate(pX, pY);
-                        ctx.rotate((pRot * Math.PI) / 180);
-                        const rOut = pSize;
-                        const rIn = pSize * 0.22;
-                        ctx.beginPath();
-                        for (let i = 0; i < 8; i++) {
-                            const r = i % 2 === 0 ? rOut : rIn;
-                            const a = (i * Math.PI) / 4;
-                            const px = Math.cos(a) * r;
-                            const py = Math.sin(a) * r;
-                            if (i === 0) ctx.moveTo(px, py);
-                            else ctx.lineTo(px, py);
-                        }
-                        ctx.closePath();
-                        ctx.fillStyle = '#ffffff';
-                        ctx.fill();
-                        ctx.strokeStyle = pStroke;
-                        ctx.lineWidth = 0.75;
-                        ctx.stroke();
-                        ctx.restore();
                     }
                 }
             }
+
+            if (!lastProcessedPos) return;
+            const pos = lastProcessedPos;
 
             if (tool === 'eraser') {
                 ctx.globalCompositeOperation = 'source-over';
@@ -8970,75 +9134,79 @@ export default function Whiteboard({
                 x: pos.x,
                 y: pos.y,
                 color: tool === 'eraser' ? 'eraser' : (tool === 'highlighter' ? highlighterColor : color),
-                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? strokeWidth * 4 : strokeWidth),
+                strokeWidth: tool === 'eraser' ? eraserSize : (tool === 'highlighter' ? Math.max(strokeWidth * 6, 18) : strokeWidth),
                 isHighlighter: tool === 'highlighter',
                 isEraser: tool === 'eraser',
                 strokeStyle: tool === 'pen' ? strokeStyle : undefined
             });
         } else if (tool === 'line' || tool === 'arrow') {
+            const pos = resolvePoint(e);
+            if (!pos) return;
+            const sp = startPosRef.current;
             const isShift = !!(e.shiftKey || isShiftDown);
             let targetPos = pos;
             if (isShift) {
-                const dx = pos.x - startPos.x;
-                const dy = pos.y - startPos.y;
+                const dx = pos.x - sp.x;
+                const dy = pos.y - sp.y;
                 const angle = Math.atan2(dy, dx);
                 const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
                 const dist = Math.hypot(dx, dy);
                 targetPos = {
-                    x: startPos.x + Math.cos(snapAngle) * dist,
-                    y: startPos.y + Math.sin(snapAngle) * dist
+                    x: sp.x + Math.cos(snapAngle) * dist,
+                    y: sp.y + Math.sin(snapAngle) * dist
                 };
             }
+            currentPosRef.current = targetPos;
             setCurrentPos(targetPos);
 
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
-            if (tool === 'line') {
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.setLineDash(getDashArray(strokeStyle));
-                ctx.beginPath();
-                ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(targetPos.x, targetPos.y);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            } else { // arrow
-                ctx.strokeStyle = color;
-                ctx.lineWidth = strokeWidth;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(startPos.x, startPos.y);
-                ctx.lineTo(targetPos.x, targetPos.y);
-                ctx.stroke();
+            const liveCtx = getLiveStrokeCtx(true);
+            if (liveCtx) {
+                if (tool === 'line') {
+                    liveCtx.strokeStyle = color;
+                    liveCtx.lineWidth = strokeWidth;
+                    liveCtx.lineCap = 'round';
+                    liveCtx.setLineDash(getDashArray(strokeStyle));
+                    liveCtx.beginPath();
+                    liveCtx.moveTo(sp.x, sp.y);
+                    liveCtx.lineTo(targetPos.x, targetPos.y);
+                    liveCtx.stroke();
+                    liveCtx.setLineDash([]);
+                } else { // arrow
+                    liveCtx.strokeStyle = color;
+                    liveCtx.lineWidth = strokeWidth;
+                    liveCtx.lineCap = 'round';
+                    liveCtx.beginPath();
+                    liveCtx.moveTo(sp.x, sp.y);
+                    liveCtx.lineTo(targetPos.x, targetPos.y);
+                    liveCtx.stroke();
 
-                const headLength = strokeWidth * 4;
-                const angle = Math.atan2(targetPos.y - startPos.y, targetPos.x - startPos.x);
-                ctx.beginPath();
-                ctx.moveTo(targetPos.x, targetPos.y);
-                ctx.lineTo(targetPos.x - headLength * Math.cos(angle - Math.PI / 6), targetPos.y - headLength * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(targetPos.x - headLength * Math.cos(angle + Math.PI / 6), targetPos.y - headLength * Math.sin(angle + Math.PI / 6));
-                ctx.closePath();
-                ctx.fillStyle = color;
-                ctx.fill();
+                    const headLength = strokeWidth * 4;
+                    const angle = Math.atan2(targetPos.y - sp.y, targetPos.x - sp.x);
+                    liveCtx.beginPath();
+                    liveCtx.moveTo(targetPos.x, targetPos.y);
+                    liveCtx.lineTo(targetPos.x - headLength * Math.cos(angle - Math.PI / 6), targetPos.y - headLength * Math.sin(angle - Math.PI / 6));
+                    liveCtx.lineTo(targetPos.x - headLength * Math.cos(angle + Math.PI / 6), targetPos.y - headLength * Math.sin(angle + Math.PI / 6));
+                    liveCtx.closePath();
+                    liveCtx.fillStyle = color;
+                    liveCtx.fill();
+                }
             }
         } else if (tool === 'shape') {
+            const pos = resolvePoint(e);
+            if (!pos) return;
+            const sp = startPosRef.current;
             const isShift = !!(e.shiftKey || isShiftDown);
-            let w = Math.abs(pos.x - startPos.x);
-            let h = Math.abs(pos.y - startPos.y);
-            let x = Math.min(startPos.x, pos.x);
-            let y = Math.min(startPos.y, pos.y);
+            let w = Math.abs(pos.x - sp.x);
+            let h = Math.abs(pos.y - sp.y);
+            let x = Math.min(sp.x, pos.x);
+            let y = Math.min(sp.y, pos.y);
 
             if (shapeType === 'circle' && isShift) {
                 const size = Math.max(w, h);
                 w = size;
                 h = size;
-                x = pos.x < startPos.x ? startPos.x - size : startPos.x;
-                y = pos.y < startPos.y ? startPos.y - size : startPos.y;
+                x = pos.x < sp.x ? sp.x - size : sp.x;
+                y = pos.y < sp.y ? sp.y - size : sp.y;
             }
 
             setShapePreview({
@@ -9051,6 +9219,8 @@ export default function Whiteboard({
                 strokeWidth
             });
         } else if (tool === 'laser') {
+            const pos = resolvePoint(e);
+            if (!pos) return;
             setLaserPos(pos);
             latestLaserPosRef.current = pos;
             if (laserTimeoutRef.current) {
@@ -9064,12 +9234,14 @@ export default function Whiteboard({
                 });
             }
         }
-    }, [isDrawing, getPosition, tool, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, emitDrawEvent, broadcastAction, isSharing, socket, sessionId]);
+    }, [getPosition, getLiveStrokeCtx, tool, color, strokeWidth, strokeStyle, eraserSize, eraserMode, highlighterColor, brushType, penMode, sparkleTheme, pressureSensitivity, shapeType, selectMode, isShiftDown, shapeObjects, emitDrawEvent, triggerHoldSnap, isSharing, socket, sessionId]);
 
     // Stop drawing
     const stopDrawing = useCallback((e) => {
-        if (!isDrawing) return;
-        e.preventDefault();
+        if (!isDrawingRef.current) return;
+        isDrawingRef.current = false;
+        clearLiveStrokeCanvas();
+        if (e?.cancelable) e.preventDefault();
 
         // Clear hold-to-straighten timer immediately on pointer up
         if (strokeHoldTimerRef.current) {
@@ -9078,20 +9250,19 @@ export default function Whiteboard({
         }
 
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!canvas) {
+            setIsDrawing(false);
+            return;
+        }
+        const ctx = canvas.getContext('2d');
         ctx.imageSmoothingEnabled = true;
 
         // 1. If stroke was snapped via hold gesture, commit the neat snapped shape directly!
         if (isStrokeSnappedRef.current && snappedShapeRef.current) {
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
             const snapped = snappedShapeRef.current;
             isStrokeSnappedRef.current = false;
             snappedShapeRef.current = null;
             currentPathPointsRef.current = [];
-            preStrokeImageDataRef.current = null;
             setIsDrawing(false);
 
             let committedShape = null;
@@ -9151,13 +9322,11 @@ export default function Whiteboard({
         }
 
         const rawPos = getPosition(e);
-        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPos;
+        const pos = (rawPos && !isNaN(rawPos.x) && !isNaN(rawPos.y) && rawPos.x !== 0 && rawPos.y !== 0) ? rawPos : currentPosRef.current;
+        const sp = startPosRef.current;
 
         if (tool === 'pen' || tool === 'highlighter') {
             const pts = currentPathPointsRef.current;
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
 
             // 0. iPad-style Scratch-Out Scribble Gesture: Rapid deliberate zigzag over ink strokes erases them
             // NEVER trigger when OCR handwriting recognition, math conversion, or text editing is active!
@@ -9344,7 +9513,7 @@ export default function Whiteboard({
                         points: relPoints,
                         rotation: 0,
                         color: tool === 'highlighter' ? highlighterColor : color,
-                        strokeWidth: tool === 'highlighter' ? strokeWidth * 4 : strokeWidth,
+                        strokeWidth: tool === 'highlighter' ? Math.max(strokeWidth * 6, 18) : strokeWidth,
                         borderStyle: strokeStyle,
                         strokeStyle: strokeStyle,
                         smooth: true,
@@ -9417,26 +9586,23 @@ export default function Whiteboard({
             }
             currentSparkleParticlesRef.current = [];
         } else if (tool === 'line') {
-            if (preStrokeImageDataRef.current) {
-                ctx.putImageData(preStrokeImageDataRef.current, 0, 0);
-            }
             
             const isShift = !!(e?.shiftKey || isShiftDown);
             let finalPosX = pos.x;
             let finalPosY = pos.y;
             if (isShift) {
-                const dx = pos.x - startPos.x;
-                const dy = pos.y - startPos.y;
+                const dx = pos.x - sp.x;
+                const dy = pos.y - sp.y;
                 const angle = Math.atan2(dy, dx);
                 const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
                 const dist = Math.hypot(dx, dy);
-                finalPosX = startPos.x + Math.cos(snapAngle) * dist;
-                finalPosY = startPos.y + Math.sin(snapAngle) * dist;
+                finalPosX = sp.x + Math.cos(snapAngle) * dist;
+                finalPosY = sp.y + Math.sin(snapAngle) * dist;
             }
-            const minX = Math.min(startPos.x, finalPosX);
-            const minY = Math.min(startPos.y, finalPosY);
-            const w = Math.abs(startPos.x - finalPosX) || 1;
-            const h = Math.abs(startPos.y - finalPosY) || 1;
+            const minX = Math.min(sp.x, finalPosX);
+            const minY = Math.min(sp.y, finalPosY);
+            const w = Math.abs(sp.x - finalPosX) || 1;
+            const h = Math.abs(sp.y - finalPosY) || 1;
 
             if (lineType.startsWith('connector')) {
                 const nonConnectorShapes = [
@@ -9444,12 +9610,13 @@ export default function Whiteboard({
                     ...imageObjects,
                     ...textObjects
                 ];
-                const startSnap = findNearestShape(startPos, nonConnectorShapes, 50);
+                const startSnap = findNearestShape(sp, nonConnectorShapes, 50);
                 const endSnap = findNearestShape(pos, nonConnectorShapes, 50);
 
                 if (!startSnap || !endSnap || startSnap.shape.id === endSnap.shape.id) {
                     toast.error("Connectors must connect two distinct elements. Please start and end on hooks.", { id: 'connector-must-snap' });
                     setTool('select');
+                    setIsDrawing(false);
                     return;
                 }
 
@@ -9494,8 +9661,8 @@ export default function Whiteboard({
                     height: h,
                     originalWidth: w,
                     originalHeight: h,
-                    startX: startPos.x - minX,
-                    startY: startPos.y - minY,
+                    startX: sp.x - minX,
+                    startY: sp.y - minY,
                     endX: finalPosX - minX,
                     endY: finalPosY - minY,
                     rotation: 0,
@@ -9515,17 +9682,17 @@ export default function Whiteboard({
         } else if (tool === 'shape') {
             setShapePreview(null);
             const isShift = !!(e?.shiftKey || isShiftDown);
-            let w = Math.abs(pos.x - startPos.x);
-            let h = Math.abs(pos.y - startPos.y);
-            let x = Math.min(startPos.x, pos.x);
-            let y = Math.min(startPos.y, pos.y);
+            let w = Math.abs(pos.x - sp.x);
+            let h = Math.abs(pos.y - sp.y);
+            let x = Math.min(sp.x, pos.x);
+            let y = Math.min(sp.y, pos.y);
 
             if (shapeType === 'circle' && isShift) {
                 const size = Math.max(w, h);
                 w = size;
                 h = size;
-                x = pos.x < startPos.x ? startPos.x - size : startPos.x;
-                y = pos.y < startPos.y ? startPos.y - size : startPos.y;
+                x = pos.x < sp.x ? sp.x - size : sp.x;
+                y = pos.y < sp.y ? sp.y - size : sp.y;
             }
 
             if (w > 5 || h > 5) {
@@ -9700,10 +9867,10 @@ export default function Whiteboard({
                 }
                 setLassoPath([]);
             } else {
-                const x = Math.min(startPos.x, pos.x);
-                const y = Math.min(startPos.y, pos.y);
-                const selWidth = Math.abs(pos.x - startPos.x);
-                const selHeight = Math.abs(pos.y - startPos.y);
+                const x = Math.min(sp.x, pos.x);
+                const y = Math.min(sp.y, pos.y);
+                const selWidth = Math.abs(pos.x - sp.x);
+                const selHeight = Math.abs(pos.y - sp.y);
 
                 if (selWidth > 5 && selHeight > 5) {
                     let selectedShapes = shapeObjects.filter(shape => 
@@ -9795,10 +9962,10 @@ export default function Whiteboard({
                 }
             }
         } else if (tool === 'text') {
-            const x = Math.min(startPos.x, pos.x);
-            const y = Math.min(startPos.y, pos.y);
-            const textWidth = Math.max(160, Math.abs(pos.x - startPos.x));
-            const textHeight = Math.max(44, Math.abs(pos.y - startPos.y));
+            const x = Math.min(sp.x, pos.x);
+            const y = Math.min(sp.y, pos.y);
+            const textWidth = Math.max(160, Math.abs(pos.x - sp.x));
+            const textHeight = Math.max(44, Math.abs(pos.y - sp.y));
 
             const newTextId = `txt_${Date.now()}`;
             const newTextObj = {
@@ -9833,7 +10000,7 @@ export default function Whiteboard({
         if (tool !== 'select' && tool !== 'laser' && tool !== 'text' && tool !== 'shape') {
             saveToHistory();
         }
-    }, [isDrawing, getPosition, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, broadcastAction, setShapeObjects, shapeObjects, isSharing, socket, sessionId, startPos, currentPos]);
+    }, [getPosition, clearLiveStrokeCanvas, tool, isAutoShape, color, strokeWidth, strokeStyle, eraserSize, highlighterColor, lineType, shapeType, saveToHistory, emitDrawEvent, broadcastAction, setShapeObjects, shapeObjects, isSharing, socket, sessionId]);
 
     // Dedicated pointer event handlers with Apple Pencil palm rejection & gesture stabilization
     const handlePointerDown = useCallback((e) => {
@@ -9919,11 +10086,21 @@ export default function Whiteboard({
             setShowRadialMenu(false);
         }
 
+        // Recover cleanly from missed pointerup/pointercancel so new strokes are never locked out
+        if (!isDrawingRef.current && activePointerIdRef.current !== null) {
+            activePointerIdRef.current = null;
+            activePointerTypeRef.current = null;
+        }
+
         // 1. Palm Rejection Logic
         if (e.pointerType === 'pen') {
             if (penReleaseTimeoutRef.current) {
                 clearTimeout(penReleaseTimeoutRef.current);
                 penReleaseTimeoutRef.current = null;
+            }
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
             }
             isPenActiveRef.current = true;
             activePointerIdRef.current = e.pointerId;
@@ -9934,16 +10111,18 @@ export default function Whiteboard({
                 currentPressureRef.current = e.pressure || 0.5;
             }
 
-            // Start long-press timer for radial toolbar (400ms)
+            // Start long-press timer for radial toolbar (550ms while stationary)
             longPressStartPosRef.current = { x: e.clientX, y: e.clientY };
             longPressTimerRef.current = setTimeout(() => {
+                longPressTimerRef.current = null;
+                if (!isDrawingRef.current || currentPathPointsRef.current.length > 2) return;
                 const wrapper = canvasWrapperRef.current;
                 if (wrapper) {
                     const rect = wrapper.getBoundingClientRect();
                     setRadialMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
                     setShowRadialMenu(true);
                 }
-            }, 400);
+            }, 550);
 
             try {
                 e.currentTarget?.setPointerCapture?.(e.pointerId);
@@ -9951,6 +10130,10 @@ export default function Whiteboard({
         } else if (e.pointerType === 'touch') {
             // Drop touch event if Apple Pencil is currently writing (true palm rejection!)
             if (isPenActiveRef.current) {
+                return;
+            }
+            // Reject oversized palm/wrist contacts common on Android panels & tablets
+            if (tool !== 'eraser' && ((e.width && e.width > 110) || (e.height && e.height > 110))) {
                 return;
             }
             // Drop secondary touch points (e.g. resting palm while drawing with finger)
@@ -9966,6 +10149,12 @@ export default function Whiteboard({
             if (e.button !== 0) return; // Left mouse button only
             activePointerIdRef.current = e.pointerId;
             activePointerTypeRef.current = 'mouse';
+            try {
+                e.currentTarget?.setPointerCapture?.(e.pointerId);
+            } catch (_) {}
+        } else if (e.pointerId !== undefined) {
+            activePointerIdRef.current = e.pointerId;
+            activePointerTypeRef.current = e.pointerType || 'unknown';
             try {
                 e.currentTarget?.setPointerCapture?.(e.pointerId);
             } catch (_) {}
@@ -10049,7 +10238,7 @@ export default function Whiteboard({
             }
         }
 
-        if (!isDrawing) {
+        if (!isDrawingRef.current) {
             if (socket && sessionId && Date.now() - cursorLastEmitRef.current > 60) {
                 cursorLastEmitRef.current = Date.now();
                 const pos = movePos;
@@ -10076,9 +10265,13 @@ export default function Whiteboard({
         }
 
         draw(e);
-    }, [isDrawing, draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool, currentZoom]);
+    }, [draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool, currentZoom]);
 
     const handlePointerUp = useCallback((e) => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
         if (e.cancelable) {
             e.preventDefault();
         }
@@ -10119,6 +10312,10 @@ export default function Whiteboard({
     }, [stopDrawing, currentZoom, startInertiaGlide]);
 
     const handlePointerCancel = useCallback((e) => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
         if (e.cancelable) {
             e.preventDefault();
         }
@@ -10153,15 +10350,15 @@ export default function Whiteboard({
             setLaserPos(null);
             setLaserTrail([]);
         }
-        if (isDrawing && (!e.currentTarget?.hasPointerCapture || !e.currentTarget.hasPointerCapture(e.pointerId))) {
+        if (isDrawingRef.current && (!e.currentTarget?.hasPointerCapture || !e.currentTarget.hasPointerCapture(e.pointerId))) {
             handlePointerUp(e);
         }
-    }, [isDrawing, handlePointerUp, tool]);
+    }, [handlePointerUp, tool]);
 
     // Prevent iOS/browser rubber-band bounce on canvas touchmove without breaking touch/pencil clicks
     useEffect(() => {
-        const wrapper = canvasWrapperRef.current;
-        if (!wrapper) return;
+        const container = canvasContainerRef.current;
+        if (!container) return;
 
         const handleTouchMove = (e) => {
             // Allow native touch interaction inside interactive UI, panels, modals, and controls
@@ -10187,10 +10384,10 @@ export default function Whiteboard({
             }
         };
 
-        wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
 
         return () => {
-            wrapper.removeEventListener('touchmove', handleTouchMove);
+            container.removeEventListener('touchmove', handleTouchMove);
         };
     }, []);
 
@@ -12319,7 +12516,7 @@ export default function Whiteboard({
         setSelectedGraphId(null);
         setSelection(null);
 
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
         if (pages[pageIndex]) {
             const img = new Image();
             img.onload = () => {
@@ -12384,7 +12581,7 @@ export default function Whiteboard({
 
         const canvas = canvasRef.current;
         if (canvas) {
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            const ctx = canvas.getContext('2d');
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
         saveToHistory();
@@ -21882,23 +22079,20 @@ export default function Whiteboard({
                 <div 
                     ref={toolbarRef}
                     style={{
-                        ...(isFloating ? { left: `${toolbarPos.x}px`, top: `${toolbarPos.y}px`, transform: 'none' } : {}),
-                        WebkitBackfaceVisibility: 'hidden',
-                        backfaceVisibility: 'hidden',
-                        willChange: 'transform, opacity'
+                        ...(isFloating ? { left: `${Math.round(toolbarPos.x)}px`, top: `${Math.round(toolbarPos.y)}px` } : {}),
                     }}
-                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-all duration-200'} ${
-                    !isStateLoaded ? 'pointer-events-none opacity-60 filter blur-[0.5px]' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-95 hover:opacity-100')
+                    className={`absolute bg-slate-900/95 shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-opacity duration-200'} ${
+                    !isStateLoaded ? 'pointer-events-none opacity-60' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-95 hover:opacity-100')
                 } ${
                     toolbarDock === 'top'
-                        ? 'top-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
+                        ? 'top-4 inset-x-0 mx-auto w-fit flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
                         : toolbarDock === 'left'
-                        ? 'left-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        ? 'left-4 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : toolbarDock === 'right'
-                        ? 'right-4 top-1/2 transform -translate-y-1/2 flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        ? 'right-4 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
                         : isFloating
                         ? 'flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
-                        : 'bottom-4 left-1/2 transform -translate-x-1/2 flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
+                        : 'bottom-4 inset-x-0 mx-auto w-fit flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
                 }`}>
                     {/* Floatable Toolbar Drag Grip */}
                     <div
@@ -22072,7 +22266,7 @@ export default function Whiteboard({
                                             if (t.id === 'image') setShowImagePicker(true);
                                         }
                                     }}
-                                    className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
+                                    className={`p-1.5 rounded-xl transition-colors flex items-center justify-center relative ${
                                         (tool === t.id ||
                                         (t.id === 'math_tablet' && showMathTablet) ||
                                         (t.id === 'math_solver' && showMathSolver) ||
@@ -22086,8 +22280,8 @@ export default function Whiteboard({
                                         (t.id === 'tasks' && showTasksPanel) ||
                                         (t.id === 'table' && showTableModal) ||
                                         (t.id === 'fill' && showFillPicker))
-                                            ? 'bg-slate-800 text-white shadow-lg ring-2 ring-primary-500/60 scale-105 border border-primary-500/40'
-                                            : 'text-slate-300 hover:bg-slate-800/70 hover:scale-105'
+                                            ? 'bg-slate-800 text-white shadow-lg ring-2 ring-primary-500/70 border border-primary-500/40'
+                                            : 'text-slate-300 hover:bg-slate-800/70'
                                     }`}
                                     title={t.label}
                                 >
@@ -24710,92 +24904,111 @@ export default function Whiteboard({
                     }}
                 />
 
-            {/* Canvas Container - Infinite Canvas with edge-to-edge background */}
-            <div 
+            {/* Canvas Container - Full-bleed Infinite Canvas Stage */}
+            <div
                 ref={canvasContainerRef}
                 className={`flex-1 overflow-hidden p-0 flex items-center justify-center relative touch-none select-none overscroll-none whiteboard-canvas-wrapper ${isFullscreen ? 'h-full' : ''}`}
-                style={{
-                    backgroundColor: bgColor,
-                    filter: `brightness(${whiteboardBrightness}%)`,
-                    backgroundImage: (() => {
-                        switch (bgPattern) {
-                            case 'dotted':
-                                return 'radial-gradient(circle, #999 1.5px, transparent 1.5px)';
-                            case 'grid':
-                                return 'linear-gradient(#ccc 1px, transparent 1px), linear-gradient(90deg, #ccc 1px, transparent 1px)';
-                            case 'lined':
-                                return 'linear-gradient(#ccc 1px, transparent 1px)';
-                            case 'graph':
-                                return 'linear-gradient(#bbb 1px, transparent 1px), linear-gradient(90deg, #bbb 1px, transparent 1px), linear-gradient(#ddd 0.5px, transparent 0.5px), linear-gradient(90deg, #ddd 0.5px, transparent 0.5px)';
-                            case 'music':
-                                return 'repeating-linear-gradient(transparent 0px, transparent 7px, #aaa 8px, #aaa 9px)';
-                            case 'iso':
-                                return 'linear-gradient(60deg, #ccc 1px, transparent 1px), linear-gradient(-60deg, #ccc 1px, transparent 1px), linear-gradient(#ccc 1px, transparent 1px)';
-                            case 'hex':
-                                return 'radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px), radial-gradient(circle, transparent 12px, #ccc 13px, #ccc 14px, transparent 15px)';
-                            default:
-                                return 'none';
-                        }
-                    })(),
-                    backgroundSize: (() => {
-                        const s = currentZoom;
-                        switch (bgPattern) {
-                            case 'dotted': return `${20 * s}px ${20 * s}px`;
-                            case 'grid': return `${25 * s}px ${25 * s}px`;
-                            case 'lined': return `100% ${25 * s}px`;
-                            case 'graph': return `${100 * s}px ${100 * s}px, ${100 * s}px ${100 * s}px, ${20 * s}px ${20 * s}px, ${20 * s}px ${20 * s}px`;
-                            case 'music': return `100% ${40 * s}px`;
-                            case 'iso': return `${30 * s}px ${52 * s}px`;
-                            case 'hex': return `${60 * s}px ${52 * s}px`;
-                            default: return 'auto';
-                        }
-                    })(),
-                    backgroundPosition: (() => {
-                        const s = currentZoom;
-                        const px = panOffset.x * s;
-                        const py = panOffset.y * s;
-                        switch (bgPattern) {
-                            case 'iso': return `calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px}px) calc(50% + ${py}px)`;
-                            case 'hex': return `calc(50% + ${px}px) calc(50% + ${py}px), calc(50% + ${px + 30 * s}px) calc(50% + ${py + 26 * s}px)`;
-                            default: return `calc(50% + ${px}px) calc(50% + ${py}px)`;
-                        }
-                    })()
-                }}
-            >
+                style={(() => {
+                    const effectiveBg = bgColor || '#ffffff';
+                    const z = currentZoom || 1;
+                    const worldOriginX = (viewportSize.width / 2) + z * (panOffset.x - canvasWidth / 2);
+                    const worldOriginY = (viewportSize.height / 2) + z * (panOffset.y - canvasHeight / 2);
+                    const px = Math.round(worldOriginX * 10) / 10;
+                    const py = Math.round(worldOriginY * 10) / 10;
 
-                <div 
-                    ref={canvasWrapperRef}
-                    className={`relative overflow-visible touch-none select-none overscroll-none transition-all duration-300 ${
-                        !isStateLoaded ? 'filter blur-sm pointer-events-none select-none opacity-80' : 'filter-none opacity-100'
-                    }`}
-                    style={{
-                        width: canvasWidth,
-                        height: canvasHeight,
-                        transform: `scale(${currentZoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
-                        transformOrigin: 'center center',
-                        backgroundColor: 'transparent',
+                    let backgroundImage = 'none';
+                    let backgroundSize = 'auto';
+                    let backgroundPosition = `${px}px ${py}px`;
+
+                    switch (bgPattern) {
+                        case 'dotted':
+                            backgroundImage = 'radial-gradient(circle, rgba(148,163,184,0.65) 1.5px, transparent 1.5px)';
+                            backgroundSize = `${20 * z}px ${20 * z}px`;
+                            break;
+                        case 'grid':
+                            backgroundImage = 'linear-gradient(rgba(148,163,184,0.35) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.35) 1px, transparent 1px)';
+                            backgroundSize = `${25 * z}px ${25 * z}px`;
+                            break;
+                        case 'lined':
+                            backgroundImage = 'linear-gradient(rgba(148,163,184,0.4) 1px, transparent 1px)';
+                            backgroundSize = `100% ${25 * z}px`;
+                            break;
+                        case 'graph':
+                            backgroundImage = 'linear-gradient(rgba(148,163,184,0.45) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.45) 1px, transparent 1px), linear-gradient(rgba(148,163,184,0.22) 0.5px, transparent 0.5px), linear-gradient(90deg, rgba(148,163,184,0.22) 0.5px, transparent 0.5px)';
+                            backgroundSize = `${100 * z}px ${100 * z}px, ${100 * z}px ${100 * z}px, ${20 * z}px ${20 * z}px, ${20 * z}px ${20 * z}px`;
+                            break;
+                        case 'music':
+                            backgroundImage = 'repeating-linear-gradient(transparent 0px, transparent 7px, rgba(148,163,184,0.5) 8px, rgba(148,163,184,0.5) 9px)';
+                            backgroundSize = `100% ${40 * z}px`;
+                            break;
+                        case 'iso':
+                            backgroundImage = 'linear-gradient(60deg, rgba(148,163,184,0.35) 1px, transparent 1px), linear-gradient(-60deg, rgba(148,163,184,0.35) 1px, transparent 1px), linear-gradient(rgba(148,163,184,0.35) 1px, transparent 1px)';
+                            backgroundSize = `${30 * z}px ${52 * z}px`;
+                            break;
+                        case 'hex':
+                            backgroundImage = 'radial-gradient(circle, transparent 12px, rgba(148,163,184,0.4) 13px, rgba(148,163,184,0.4) 14px, transparent 15px), radial-gradient(circle, transparent 12px, rgba(148,163,184,0.4) 13px, rgba(148,163,184,0.4) 14px, transparent 15px)';
+                            backgroundSize = `${60 * z}px ${52 * z}px`;
+                            backgroundPosition = `${px}px ${py}px, ${px + 30 * z}px ${py + 26 * z}px`;
+                            break;
+                        default:
+                            break;
+                    }
+
+                    return {
+                        backgroundColor: effectiveBg,
+                        backgroundImage,
+                        backgroundSize,
+                        backgroundPosition,
+                        filter: `brightness(${whiteboardBrightness}%)`,
                         touchAction: 'none',
                         userSelect: 'none',
                         WebkitUserSelect: 'none',
                         WebkitTouchCallout: 'none',
                         overscrollBehavior: 'none',
                         cursor: getCursor()
+                    };
+                })()}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onPointerLeave={handlePointerLeave}
+                onClick={handleCanvasClick}
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    setContextMenuPos({ x: e.clientX, y: e.clientY });
+                }}
+                onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'copy';
+                }}
+                onDrop={handleCanvasDrop}
+            >
+                <canvas
+                    ref={liveStrokeCanvasRef}
+                    className="whiteboard-live-canvas absolute top-0 left-0 w-full h-full touch-none pointer-events-none select-none"
+                    style={{
+                        zIndex: 52,
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: 'transparent',
+                        touchAction: 'none'
                     }}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerCancel={handlePointerCancel}
-                    onPointerLeave={handlePointerLeave}
-                    onClick={handleCanvasClick}
-                    onContextMenu={(e) => {
-                        e.preventDefault();
-                        setContextMenuPos({ x: e.clientX, y: e.clientY });
+                />
+
+                <div
+                    ref={canvasWrapperRef}
+                    className={`relative shrink-0 overflow-visible touch-none select-none overscroll-none transition-opacity duration-300 ${
+                        !isStateLoaded ? 'filter blur-sm pointer-events-none select-none opacity-80' : 'filter-none opacity-100'
+                    }`}
+                    style={{
+                        width: canvasWidth,
+                        height: canvasHeight,
+                        flexShrink: 0,
+                        transform: `scale(${currentZoom}) translate(${panOffset.x}px, ${panOffset.y}px)`,
+                        transformOrigin: 'center center',
+                        backgroundColor: 'transparent'
                     }}
-                    onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'copy';
-                    }}
-                    onDrop={handleCanvasDrop}
                 >
                     {/* SVG Definitions for Fill Patterns & Gradients */}
                     <WhiteboardPatterns
@@ -24812,8 +25025,10 @@ export default function Whiteboard({
                         data-whiteboard-canvas="true"
                         width={canvasWidth}
                         height={canvasHeight}
-                        className="whiteboard-canvas absolute inset-0 touch-none pointer-events-none select-none"
+                        className="whiteboard-canvas absolute top-0 left-0 touch-none pointer-events-none select-none"
                         style={{
+                            width: canvasWidth,
+                            height: canvasHeight,
                             zIndex: 50,
                             backgroundColor: 'transparent',
                             touchAction: 'none'
@@ -24823,12 +25038,12 @@ export default function Whiteboard({
                     {/* Live Preview Overlay - Shows dotted shape preview while drawing */}
                     {isDrawing && (tool === 'line' || tool === 'arrow' || tool === 'rectangle' || tool === 'circle' || tool === 'select' || tool === 'text') && (
                         <svg
-                            className="absolute top-0 left-0 pointer-events-none"
+                            className="absolute top-0 left-0 pointer-events-none overflow-visible"
                             width={canvasWidth}
                             height={canvasHeight}
                             style={{
-                                maxWidth: isFullscreen ? '95vw' : '100%',
-                                maxHeight: isFullscreen ? 'calc(100vh - 200px)' : '100%',
+                                width: '100%',
+                                height: '100%',
                             }}
                             viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
                         >
@@ -27509,10 +27724,12 @@ export default function Whiteboard({
                                             strokeWidth={shpObj.strokeWidth} 
                                             strokeLinecap="round" 
                                             strokeLinejoin="round" 
-                                            opacity={shpObj.isHighlighter ? 0.5 : 1}
+                                            opacity={shpObj.isHighlighter ? (String(shpObj.color || '').includes('rgba') ? 1 : 0.45) : 1}
                                             transform={`scale(${scaleX}, ${scaleY})`}
-                                            vectorEffect="non-scaling-stroke"
-                                            style={{ pointerEvents: 'none' }}
+                                            style={{
+                                                pointerEvents: 'none',
+                                                mixBlendMode: shpObj.isHighlighter ? 'multiply' : undefined
+                                            }}
                                         />
                                     </g>
                                 );
@@ -29448,7 +29665,7 @@ export default function Whiteboard({
                                                     type="button"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        navigator.clipboard.writeText(shpObj.code || shpObj.schemdrawCode || '');
+                                                        navigator.clipboard?.writeText?.(shpObj.code || shpObj.schemdrawCode || '').catch(() => {});
                                                         toast.success('Python code copied to clipboard!', { icon: '📋' });
                                                     }}
                                                     className="absolute top-2 right-2 px-1.5 py-0.5 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-600 transition"
@@ -31676,9 +31893,9 @@ export default function Whiteboard({
                         panOffset={panOffset}
                         setPanOffset={setPanOffset}
                         onPanChange={setPanOffset}
-                        containerRef={canvasWrapperRef}
-                        viewportWidth={canvasWrapperRef.current?.clientWidth || canvasWidth}
-                        viewportHeight={canvasWrapperRef.current?.clientHeight || canvasHeight}
+                        containerRef={canvasContainerRef}
+                        viewportWidth={viewportSize.width}
+                        viewportHeight={viewportSize.height}
                         isDrawing={isDrawing}
                     />
                 )}

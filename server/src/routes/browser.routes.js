@@ -1579,8 +1579,8 @@ router.get('/proxy', asyncHandler(async (req, res) => {
         rawUrl = 'https://www.google.com';
     }
 
-    const appOrigin = `${req.protocol}://${req.get('host')}`;
-    const proxyEndpoint = `${appOrigin}/api/browser/proxy?url=`;
+    const appOrigin = '';
+    const proxyEndpoint = '/api/browser/proxy?url=';
 
     // If user entered a search query instead of a URL, convert to Google Search
     let targetUrl = rawUrl;
@@ -1692,7 +1692,7 @@ try {
             const proxyScript = `
 <script>
 (function() {
-    var PROXY_ENDPOINT = ${JSON.stringify(proxyEndpoint)};
+    var PROXY_ENDPOINT = ((typeof window !== 'undefined' && window.location && window.location.origin) ? window.location.origin : '') + '/api/browser/proxy?url=';
     var FINAL_URL = ${JSON.stringify(finalUrl)};
 
     try {

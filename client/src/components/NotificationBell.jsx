@@ -13,7 +13,7 @@ import Link from 'next/link';
 import { formatRelativeTime } from '@/lib/dateUtils';
 import toast from 'react-hot-toast';
 
-export default function NotificationBell() {
+export default function NotificationBell({ variant = 'default', onOpenChange, lowMemory = false }) {
     const router = useRouter();
     const { isAuthenticated } = useAuthStore();
     const [notifications, setNotifications] = useState([]);
@@ -22,6 +22,19 @@ export default function NotificationBell() {
     const [loading, setLoading] = useState(false);
     const [viewTab, setViewTab] = useState('important'); // 'important' or 'all'
     const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        onOpenChange?.(isOpen);
+    }, [isOpen, onOpenChange]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') setIsOpen(false);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isOpen]);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -173,14 +186,22 @@ export default function NotificationBell() {
 
     const hasReadNotifications = notifications.some(n => n.isRead);
 
+    const isCircle = variant === 'floating-circle';
+
     return (
         <div className="relative" ref={dropdownRef}>
             {/* Bell Button */}
             <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
-                className="relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer"
+                className={
+                    isCircle
+                        ? `relative w-11 h-11 rounded-full bg-white/95 dark:bg-slate-900/95 ${lowMemory ? '' : 'backdrop-blur-sm'} border border-slate-200 dark:border-slate-700 shadow-lg hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer`
+                        : 'relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer'
+                }
                 title="Notifications"
+                aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+                aria-expanded={isOpen}
             >
                 <FluentNotificationBellIcon className="w-5 h-5 shrink-0" hasUnread={unreadCount > 0} />
                 {unreadCount > 0 && (

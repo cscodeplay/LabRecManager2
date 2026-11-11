@@ -84,6 +84,7 @@ export default function GlobalSearch() {
     
     const inputRef = useRef(null);
     const debounceTimerRef = useRef(null);
+    const pendingInitialQueryRef = useRef(null);
 
     // Load recent searches from localStorage
     useEffect(() => {
@@ -93,7 +94,7 @@ export default function GlobalSearch() {
         } catch {}
     }, []);
 
-    // Global keyboard shortcut (⌘K or Ctrl+K) and Custom Event Trigger (Mobile/iPad shortcut)
+    // Global keyboard shortcut (⌘K or Ctrl+K) and Custom Event Trigger (Top Bar / Mobile shortcut)
     useEffect(() => {
         const handleKeyDown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -105,7 +106,13 @@ export default function GlobalSearch() {
             }
         };
 
-        const handleCustomOpen = () => setIsOpen(true);
+        const handleCustomOpen = (e) => {
+            const initial = e?.detail?.query;
+            if (typeof initial === 'string' && initial.length > 0) {
+                pendingInitialQueryRef.current = initial;
+            }
+            setIsOpen(true);
+        };
 
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('open-global-search', handleCustomOpen);
@@ -118,10 +125,15 @@ export default function GlobalSearch() {
     // Focus input when opened
     useEffect(() => {
         if (isOpen) {
+            if (pendingInitialQueryRef.current !== null) {
+                setQuery(pendingInitialQueryRef.current);
+                pendingInitialQueryRef.current = null;
+            }
             setTimeout(() => {
                 inputRef.current?.focus();
             }, 60);
         } else {
+            pendingInitialQueryRef.current = null;
             setQuery('');
             setSelectedIndex(0);
         }

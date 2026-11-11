@@ -485,11 +485,11 @@ export default function WhiteboardPage() {
                 </div>
 
                 {/* Whiteboard Area */}
-                <main className="flex-1 overflow-hidden p-2 sm:p-4 flex items-center justify-center touch-none select-none overscroll-none">
+                <main className="flex-1 overflow-hidden p-0 flex items-center justify-center touch-none select-none overscroll-none">
                     <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-100 flex items-center justify-center' : 'w-full h-full'}`}>
                         <Whiteboard
-                            width={1200}
-                            height={700}
+                            width={1920}
+                            height={1080}
                             isFullscreen={isFullscreen}
                             onToggleFullscreen={handleToggleFullscreen}
                             onSave={handleSave}

@@ -1,21 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import {
-    LogOut, Menu, X, ChevronLeft, GraduationCap
-} from 'lucide-react';
+import { LogOut, GraduationCap, Menu, X } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
-import LanguageSelector from './LanguageSelector';
-import UserAvatar from './UserAvatar';
+import { useConfirm } from '@/components/ConfirmDialog';
+import { useEdgeHoverReveal, useLowMemoryDevice } from '@/hooks/useEdgeHoverReveal';
 import {
     FluentDashboardIcon,
     FluentClassesIcon,
     FluentManageUsersIcon,
     FluentCodePracticeIcon,
-    FluentLabsIcon,
     FluentLabSuiteIcon,
     FluentAssignmentsIcon,
     FluentAssignedWorkIcon,
@@ -24,11 +21,8 @@ import {
     FluentDocumentsIcon,
     FluentStorageIcon,
     FluentGradesIcon,
-    FluentMeetingsIcon,
     FluentLiveCollabIcon,
-    FluentWhiteboardIcon,
     FluentQuizIcon,
-    FluentActivityIcon,
     FluentTicketsIcon,
     FluentBuildingIcon,
     FluentTimetableIcon,
@@ -139,13 +133,66 @@ const navItems = {
     ],
 };
 
+function isNavItemActive(href, pathname, userRole) {
+    if (href === '/assignments') {
+        return pathname === '/assignments' ||
+            pathname.startsWith('/assignments/') ||
+            pathname === '/assigned-work' ||
+            pathname.startsWith('/assigned-work/') ||
+            (pathname.startsWith('/submissions') && userRole !== 'student');
+    }
+    if (href === '/meetings') {
+        return pathname === '/meetings' ||
+            pathname.startsWith('/meetings/') ||
+            pathname === '/meeting' ||
+            pathname.startsWith('/meeting/') ||
+            pathname === '/whiteboard' ||
+            pathname.startsWith('/whiteboard/') ||
+            pathname === '/admin/whiteboards' ||
+            pathname.startsWith('/admin/whiteboards/') ||
+            pathname === '/live-board' ||
+            pathname.startsWith('/live-board/') ||
+            pathname === '/recordings' ||
+            pathname.startsWith('/recordings/') ||
+            pathname === '/admin/recordings' ||
+            pathname.startsWith('/admin/recordings/');
+    }
+    if (href === '/admin/labs') {
+        return pathname === '/admin/labs' ||
+            pathname.startsWith('/admin/labs/') ||
+            (pathname.startsWith('/tickets') && ['admin', 'principal', 'lab_assistant'].includes(userRole)) ||
+            pathname.startsWith('/admin/laptop-issuances') ||
+            pathname.startsWith('/admin/barcode-generator') ||
+            pathname.startsWith('/admin/procurement');
+    }
+    if (href === '/admin/audit-logs') {
+        return pathname === '/admin/audit-logs' ||
+            pathname.startsWith('/admin/audit-logs/') ||
+            pathname.startsWith('/activity-logs') ||
+            pathname.startsWith('/admin/query-logs') ||
+            pathname.startsWith('/admin/sql-console');
+    }
+    if (href === '/reports/progress') {
+        return pathname === '/reports/progress' || pathname.startsWith('/reports/progress');
+    }
+    if (href === '/training') {
+        return pathname === '/training' || pathname.startsWith('/training/');
+    }
+    return pathname === href || pathname.startsWith(href + '/');
+}
 
-export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse }) {
+export default function Sidebar() {
     const pathname = usePathname();
     const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
-    const [isMobile, setIsMobile] = useState(false);
+    const confirm = useConfirm();
+    const isLowMemory = useLowMemoryDevice();
+
     const [logoError, setLogoError] = useState(false);
+    const [confirmingLogout, setConfirmingLogout] = useState(false);
+    const [hoveredPill, setHoveredPill] = useState(null);
+    const pillTimerRef = useRef(null);
+
     const [schoolInfo, setSchoolInfo] = useState(() => {
         try {
             if (typeof window !== 'undefined') {
@@ -161,22 +208,21 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                     }
                 }
             }
-        } catch (e) {
+        } catch {
             // ignore
         }
         return { name: 'ULRMS', nameHindi: '', logoUrl: '' };
     });
 
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 1024);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
+    const dockReveal = useEdgeHoverReveal({
+        autoHideMs: 2500,
+        initialPeekMs: 2500,
+        storageKey: 'dockSidebarPinned',
+        isLocked: confirmingLogout,
+    });
 
     // Sync school info from user session and backend
     useEffect(() => {
-        // 1. Immediately hydrate from user object if available
         if (user?.school?.logoUrl || user?.school?.name) {
             setSchoolInfo(prev => ({
                 name: user.school.name || prev.name || 'ULRMS',
@@ -186,7 +232,6 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
             setLogoError(false);
         }
 
-        // 2. Fetch fresh school branding
         const fetchSchool = async () => {
             try {
                 const { schoolAPI, default: api } = await import('@/lib/api');
@@ -198,7 +243,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         if (res.data?.success && res.data?.data?.school) {
                             foundSchool = res.data.data.school;
                         }
-                    } catch (err) {
+                    } catch {
                         // ignore and fallback
                     }
                 }
@@ -209,7 +254,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                         if (brandRes.data?.success && brandRes.data?.data?.school) {
                             foundSchool = { ...(foundSchool || {}), ...brandRes.data.data.school };
                         }
-                    } catch (bErr) {
+                    } catch {
                         // ignore
                     }
                 }
@@ -227,7 +272,7 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
                             nameHindi: foundSchool.nameHindi,
                             logoUrl: foundSchool.logoUrl
                         }));
-                    } catch (e) {}
+                    } catch {}
                 }
             } catch (err) {
                 console.error('[Sidebar] Failed to load school info:', err);
@@ -237,219 +282,230 @@ export default function Sidebar({ isOpen, onClose, isCollapsed, onToggleCollapse
         fetchSchool();
     }, [user?.schoolId, user?.school]);
 
-    const handleLogout = () => {
-        logout();
-        window.location.href = '/login';
+    const clearPill = useCallback(() => {
+        clearTimeout(pillTimerRef.current);
+        setHoveredPill(null);
+    }, []);
+
+    useEffect(() => {
+        if (!dockReveal.isVisible) {
+            clearPill();
+        }
+    }, [dockReveal.isVisible, clearPill]);
+
+    useEffect(() => () => clearTimeout(pillTimerRef.current), []);
+
+    const showPillFor = useCallback((el, label, tone = 'default') => {
+        if (!el) return;
+        clearTimeout(pillTimerRef.current);
+        const rect = el.getBoundingClientRect();
+        setHoveredPill({
+            label,
+            top: rect.top + rect.height / 2,
+            left: rect.right + 12,
+            tone,
+        });
+    }, []);
+
+    const schedulePillHide = useCallback(() => {
+        clearTimeout(pillTimerRef.current);
+        pillTimerRef.current = setTimeout(() => {
+            setHoveredPill(null);
+        }, 60);
+    }, []);
+
+    const handleLogout = async () => {
+        setConfirmingLogout(true);
+        try {
+            const approved = await confirm({
+                title: 'Sign Out of ULRMS?',
+                message: 'Any unsaved edits or whiteboard changes will be lost. Are you sure you want to log out?',
+                confirmText: t('auth.logout') || 'Logout',
+                cancelText: 'Cancel',
+                type: 'danger',
+            });
+            if (approved) {
+                logout();
+                window.location.href = '/login';
+            }
+        } finally {
+            setConfirmingLogout(false);
+        }
     };
 
     const items = navItems[user?.role] || navItems.student;
 
-    // Don't render on login page
+    // Don't render on login/register pages
     if (pathname === '/login' || pathname === '/register') {
         return null;
     }
 
-    const sidebarContent = (
+    const glassSurface = isLowMemory
+        ? 'bg-white/95 dark:bg-slate-900/95'
+        : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm';
+
+    return (
         <>
-            {/* Logo & Brand Header */}
-            <div className={`p-4 border-b border-slate-200 dark:border-slate-700 flex items-center ${isCollapsed && !isMobile ? 'justify-between' : 'justify-between'}`}>
-                {(!isCollapsed || isMobile) ? (
-                    <Link href="/dashboard" className="flex items-center gap-2.5 group min-w-0 flex-1">
-                        <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 p-1 flex items-center justify-center shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-shrink-0 group-hover:scale-105 transition-transform">
-                            {schoolInfo.logoUrl && !logoError ? (
-                                <img
-                                    src={schoolInfo.logoUrl}
-                                    alt={schoolInfo.name || 'School Logo'}
-                                    className="w-full h-full object-contain"
-                                    onError={() => setLogoError(true)}
-                                />
-                            ) : (
-                                <div className="w-full h-full rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white">
-                                    <GraduationCap className="w-5 h-5" />
-                                </div>
-                            )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 leading-none">
-                                <span className="font-extrabold text-primary-600 dark:text-primary-400 text-sm tracking-wider uppercase">ULRMS</span>
-                                {schoolInfo.name && schoolInfo.name !== 'ULRMS' && (
-                                    <span className="text-slate-300 dark:text-slate-600 text-xs">•</span>
-                                )}
-                            </div>
-                            <h1 className="font-bold text-slate-900 dark:text-slate-100 text-sm leading-tight truncate max-w-[150px] mt-0.5" title={schoolInfo.name || 'ULRMS'}>
-                                {schoolInfo.name && schoolInfo.name !== 'ULRMS' ? schoolInfo.name : t('sidebar.unifiedLabRecords')}
-                            </h1>
-                            {schoolInfo.nameHindi && (
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate leading-tight mt-0.5">
-                                    {schoolInfo.nameHindi}
-                                </p>
-                            )}
-                        </div>
-                    </Link>
-                ) : (
-                    /* Collapsed View: School Logo centered next to collapse button */
-                    <Link href="/dashboard" className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 p-1 flex items-center justify-center shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden flex-shrink-0 hover:scale-105 transition-transform" title={schoolInfo.name || 'ULRMS'}>
+            {/* Invisible Left-Edge Mouse & Pen Hover Hot-Zone (0ms reveal) */}
+            <div
+                {...dockReveal.triggerProps}
+                className="fixed top-14 left-0 bottom-3 w-3.5 z-[74] flex items-center"
+                aria-hidden="true"
+            >
+                {!dockReveal.isVisible && (
+                    <span className="ml-1 w-1 h-14 rounded-full bg-slate-400/40 dark:bg-slate-500/40 transition-opacity" />
+                )}
+            </div>
+
+            {/* Touch-Only Pull Pill (Devices without hover capability) */}
+            <button
+                type="button"
+                onClick={dockReveal.toggleOpen}
+                className={`[@media(hover:none)]:flex hidden fixed left-2 top-1/2 -translate-y-1/2 z-[74] w-11 h-11 rounded-full ${glassSurface} border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-lg items-center justify-center cursor-pointer active:scale-95 transition-transform`}
+                aria-label={dockReveal.isVisible ? 'Close navigation dock' : 'Open navigation dock'}
+                aria-expanded={dockReveal.isVisible}
+            >
+                {dockReveal.isVisible ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+
+            {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
+            <aside
+                {...dockReveal.containerProps}
+                aria-label="Primary Navigation Dock"
+                style={{ willChange: dockReveal.isVisible ? 'transform, opacity' : 'auto' }}
+                className={`fixed top-14 left-3 bottom-3 w-16 z-[75] rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl flex flex-col items-center py-2.5 ${glassSurface} transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                    dockReveal.isVisible
+                        ? 'translate-x-0 opacity-100 pointer-events-auto'
+                        : '-translate-x-[calc(100%+24px)] opacity-0 pointer-events-none'
+                }`}
+            >
+                {/* Round Brand / Pin Crest */}
+                <div className="w-full px-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 flex flex-col items-center shrink-0">
+                    <button
+                        type="button"
+                        onClick={dockReveal.togglePinned}
+                        onPointerEnter={(e) => {
+                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                showPillFor(
+                                    e.currentTarget,
+                                    dockReveal.isPinned ? 'Unpin Dock (Auto-Hide)' : `${schoolInfo.name || 'ULRMS'} • Pin Dock`
+                                );
+                            }
+                        }}
+                        onPointerLeave={schedulePillHide}
+                        onFocus={(e) => showPillFor(
+                            e.currentTarget,
+                            dockReveal.isPinned ? 'Unpin Dock (Auto-Hide)' : `${schoolInfo.name || 'ULRMS'} • Pin Dock`
+                        )}
+                        onBlur={schedulePillHide}
+                        aria-label={dockReveal.isPinned ? 'Unpin navigation dock' : 'Pin navigation dock open'}
+                        aria-pressed={dockReveal.isPinned}
+                        className={`w-11 h-11 rounded-full p-1 flex items-center justify-center overflow-hidden shadow-sm border transition-transform active:scale-95 cursor-pointer ${
+                            dockReveal.isPinned
+                                ? 'bg-primary-50 dark:bg-primary-950/70 border-primary-500 ring-2 ring-primary-500/30'
+                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:scale-105'
+                        }`}
+                    >
                         {schoolInfo.logoUrl && !logoError ? (
                             <img
                                 src={schoolInfo.logoUrl}
                                 alt={schoolInfo.name || 'School Logo'}
-                                className="w-full h-full object-contain"
+                                className="w-full h-full object-contain rounded-full"
                                 onError={() => setLogoError(true)}
                             />
                         ) : (
-                            <div className="w-full h-full rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white">
+                            <div className="w-full h-full rounded-full bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white">
                                 <GraduationCap className="w-5 h-5" />
                             </div>
                         )}
-                    </Link>
-                )}
-                {isMobile && (
-                    <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
-                        <X className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                     </button>
-                )}
-                {!isMobile && (
-                    <button
-                        onClick={onToggleCollapse}
-                        className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
-                        title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    >
-                        <Menu className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-                    </button>
-                )}
-            </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 p-3 overflow-y-auto">
-                <ul className="space-y-1">
-                    {items.map((item) => {
-                        // Hub-aware active route matching
-                        let isActive = false;
-                        if (item.href === '/assignments') {
-                            isActive = pathname === '/assignments' ||
-                                pathname.startsWith('/assignments/') ||
-                                pathname === '/assigned-work' ||
-                                pathname.startsWith('/assigned-work/') ||
-                                (pathname.startsWith('/submissions') && user?.role !== 'student');
-                        } else if (item.href === '/meetings') {
-                            isActive = pathname === '/meetings' ||
-                                pathname.startsWith('/meetings/') ||
-                                pathname === '/meeting' ||
-                                pathname.startsWith('/meeting/') ||
-                                pathname === '/whiteboard' ||
-                                pathname.startsWith('/whiteboard/') ||
-                                pathname === '/admin/whiteboards' ||
-                                pathname.startsWith('/admin/whiteboards/') ||
-                                pathname === '/live-board' ||
-                                pathname.startsWith('/live-board/') ||
-                                pathname === '/recordings' ||
-                                pathname.startsWith('/recordings/') ||
-                                pathname === '/admin/recordings' ||
-                                pathname.startsWith('/admin/recordings/');
-                        } else if (item.href === '/admin/labs') {
-                            isActive = pathname === '/admin/labs' ||
-                                pathname.startsWith('/admin/labs/') ||
-                                (pathname.startsWith('/tickets') && ['admin', 'principal', 'lab_assistant'].includes(user?.role)) ||
-                                pathname.startsWith('/admin/laptop-issuances') ||
-                                pathname.startsWith('/admin/barcode-generator') ||
-                                pathname.startsWith('/admin/procurement');
-                        } else if (item.href === '/admin/audit-logs') {
-                            isActive = pathname === '/admin/audit-logs' ||
-                                pathname.startsWith('/admin/audit-logs/') ||
-                                pathname.startsWith('/activity-logs') ||
-                                pathname.startsWith('/admin/query-logs') ||
-                                pathname.startsWith('/admin/sql-console');
-                        } else if (item.href === '/reports/progress') {
-                            isActive = pathname === '/reports/progress' ||
-                                pathname.startsWith('/reports/progress');
-                        } else if (item.href === '/training') {
-                            isActive = pathname === '/training' || pathname.startsWith('/training/');
-                        } else {
-                            isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-                        }
-                        const Icon = item.icon;
-                        const label = !item.labelKey.startsWith('nav.') ? item.labelKey : t(item.labelKey);
-                        return (
-                            <li key={item.href}>
-                                <Link
-                                    href={item.href}
-                                    onClick={() => isMobile && onClose()}
-                                    className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${isActive
-                                        ? 'bg-primary-50 dark:bg-slate-800/90 text-primary-900 dark:text-white font-semibold border border-primary-200/80 dark:border-slate-700/80 shadow-sm'
-                                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-800/60 font-medium'
-                                        }`}
-                                    title={isCollapsed && !isMobile ? label : undefined}
-                                >
-                                    <Icon className="w-6 h-6 flex-shrink-0 transition-transform duration-200 group-hover:scale-105" />
-                                    {(!isCollapsed || isMobile) && (
-                                        <span className="flex-1 truncate text-sm">{label}</span>
-                                    )}
-                                    {isActive && (!isCollapsed || isMobile) && (
-                                        <span className="w-1.5 h-1.5 rounded-full bg-primary-500 dark:bg-primary-400 flex-shrink-0" />
-                                    )}
-                                </Link>
-                            </li>
-                        );
-                    })}
-                </ul>
-            </nav>
-
-            {/* User Info & Logout */}
-            <div className="p-3 border-t border-slate-200 dark:border-slate-700">
-                {/* Language Selector */}
-                <div className="mb-2">
-                    <LanguageSelector isCollapsed={isCollapsed && !isMobile} />
                 </div>
 
-                {(!isCollapsed || isMobile) && user && (
-                    <Link href="/settings" className="flex items-center gap-3 px-3 py-2 mb-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                        <UserAvatar user={user} size="md" />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">
-                                {user.firstName} {user.lastName}
-                            </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 capitalize">{user.role?.replace('_', ' ')}</p>
-                            {(user.studentId || user.admissionNumber || user.employeeId) && (
-                                <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                                    ID: {user.studentId || user.admissionNumber || user.employeeId}
-                                </p>
-                            )}
-                        </div>
-                    </Link>
-                )}
-                <button
-                    onClick={handleLogout}
-                    className={`flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition ${isCollapsed && !isMobile ? 'justify-center' : ''
-                        }`}
-                    title={isCollapsed && !isMobile ? t('auth.logout') : undefined}
+                {/* Scrollable Icon-Only Navigation Rail (Round Icon Backgrounds) */}
+                <nav
+                    onScroll={clearPill}
+                    className="flex-1 w-full overflow-y-auto overscroll-contain no-scrollbar px-2 py-2"
+                    aria-label="Modules"
                 >
-                    <LogOut className="w-5 h-5" />
-                    {(!isCollapsed || isMobile) && <span className="font-medium">{t('auth.logout')}</span>}
-                </button>
-            </div>
-        </>
-    );
+                    <ul className="flex flex-col items-center gap-2">
+                        {items.map((item) => {
+                            const isActive = isNavItemActive(item.href, pathname, user?.role);
+                            const Icon = item.icon;
+                            const label = !item.labelKey.startsWith('nav.') ? item.labelKey : t(item.labelKey);
 
-    return (
-        <>
-            {/* Mobile Overlay */}
-            {isMobile && isOpen && (
-                <div
-                    className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-                    onClick={onClose}
-                />
-            )}
+                            return (
+                                <li key={item.href}>
+                                    <Link
+                                        href={item.href}
+                                        onClick={() => {
+                                            clearPill();
+                                            if (!dockReveal.isPinned) {
+                                                dockReveal.closeNow();
+                                            }
+                                        }}
+                                        onPointerEnter={(e) => {
+                                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                                showPillFor(e.currentTarget, label);
+                                            }
+                                        }}
+                                        onPointerLeave={schedulePillHide}
+                                        onFocus={(e) => showPillFor(e.currentTarget, label)}
+                                        onBlur={schedulePillHide}
+                                        aria-label={label}
+                                        aria-current={isActive ? 'page' : undefined}
+                                        className={`group w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-95 ${
+                                            isActive
+                                                ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-400 dark:border-primary-500 ring-2 ring-primary-500/20 shadow-xs'
+                                                : 'bg-slate-100/90 dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-200/80 dark:hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        <Icon className="w-6 h-6 flex-shrink-0 transition-transform duration-150 group-hover:scale-105" />
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </nav>
 
-            {/* Sidebar */}
-            <aside
-                className={`fixed top-0 left-0 h-full bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-50 flex flex-col transition-all duration-300 w-72 ${
-                    isCollapsed ? 'lg:w-20' : 'lg:w-64'
-                } ${
-                    isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-                }`}
-            >
-                {sidebarContent}
+                {/* Static Footer: Round Logout Icon with Confirmation */}
+                <div className="w-full px-2 pt-2 border-t border-slate-200/80 dark:border-slate-800 flex flex-col items-center shrink-0">
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        onPointerEnter={(e) => {
+                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                showPillFor(e.currentTarget, t('auth.logout') || 'Logout', 'danger');
+                            }
+                        }}
+                        onPointerLeave={schedulePillHide}
+                        onFocus={(e) => showPillFor(e.currentTarget, t('auth.logout') || 'Logout', 'danger')}
+                        onBlur={schedulePillHide}
+                        aria-label={t('auth.logout') || 'Logout'}
+                        className="w-11 h-11 rounded-full bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/70 flex items-center justify-center transition-colors active:scale-95 cursor-pointer"
+                    >
+                        <LogOut className="w-5 h-5" />
+                    </button>
+                </div>
             </aside>
+
+            {/* Single Reused Pill-Shaped Hover Label Portal (Never clipped by overflow-y-auto) */}
+            {hoveredPill && dockReveal.isVisible && (
+                <div
+                    role="tooltip"
+                    style={{
+                        top: `${hoveredPill.top}px`,
+                        left: `${hoveredPill.left}px`,
+                        transform: 'translate3d(0, -50%, 0)',
+                    }}
+                    className={`fixed z-[90] px-4 py-1.5 rounded-full shadow-xl border text-xs font-bold whitespace-nowrap pointer-events-none motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-100 ${
+                        hoveredPill.tone === 'danger'
+                            ? 'bg-red-600 text-white border-red-400'
+                            : 'bg-slate-900 text-white border-slate-700'
+                    }`}
+                >
+                    {hoveredPill.label}
+                </div>
+            )}
         </>
     );
 }

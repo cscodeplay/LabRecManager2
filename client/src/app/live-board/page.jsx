@@ -180,7 +180,7 @@ export default function LiveBoardPage() {
                 </>
             )}
 
-            <main className={isFullscreen ? '' : 'w-full max-w-[1920px] mx-auto px-2 sm:px-4 py-2 sm:py-3'}>
+            <main className={isFullscreen ? '' : 'w-full max-w-none mx-auto px-2 sm:px-4 py-2 sm:py-3'}>
                 {sharedSession ? (
                     <div
                         className={isFullscreen
@@ -189,8 +189,8 @@ export default function LiveBoardPage() {
                         style={isFullscreen ? undefined : { height: 'calc(100vh - 84px)', minHeight: '520px' }}
                     >
                         <Whiteboard
-                            width={1200}
-                            height={700}
+                            width={1920}
+                            height={1080}
                             isFullscreen={isFullscreen}
                             onToggleFullscreen={() => setIsFullscreen(prev => !prev)}
                             onClose={() => setIsFullscreen(false)}

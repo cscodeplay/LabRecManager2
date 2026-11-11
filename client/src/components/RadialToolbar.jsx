@@ -142,7 +142,25 @@ export default function RadialToolbar({
     const [hoveredInner, setHoveredInner] = useState('pen');
     const [hoveredOuter, setHoveredOuter] = useState(null);
     const [clampedPos, setClampedPos] = useState({ x: 0, y: 0 });
+    const [radialScale, setRadialScale] = useState(1);
     const containerRef = useRef(null);
+
+    // Compute proportional 4K panel scale without double-scaling rem buttons
+    useEffect(() => {
+        const updateRadialScale = () => {
+            if (typeof window === 'undefined') return;
+            if (window.innerWidth >= 3200 && window.innerHeight >= 1700) {
+                setRadialScale(1.65);
+            } else if (window.innerWidth >= 2400 && window.innerHeight >= 1200) {
+                setRadialScale(1.35);
+            } else {
+                setRadialScale(1);
+            }
+        };
+        updateRadialScale();
+        window.addEventListener('resize', updateRadialScale);
+        return () => window.removeEventListener('resize', updateRadialScale);
+    }, []);
 
     // Synchronize and clamp position when opening
     useEffect(() => {
@@ -150,15 +168,16 @@ export default function RadialToolbar({
             setHoveredInner(currentTool || 'pen');
             setHoveredOuter(null);
 
+            const bound = MENU_BOUNDING_R * radialScale + 15;
             let cx = position.x;
             let cy = position.y;
             if (canvasBounds) {
-                cx = Math.max(MENU_BOUNDING_R + 15, Math.min(canvasBounds.width - MENU_BOUNDING_R - 15, cx));
-                cy = Math.max(MENU_BOUNDING_R + 15, Math.min(canvasBounds.height - MENU_BOUNDING_R - 15, cy));
+                cx = Math.max(bound, Math.min(canvasBounds.width - bound, cx));
+                cy = Math.max(bound, Math.min(canvasBounds.height - bound, cy));
             }
             setClampedPos({ x: cx, y: cy });
         }
-    }, [isOpen, position, canvasBounds, currentTool]);
+    }, [isOpen, position, canvasBounds, currentTool, radialScale]);
 
     // Close on Escape key
     useEffect(() => {
@@ -230,8 +249,8 @@ export default function RadialToolbar({
         const rect = containerRef.current.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const x = e.clientX - cx;
-        const y = e.clientY - cy;
+        const x = (e.clientX - cx) / radialScale;
+        const y = (e.clientY - cy) / radialScale;
         const dist = Math.hypot(x, y);
         const angleDeg = Math.atan2(y, x) * (180 / Math.PI);
 
@@ -265,7 +284,7 @@ export default function RadialToolbar({
                 setHoveredOuter(nearestTool.id);
             }
         }
-    }, [hoveredInner, hoveredOuter, subToolPositions]);
+    }, [hoveredInner, hoveredOuter, subToolPositions, radialScale]);
 
     const handleInnerClick = (e, tool) => {
         e.stopPropagation();
@@ -300,6 +319,8 @@ export default function RadialToolbar({
                 top: clampedPos.y,
                 width: 0,
                 height: 0,
+                transform: radialScale !== 1 ? `scale(${radialScale})` : undefined,
+                transformOrigin: '0 0',
             }}
             onPointerMove={handleContainerPointerMove}
             onPointerDown={(e) => e.stopPropagation()}
@@ -315,10 +336,6 @@ export default function RadialToolbar({
                 viewBox="-180 -180 360 360"
             >
                 <defs>
-                    <filter id="sleekGlow" x="-30%" y="-30%" width="160%" height="160%">
-                        <feGaussianBlur stdDeviation="5" result="blur" />
-                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-                    </filter>
                     <linearGradient id="sleekRingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor="#0f172a" stopOpacity="0.94" />
                         <stop offset="100%" stopColor="#1e293b" stopOpacity="0.96" />
@@ -428,8 +445,6 @@ export default function RadialToolbar({
                             stroke="#6366f1"
                             strokeWidth="1.5"
                             opacity="0.96"
-                            filter="url(#sleekGlow)"
-                            className="drop-shadow-2xl"
                         />
                     </g>
                 )}
@@ -447,7 +462,7 @@ export default function RadialToolbar({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => handleOuterClick(e, hoveredInner, tool)}
                         onMouseEnter={() => setHoveredOuter(tool.id)}
-                        className={`absolute flex flex-col items-center justify-center w-8 h-8 rounded-full transition-all duration-150 z-30 cursor-pointer ${
+                        className={`absolute flex flex-col items-center justify-center w-[32px] h-[32px] rounded-full transition-all duration-150 z-30 cursor-pointer ${
                             isHovered
                                 ? 'scale-125 border-2 border-white shadow-lg shadow-indigo-500/50'
                                 : 'shadow-md'
@@ -469,11 +484,11 @@ export default function RadialToolbar({
                     >
                         {hasColor ? (
                             <div className="flex items-center justify-center">
-                                <tool.icon className="w-4 h-4 text-slate-950 stroke-[2.5]" />
+                                <tool.icon className="w-[16px] h-[16px] text-slate-950 stroke-[2.5]" />
                             </div>
                         ) : (
                             <>
-                                <tool.icon className="w-3.5 h-3.5" />
+                                <tool.icon className="w-[14px] h-[14px]" />
                                 <span className="text-[7px] font-semibold leading-none mt-0.5 px-0.5 rounded bg-slate-950/80 text-indigo-200 whitespace-nowrap">
                                     {tool.label}
                                 </span>
@@ -498,20 +513,20 @@ export default function RadialToolbar({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => handleInnerClick(e, tool)}
                         onMouseEnter={() => setHoveredInner(tool.id)}
-                        className={`absolute flex flex-col items-center justify-center w-8 h-8 rounded-full transition-all duration-150 z-20 cursor-pointer ${
+                        className={`absolute flex flex-col items-center justify-center w-[36px] h-[36px] rounded-full transition-colors duration-150 z-20 cursor-pointer ${
                             isHovered
-                                ? 'bg-white text-indigo-900 scale-110 shadow-lg shadow-indigo-500/50 font-bold border border-white'
+                                ? 'bg-white text-indigo-900 shadow-lg shadow-indigo-500/50 font-bold border-2 border-white'
                                 : isActive
-                                    ? 'bg-indigo-600 text-white border-2 border-indigo-300 scale-105 shadow-md'
+                                    ? 'bg-indigo-600 text-white border-2 border-indigo-300 shadow-md'
                                     : 'bg-slate-900/90 text-slate-300 border border-slate-700/60 hover:bg-slate-800 hover:text-white'
                         }`}
                         style={{
-                            left: x,
-                            top: y,
+                            left: Math.round(x),
+                            top: Math.round(y),
                             transform: 'translate(-50%, -50%)',
                         }}
                     >
-                        <tool.icon className="w-3.5 h-3.5" />
+                        <tool.icon className="w-[16px] h-[16px]" />
                         <span className="text-[7.5px] font-bold leading-none mt-0.5 opacity-95">
                             {tool.label}
                         </span>
@@ -527,14 +542,14 @@ export default function RadialToolbar({
                     e.stopPropagation();
                     onClose();
                 }}
-                className="absolute flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 shadow-xl border-2 border-white/40 text-white hover:scale-105 active:scale-95 transition-all duration-150 z-40 cursor-pointer group"
+                className="absolute flex items-center justify-center w-[36px] h-[36px] rounded-full bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 shadow-xl border-2 border-white/40 text-white hover:scale-105 active:scale-95 transition-all duration-150 z-40 cursor-pointer group"
                 style={{
                     left: 0,
                     top: 0,
                     transform: 'translate(-50%, -50%)',
                 }}
             >
-                <CurrentIcon className="w-4 h-4 group-hover:scale-90 transition-transform" />
+                <CurrentIcon className="w-[16px] h-[16px] group-hover:scale-90 transition-transform" />
             </button>
 
             {/* ─── Sleek Tool Status HUD Pill (No delayed native tooltips) ── */}

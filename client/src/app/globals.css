@@ -515,6 +515,22 @@ img.img-frame-polaroid, .notes-content img.img-frame-polaroid, .ql-editor img.im
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.12);
 }
 
+/* Native 2K/4K Interactive Flat Panel (BenQ / Acer 3840x2160) Proportional UI Scaling:
+   When a 4K panel runs with wide CSS viewport dimensions (low/medium OS DPI),
+   scale rem-based UI icons, toolbars, buttons, and typography proportionally without
+   affecting standard laptops or iPads. */
+@media screen and (min-width: 2400px) and (min-height: 1200px) {
+  html {
+    font-size: 22px;
+  }
+}
+
+@media screen and (min-width: 3200px) and (min-height: 1700px) {
+  html {
+    font-size: 26px;
+  }
+}
+
 /* Whiteboard iPad & Tablet Stabilization */
 .whiteboard-workspace-root {
   touch-action: none !important;

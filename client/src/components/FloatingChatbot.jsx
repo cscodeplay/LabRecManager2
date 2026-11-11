@@ -9889,7 +9889,7 @@ export default function FloatingChatbot() {
             {!isOpen && (
                 <button
                     onClick={() => { setIsOpen(true); setIsMinimized(false); }}
-                    className="fixed bottom-6 right-6 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
+                    className="fixed bottom-12 right-4 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
                     title="LIA (⌘J / Ctrl+J)"
                 >
                     <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
@@ -9907,7 +9907,7 @@ export default function FloatingChatbot() {
             {/* ── Minimized Chat Dock Tab ── */}
             {isOpen && isMinimized && (
                 <div
-                    className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white rounded-full shadow-2xl shadow-indigo-600/40 border border-white/25 cursor-pointer hover:shadow-indigo-600/60 hover:scale-[1.02] active:scale-[0.98] transition-all select-none group"
+                    className="fixed bottom-12 right-4 z-[9999] flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 text-white rounded-full shadow-2xl shadow-indigo-600/40 border border-white/25 cursor-pointer hover:shadow-indigo-600/60 hover:scale-[1.02] active:scale-[0.98] transition-all select-none group"
                     onClick={() => setIsMinimized(false)}
                     title="Click to restore LIA Chat Window (⌘J)"
                 >
