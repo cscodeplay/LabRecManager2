@@ -72,6 +72,7 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://127.0.0.1:3000',
   'https://127.0.0.1:3000',
+  'https://ulrms-c.onrender.com',
   'https://lab-rec-client.onrender.com',
   'https://labrecordmanager.onrender.com',
   'https://lab-record-client-5z6b.onrender.com',

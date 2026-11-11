@@ -3,7 +3,7 @@
   "appName": "LabRec Whiteboard",
   "webDir": "native-www",
   "server": {
-    "url": "https://192.168.1.220:3000",
+    "url": "https://ulrms-c.onrender.com",
     "cleartext": true,
     "androidScheme": "https",
     "allowNavigation": ["*"],

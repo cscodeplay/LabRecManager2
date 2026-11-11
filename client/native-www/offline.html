@@ -178,7 +178,7 @@
           type="url"
           id="server-url"
           name="server_url"
-          value="https://192.168.1.220:3000"
+          value="https://ulrms-c.onrender.com"
           autocomplete="url"
           autocorrect="off"
           autocapitalize="none"
@@ -187,7 +187,7 @@
           aria-describedby="server-url-help server-status"
           required
         />
-        <span id="server-url-help" class="hint">Include https:// and port (for example https://192.168.1.220:3000 for camera &amp; mic).</span>
+        <span id="server-url-help" class="hint">Include https:// (default: https://ulrms-c.onrender.com, or LAN https://192.168.1.220:3000).</span>
       </div>
 
       <fieldset>
@@ -206,7 +206,8 @@
 
       <div class="actions">
         <button type="submit" id="connect-btn">Connect Now</button>
-        <button type="button" id="preset-lan-btn">Reset to LAN Default</button>
+        <button type="button" id="preset-render-btn">Reset to Render Default</button>
+        <button type="button" id="preset-lan-btn">Use Local LAN (192.168.1.220)</button>
       </div>
 
       <p id="server-status" class="status" role="status" aria-live="polite"></p>
@@ -215,12 +216,14 @@
 
   <script>
     (function () {
-      var DEFAULT_URL = 'https://192.168.1.220:3000';
+      var RENDER_URL = 'https://ulrms-c.onrender.com';
+      var LAN_URL = 'https://192.168.1.220:3000';
       var form = document.getElementById('server-form');
       var urlInput = document.getElementById('server-url');
       var statusEl = document.getElementById('server-status');
       var connectBtn = document.getElementById('connect-btn');
-      var resetBtn = document.getElementById('preset-lan-btn');
+      var renderBtn = document.getElementById('preset-render-btn');
+      var lanBtn = document.getElementById('preset-lan-btn');
 
       try {
         var saved = localStorage.getItem('labrec_server_url');
@@ -254,11 +257,19 @@
         }
       });
 
-      resetBtn.addEventListener('click', function () {
-        urlInput.value = DEFAULT_URL;
+      renderBtn.addEventListener('click', function () {
+        urlInput.value = RENDER_URL;
         urlInput.setCustomValidity('');
         urlInput.removeAttribute('aria-invalid');
-        statusEl.textContent = 'Reset URL to LAN default (' + DEFAULT_URL + ').';
+        statusEl.textContent = 'Reset URL to Render default (' + RENDER_URL + ').';
+        statusEl.className = 'status';
+      });
+
+      lanBtn.addEventListener('click', function () {
+        urlInput.value = LAN_URL;
+        urlInput.setCustomValidity('');
+        urlInput.removeAttribute('aria-invalid');
+        statusEl.textContent = 'Switched URL to LAN server (' + LAN_URL + ').';
         statusEl.className = 'status';
       });
 

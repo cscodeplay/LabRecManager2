@@ -69,7 +69,7 @@ function useMeetingLink(session) {
         if (typeof window !== 'undefined') {
             return `${window.location.origin}/meeting/${roomCode}`;
         }
-        return `https://lab-rec-client.onrender.com/meeting/${roomCode}`;
+        return `https://ulrms-c.onrender.com/meeting/${roomCode}`;
     };
 
     const copyLink = async (e) => {
