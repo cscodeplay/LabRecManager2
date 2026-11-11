@@ -169,11 +169,11 @@ export default function AppLayout({ children }) {
                 </button>
             </header>
 
-            {/* Separate Top-Rightmost Notification Bell Circle (Auto-hides with Top Bar) */}
+            {/* Separate Top-Rightmost Notification Bell Circle (Offset clear of Fullscreen toggle on Whiteboard) */}
             <div
                 {...topBarReveal.containerProps}
                 style={{ willChange: topBarReveal.isVisible ? 'transform, opacity' : 'auto' }}
-                className={`fixed top-2.5 right-3.5 z-[80] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                className={`fixed top-2.5 ${(pathname?.startsWith('/whiteboard') || pathname?.startsWith('/live-board')) ? 'right-14' : 'right-3.5'} z-[80] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
                     topBarReveal.isVisible
                         ? 'translate-y-0 opacity-100 pointer-events-auto'
                         : '-translate-y-[140%] opacity-0 pointer-events-none'
@@ -199,8 +199,8 @@ export default function AppLayout({ children }) {
                 </main>
             </div>
 
-            {/* Mobile & iPad Floating Search Shortcut Button (Suppressed on Practice IDE to maximize coding workspace) */}
-            {!pathname?.startsWith('/practice-ide') && (
+            {/* Mobile & iPad Floating Search Shortcut Button (Suppressed on Practice IDE and Whiteboard where bottom-left belongs to Minimap) */}
+            {!pathname?.startsWith('/practice-ide') && !pathname?.startsWith('/whiteboard') && !pathname?.startsWith('/live-board') && (
                 <button
                     type="button"
                     onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}

@@ -341,10 +341,11 @@ export default function StickyNoteRenderer({
             {/* Resize Handle (bottom-right) */}
             {isSelected && canEdit && !note.isLocked && !isCollapsed && (
                 <div
-                    className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize"
+                    className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize before:absolute before:-inset-2 before:content-['']"
                     style={{
                         background: `linear-gradient(135deg, transparent 50%, ${stickyColor.border} 50%)`,
                         borderBottomRightRadius: '0.5rem',
+                        touchAction: 'none',
                     }}
                     onPointerDown={(e) => {
                         e.stopPropagation();

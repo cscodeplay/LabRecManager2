@@ -196,11 +196,18 @@ export default function WhiteboardMediaPlayer({
         e.stopPropagation();
         if (e.cancelable) e.preventDefault();
 
+        const canvasEl = document.getElementById('main-whiteboard-canvas') || document.querySelector('.whiteboard-canvas');
+        const rect = canvasEl?.getBoundingClientRect();
+        const scaleToScreenX = (canvasEl && canvasEl.width > 0 && rect) ? rect.width / canvasEl.width : 1;
+        const scaleToScreenY = (canvasEl && canvasEl.height > 0 && rect) ? rect.height / canvasEl.height : 1;
+
         const centerX = (media.x || 0) + (media.width || 480) / 2;
         const centerY = (media.y || 0) + (media.height || 300) / 2;
+        const screenCenterX = rect ? rect.left + centerX * scaleToScreenX : centerX;
+        const screenCenterY = rect ? rect.top + centerY * scaleToScreenY : centerY;
 
         const onMove = (moveEvt) => {
-            const radians = Math.atan2(moveEvt.clientY - centerY, moveEvt.clientX - centerX);
+            const radians = Math.atan2(moveEvt.clientY - screenCenterY, moveEvt.clientX - screenCenterX);
             let degrees = radians * (180 / Math.PI) - 90;
             degrees = (degrees + 360) % 360;
             onUpdate && onUpdate({ rotation: Math.round(degrees) });
@@ -209,10 +216,12 @@ export default function WhiteboardMediaPlayer({
         const onUp = () => {
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
         };
 
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
     };
 
     const mediaSource = media.src || media.url || '';

@@ -27,50 +27,6 @@ import WhiteboardEquationEditor, { MathVirtualKeyboard, SYMBOL_CATEGORIES } from
 import WhiteboardMathTablet from './WhiteboardMathTablet';
 import MathSolverModal from './mathSolver/MathSolverModal';
 import ParametricShapeModal from './mathSolver/ParametricShapeModal';
-
-const ParallelogramIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <polygon points="6 4 22 4 18 20 2 20" />
-    </svg>
-);
-
-const ConeIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M 12 2 L 20 18 A 8 3 0 0 1 4 18 Z" />
-        <ellipse cx="12" cy="18" rx="8" ry="3" />
-        <line x1="12" y1="2" x2="12" y2="18" strokeDasharray="2 2" strokeWidth="1.5" />
-    </svg>
-);
-
-const InclinePlaneIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <polygon points="3 20 21 20 21 6" />
-        <rect x="11" y="10" width="5" height="4" transform="rotate(-38 13.5 12)" />
-    </svg>
-);
-
-const RightTriangleIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <polygon points="4 4 4 20 20 20" />
-        <path d="M 4 15 L 9 15 L 9 20" />
-    </svg>
-);
-
-const BroomIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="m14 4 6 6" />
-        <path d="m18 8-8.5 8.5a2.12 2.12 0 1 1-3-3L15 5" />
-        <path d="m5 15-2 5a1 1 0 0 0 1.2 1.2l5-2" />
-        <path d="M7 17l4 4" />
-    </svg>
-);
-
-const YoutubeIcon = (props) => (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-        <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z" />
-        <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02" />
-    </svg>
-);
 import WhiteboardChatWindow from './WhiteboardChatWindow';
 import WhiteboardRecorder from './WhiteboardRecorder';
 import AdminPermissionsPanel from './AdminPermissionsPanel';
@@ -117,7 +73,85 @@ import WhiteboardDocumentObject, { detectDocumentType } from './WhiteboardDocume
 import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
 import EstimatorCalculator from './EstimatorCalculator';
 import WhiteboardFlashcards from './WhiteboardFlashcards';
-import { getCustomToolbarIcon, ArgonMathIcon, ArgonPhysicsIcon, ArgonBrowserIcon, ArgonTemplatesIcon } from './geometryTools/CustomToolbarIcons';
+import { FluentQuizIcon } from './FluentNavIcons';
+import {
+    getCustomToolbarIcon,
+    FluentToolIcon,
+    ArgonSelectIcon,
+    ArgonGrabIcon,
+    ArgonLassoIcon,
+    ArgonPenIcon,
+    PresetFountainPenIcon,
+    PresetBrushIcon,
+    ArgonHighlighterIcon,
+    ArgonEraserIcon,
+    PresetChalkEraserIcon,
+    ArgonBroomIcon,
+    ArgonLineIcon,
+    ArgonConnectorIcon,
+    ArgonFillIcon,
+    ArgonEyedropperIcon,
+    ArgonShapeIcon,
+    ArgonStickyNoteIcon,
+    ArgonTableIcon,
+    ArgonFlowchartIcon,
+    ArgonTextIcon,
+    ArgonMathIcon,
+    ArgonCalculatorIcon,
+    ArgonKeyboardIcon,
+    ArgonOCRIcon,
+    ArgonRulerIcon,
+    ArgonProtractorIcon,
+    ArgonCompassIcon,
+    ArgonDividerIcon,
+    ArgonSetSquareIcon,
+    ArgonSparkleIcon,
+    ArgonParametricIcon,
+    ArgonGraphIcon,
+    ArgonPhysicsIcon,
+    Argon3DIcon,
+    ArgonFlashcardsIcon,
+    ArgonStemSuiteIcon,
+    ArgonBrowserIcon,
+    ArgonMediaIcon,
+    ArgonYoutubeIcon,
+    ArgonImageIcon,
+    ArgonDocumentIcon,
+    ArgonCodeIcon,
+    ArgonTemplatesIcon,
+    ArgonSlideshowIcon,
+    ArgonCurtainIcon,
+    ArgonRecorderIcon,
+    ArgonTasksIcon,
+    ArgonShortcutsIcon,
+    ArgonTimerIcon,
+    ArgonSpotlightIcon,
+    ArgonGamesIcon,
+    ArgonUtilitiesIcon,
+    ArgonCustomIconsIcon,
+    ArgonPermissionsIcon,
+    ArgonSearchIcon,
+    ArgonMicIcon,
+    ArgonBrightnessIcon,
+    ArgonVolumeIcon,
+    ArgonShareIcon,
+    ArgonExportIcon,
+    ArgonQRCodeIcon,
+    ArgonFullscreenIcon,
+    ArgonFullscreenExitIcon,
+    ArgonLayersIcon,
+    ArgonUndoIcon,
+    ArgonRedoIcon,
+} from './geometryTools/CustomToolbarIcons';
+import { Cone, TriangleRight } from 'lucide-react';
+
+// Official Fluent & Lucide adapters replacing legacy hand-coded shape/UI SVGs
+const ParallelogramIcon = (props) => <FluentToolIcon icon="fluent:rhombus-24-regular" {...props} />;
+const ConeIcon = Cone;
+const InclinePlaneIcon = TriangleRight;
+const RightTriangleIcon = (props) => <FluentToolIcon icon="fluent:binder-triangle-24-regular" {...props} />;
+const BroomIcon = ArgonBroomIcon;
+const YoutubeIcon = ArgonYoutubeIcon;
 import api, { aiAPI } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
@@ -957,6 +991,7 @@ export default function Whiteboard({
     const [showScienceFlyout, setShowScienceFlyout] = useState(false);
     const [showMediaFlyout, setShowMediaFlyout] = useState(false);
     const [showToolsFlyout, setShowToolsFlyout] = useState(false);
+    const [showShareFlyout, setShowShareFlyout] = useState(false);
     const [showClearBoardConfirm, setShowClearBoardConfirm] = useState(false);
 
     const [shapeType, setShapeType] = useState('rectangle'); // rectangle, circle, triangle, star
@@ -1322,6 +1357,7 @@ export default function Whiteboard({
         setShowScienceFlyout(false);
         setShowMediaFlyout(false);
         setShowToolsFlyout(false);
+        setShowShareFlyout(false);
         setShowAlignMenu(false);
     }, []);
 
@@ -1567,6 +1603,29 @@ export default function Whiteboard({
     const [showRadialMenu, setShowRadialMenu] = useState(false);
     const [radialMenuPos, setRadialMenuPos] = useState({ x: 60, y: 600 });
     const [floatingBallPos, setFloatingBallPos] = useState({ x: 24, y: 560 });
+    const hasDraggedBallRef = useRef(false);
+    useEffect(() => {
+        const positionBallSafely = () => {
+            if (typeof window === 'undefined') return;
+            const vw = window.innerWidth || 1200;
+            const vh = window.innerHeight || 800;
+            if (!hasDraggedBallRef.current) {
+                // Bottom-right safe stack clear above FloatingChatbot (bottom-12) and CommitInfoBadge
+                setFloatingBallPos({
+                    x: Math.max(12, vw - 64),
+                    y: Math.max(80, vh - 172),
+                });
+            } else {
+                setFloatingBallPos(prev => ({
+                    x: Math.max(10, Math.min(vw - 56, prev.x)),
+                    y: Math.max(60, Math.min(vh - 60, prev.y)),
+                }));
+            }
+        };
+        positionBallSafely();
+        window.addEventListener('resize', positionBallSafely);
+        return () => window.removeEventListener('resize', positionBallSafely);
+    }, []);
     const [isDraggingBall, setIsDraggingBall] = useState(false);
     const ballDragStartRef = useRef(null);
     const longPressTimerRef = useRef(null);
@@ -5113,16 +5172,154 @@ export default function Whiteboard({
         toast.success(`Dropped ${newNotes.length} task sticky notes on canvas!`, { icon: '📌' });
     };
 
+    // Pure Canvas <-> Screen Coordinate & OBB Geometry Helpers
+    const getCanvasPixelMetrics = useCallback(() => {
+        const canvasEl = canvasRef.current;
+        if (!canvasEl) return { scaleX: 1, scaleY: 1, rect: null, canvasEl: null };
+        const rect = canvasEl.getBoundingClientRect();
+        const scaleX = rect.width > 0 ? canvasEl.width / rect.width : 1;
+        const scaleY = rect.height > 0 ? canvasEl.height / rect.height : 1;
+        return { scaleX, scaleY, rect, canvasEl };
+    }, []);
+
+    const screenDeltaToCanvasDelta = useCallback((dx, dy) => {
+        const { scaleX, scaleY } = getCanvasPixelMetrics();
+        return { canvasDx: dx * scaleX, canvasDy: dy * scaleY };
+    }, [getCanvasPixelMetrics]);
+
+    const computeRotatedResize = useCallback((startObj, handle, canvasDx, canvasDy, { minSize = 20, keepAspect = false } = {}) => {
+        const w0 = Math.max(1, startObj.width || minSize);
+        const h0 = Math.max(1, startObj.height || minSize);
+        const x0 = startObj.x || 0;
+        const y0 = startObj.y || 0;
+        const cx0 = x0 + w0 / 2;
+        const cy0 = y0 + h0 / 2;
+        const theta = ((startObj.rotation || 0) * Math.PI) / 180;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        // Project world delta onto local unrotated axes R(-theta)
+        const localDx = canvasDx * cosT + canvasDy * sinT;
+        const localDy = -canvasDx * sinT + canvasDy * cosT;
+
+        let newW = w0;
+        let newH = h0;
+        if (handle.includes('e')) newW = Math.max(minSize, w0 + localDx);
+        if (handle.includes('w')) newW = Math.max(minSize, w0 - localDx);
+        if (handle.includes('s')) newH = Math.max(minSize, h0 + localDy);
+        if (handle.includes('n')) newH = Math.max(minSize, h0 - localDy);
+
+        if (keepAspect && (startObj.type === 'circle' || handle.length === 2)) {
+            const ratio = w0 / h0 || 1;
+            if (startObj.type === 'circle') {
+                const uniform = Math.max(newW, newH);
+                newW = uniform;
+                newH = uniform;
+            } else if (Math.abs(newW - w0) >= Math.abs(newH - h0)) {
+                newH = Math.max(minSize, newW / ratio);
+            } else {
+                newW = Math.max(minSize, newH * ratio);
+            }
+        }
+
+        // Translate box center in local axes so opposite handle/edge remains pinned in world space
+        const sx = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0;
+        const sy = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0;
+        const shiftLocalX = sx * (newW - w0) / 2;
+        const shiftLocalY = sy * (newH - h0) / 2;
+        const cx1 = cx0 + shiftLocalX * cosT - shiftLocalY * sinT;
+        const cy1 = cy0 + shiftLocalX * sinT + shiftLocalY * cosT;
+
+        return {
+            x: cx1 - newW / 2,
+            y: cy1 - newH / 2,
+            width: newW,
+            height: newH,
+        };
+    }, []);
+
+    const computeRotatedDragAngle = useCallback((startObj, startX, startY, clientX, clientY) => {
+        const { rect, canvasEl } = getCanvasPixelMetrics();
+        if (!canvasEl || !rect || !rect.width || !rect.height) return startObj.rotation || 0;
+        const scaleToScreenX = canvasEl.width > 0 ? rect.width / canvasEl.width : 1;
+        const scaleToScreenY = canvasEl.height > 0 ? rect.height / canvasEl.height : 1;
+        const centerX = (startObj.x || 0) + (startObj.width || 0) / 2;
+        const centerY = (startObj.y || 0) + (startObj.height || 0) / 2;
+        const canvasCenterX = rect.left + centerX * scaleToScreenX;
+        const canvasCenterY = rect.top + centerY * scaleToScreenY;
+
+        const startAngle = Math.atan2(startY - canvasCenterY, startX - canvasCenterX);
+        const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
+        const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
+        return snapRotationAngle((startObj.rotation || 0) + angleDiff);
+    }, [getCanvasPixelMetrics]);
+
+    const createDragSnapshot = useCallback(({
+        primaryShapeIds = selectedShapeIds,
+        primaryTextIds = selectedTextIds,
+        primaryImageIds = selectedImageIds,
+        primary3DIds = selected3DIds,
+        seedGroupId = null,
+    } = {}) => {
+        const groupIds = new Set();
+        if (seedGroupId) groupIds.add(seedGroupId);
+        shapeObjects.forEach(s => { if (s.groupId && primaryShapeIds.includes(s.id)) groupIds.add(s.groupId); });
+        textObjects.forEach(t => { if (t.groupId && primaryTextIds.includes(t.id)) groupIds.add(t.groupId); });
+        imageObjects.forEach(i => { if (i.groupId && primaryImageIds.includes(i.id)) groupIds.add(i.groupId); });
+
+        const expandedShapes = shapeObjects.filter(s => !s.isLocked && (primaryShapeIds.includes(s.id) || (s.groupId && groupIds.has(s.groupId))));
+        const expandedTexts = textObjects.filter(t => !t.isLocked && (primaryTextIds.includes(t.id) || (t.groupId && groupIds.has(t.groupId))));
+        const expandedImages = imageObjects.filter(i => !i.isLocked && (primaryImageIds.includes(i.id) || (i.groupId && groupIds.has(i.groupId))));
+        const expanded3D = threeDObjects.filter(o => !o.isLocked && primary3DIds.includes(o.id));
+
+        return {
+            startObjs: expandedShapes,
+            startShapeObjs: expandedShapes,
+            startTextObjs: expandedTexts,
+            startImageObjs: expandedImages,
+            start3DObjs: expanded3D,
+        };
+    }, [shapeObjects, textObjects, imageObjects, threeDObjects, selectedShapeIds, selectedTextIds, selectedImageIds, selected3DIds]);
+
+    const applyMultiDragMove = useCallback((snapshot, canvasDx, canvasDy) => {
+        const { startShapeObjs, startObjs, startTextObjs, startImageObjs, start3DObjs } = snapshot;
+        const shapesList = startShapeObjs || startObjs || [];
+        if (shapesList.length > 0) {
+            // Note: freehand path points are stored relative to (shp.x, shp.y), so only translate x/y
+            setShapeObjects(prev => prev.map(shp => {
+                const sObj = shapesList.find(s => s.id === shp.id);
+                return sObj ? { ...shp, x: (sObj.x || 0) + canvasDx, y: (sObj.y || 0) + canvasDy } : shp;
+            }));
+        }
+        if (startTextObjs && startTextObjs.length > 0) {
+            setTextObjects(prev => prev.map(txt => {
+                const tObj = startTextObjs.find(t => t.id === txt.id);
+                return tObj ? { ...txt, x: (tObj.x || 0) + canvasDx, y: (tObj.y || 0) + canvasDy } : txt;
+            }));
+        }
+        if (startImageObjs && startImageObjs.length > 0) {
+            setImageObjects(prev => prev.map(img => {
+                const iObj = startImageObjs.find(i => i.id === img.id);
+                return iObj ? { ...img, x: (iObj.x || 0) + canvasDx, y: (iObj.y || 0) + canvasDy } : img;
+            }));
+        }
+        if (start3DObjs && start3DObjs.length > 0) {
+            setThreeDObjects(prev => prev.map(obj => {
+                const oObj = start3DObjs.find(o => o.id === obj.id);
+                return oObj ? { ...obj, x: (oObj.x || 0) + canvasDx, y: (oObj.y || 0) + canvasDy } : obj;
+            }));
+        }
+    }, []);
+
     // Grouping tools
     const moveGroup = useCallback((groupId, dx, dy) => {
         setShapeObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? {
             ...s,
-            x: s.x + dx,
-            y: s.y + dy,
-            points: s.points ? s.points.map(p => ({ x: p.x + dx, y: p.y + dy })) : s.points
+            x: (s.x || 0) + dx,
+            y: (s.y || 0) + dy,
         } : s));
-        setTextObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
-        setImageObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: s.x + dx, y: s.y + dy } : s));
+        setTextObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: (s.x || 0) + dx, y: (s.y || 0) + dy } : s));
+        setImageObjects(prev => prev.map(s => s.groupId === groupId && !s.isLocked ? { ...s, x: (s.x || 0) + dx, y: (s.y || 0) + dy } : s));
     }, []);
 
     const handleGroup = useCallback(() => {
@@ -6582,19 +6779,13 @@ export default function Whiteboard({
     useEffect(() => {
         if (!imageDragState) return;
 
-        const handleMouseMove = (e) => {
+        const handlePointerMove = (e) => {
             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
             const dx = clientX - imageDragState.startX;
             const dy = clientY - imageDragState.startY;
             const startObj = imageDragState.startObj;
-
-            const canvasEl = canvasRef.current;
-            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
-            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
-            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
-            const canvasDx = dx * scaleX;
-            const canvasDy = dy * scaleY;
+            const { canvasDx, canvasDy } = screenDeltaToCanvasDelta(dx, dy);
 
             if (imageDragState.action === 'move') {
                 // If initiated as infinite cloner candidate, require movement > 4px before cloning
@@ -6609,62 +6800,31 @@ export default function Whiteboard({
                         imageDragState.id = cloneId;
                         imageDragState.startObj = { ...cloneObj };
                         imageDragState.startImageObjs = [cloneObj];
+                        imageDragState.startShapeObjs = [];
+                        imageDragState.startObjs = [];
+                        imageDragState.startTextObjs = [];
+                        imageDragState.start3DObjs = [];
                     } else {
                         return; // Don't move original image
                     }
                 }
 
-                const deltaX = (clientX - (imageDragState.lastX || imageDragState.startX)) * scaleX;
-                const deltaY = (clientY - (imageDragState.lastY || imageDragState.startY)) * scaleY;
-                imageDragState.lastX = clientX;
-                imageDragState.lastY = clientY;
-
-                if (imageDragState.startImageObjs && imageDragState.startImageObjs.length > 0) {
-                    setImageObjects(prev => prev.map(img => {
-                        const iObj = imageDragState.startImageObjs.find(i => i.id === img.id);
-                        return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
-                    }));
-                    if (imageDragState.startShapeObjs && imageDragState.startShapeObjs.length > 0) {
-                        setShapeObjects(prev => prev.map(shp => {
-                            const sObj = imageDragState.startShapeObjs.find(s => s.id === shp.id);
-                            return sObj ? { ...shp, x: (sObj.x || 0) + canvasDx, y: (sObj.y || 0) + canvasDy } : shp;
-                        }));
-                    }
-                    if (imageDragState.startTextObjs && imageDragState.startTextObjs.length > 0) {
-                        setTextObjects(prev => prev.map(txt => {
-                            const tObj = imageDragState.startTextObjs.find(t => t.id === txt.id);
-                            return tObj ? { ...txt, x: (tObj.x || 0) + canvasDx, y: (tObj.y || 0) + canvasDy } : txt;
-                        }));
-                    }
-                    if (imageDragState.start3DObjs && imageDragState.start3DObjs.length > 0) {
-                        setThreeDObjects(prev => prev.map(obj => {
-                            const oObj = imageDragState.start3DObjs.find(o => o.id === obj.id);
-                            return oObj ? { ...obj, x: (oObj.x || 0) + canvasDx, y: (oObj.y || 0) + canvasDy } : obj;
-                        }));
-                    }
-                } else if (startObj.groupId) {
-                    moveGroup(startObj.groupId, deltaX, deltaY);
+                if (
+                    (imageDragState.startImageObjs && imageDragState.startImageObjs.length > 0) ||
+                    (imageDragState.startShapeObjs && imageDragState.startShapeObjs.length > 0) ||
+                    (imageDragState.startTextObjs && imageDragState.startTextObjs.length > 0) ||
+                    (imageDragState.start3DObjs && imageDragState.start3DObjs.length > 0)
+                ) {
+                    applyMultiDragMove(imageDragState, canvasDx, canvasDy);
                 } else {
                     setImageObjects(prev => prev.map(img =>
                         img.id === imageDragState.id
-                            ? { ...img, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
+                            ? { ...img, x: (startObj.x || 0) + canvasDx, y: (startObj.y || 0) + canvasDy }
                             : img
                     ));
                 }
             } else if (imageDragState.action === 'rotate') {
-                if (!canvasEl) return;
-                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
-                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
-                const centerX = startObj.x + startObj.width / 2;
-                const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + centerX * scaleToScreenX;
-                const canvasCenterY = rect.top + centerY * scaleToScreenY;
-
-                const startAngle = Math.atan2(imageDragState.startY - canvasCenterY, imageDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
-                const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
-                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
-
+                const newRotation = computeRotatedDragAngle(startObj, imageDragState.startX, imageDragState.startY, clientX, clientY);
                 setImageObjects(prev => prev.map(img =>
                     img.id === imageDragState.id
                         ? { ...img, rotation: newRotation }
@@ -6672,72 +6832,44 @@ export default function Whiteboard({
                 ));
             } else if (imageDragState.action.startsWith('resize-')) {
                 const handle = imageDragState.action.replace('resize-', '');
-                let newX = startObj.x, newY = startObj.y;
-                let newWidth = startObj.width, newHeight = startObj.height;
-                const minSize = 50;
-
-                if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + canvasDx);
-                }
-                if (handle.includes('w')) {
-                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
-                    newX = startObj.x + widthChange;
-                    newWidth = startObj.width - widthChange;
-                }
-                if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + canvasDy);
-                }
-                if (handle.includes('n')) {
-                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
-                    newY = startObj.y + heightChange;
-                    newHeight = startObj.height - heightChange;
-                }
-
+                const nextBox = computeRotatedResize(startObj, handle, canvasDx, canvasDy, {
+                    minSize: 50,
+                    keepAspect: Boolean(e.shiftKey || isShiftDown),
+                });
                 setImageObjects(prev => prev.map(img =>
                     img.id === imageDragState.id
-                        ? { ...img, x: newX, y: newY, width: newWidth, height: newHeight }
+                        ? { ...img, ...nextBox }
                         : img
                 ));
             }
         };
 
-        const handleMouseUp = () => {
+        const handlePointerUp = () => {
             setImageDragState(null);
+            saveToHistory();
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-        window.addEventListener('touchmove', handleMouseMove, { passive: false });
-        window.addEventListener('touchend', handleMouseUp);
-        window.addEventListener('pointermove', handleMouseMove);
-        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-            window.removeEventListener('touchmove', handleMouseMove);
-            window.removeEventListener('touchend', handleMouseUp);
-            window.removeEventListener('pointermove', handleMouseMove);
-            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
-    }, [imageDragState]);
+    }, [imageDragState, screenDeltaToCanvasDelta, applyMultiDragMove, computeRotatedDragAngle, computeRotatedResize, isShiftDown, saveToHistory]);
 
-    // Text manipulation mouse handlers (same pattern as images)
+    // Text manipulation pointer handlers (same unified math pipeline as images)
     useEffect(() => {
         if (!textDragState) return;
 
-        const handleMouseMove = (e) => {
+        const handlePointerMove = (e) => {
             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
             const dx = clientX - textDragState.startX;
             const dy = clientY - textDragState.startY;
             const startObj = textDragState.startObj;
-
-            const canvasEl = canvasRef.current;
-            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
-            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
-            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
-            const canvasDx = dx * scaleX;
-            const canvasDy = dy * scaleY;
+            const { canvasDx, canvasDy } = screenDeltaToCanvasDelta(dx, dy);
 
             if (textDragState.action === 'move') {
                 // If initiated as infinite cloner candidate, require movement > 4px before cloning
@@ -6751,64 +6883,31 @@ export default function Whiteboard({
                         textDragState.id = cloneId;
                         textDragState.startObj = { ...cloneObj };
                         textDragState.startTextObjs = [cloneObj];
+                        textDragState.startShapeObjs = [];
+                        textDragState.startObjs = [];
+                        textDragState.startImageObjs = [];
+                        textDragState.start3DObjs = [];
                     } else {
                         return; // Don't move original text
                     }
                 }
 
-                const deltaX = (clientX - (textDragState.lastX || textDragState.startX)) * scaleX;
-                const deltaY = (clientY - (textDragState.lastY || textDragState.startY)) * scaleY;
-                textDragState.lastX = clientX;
-                textDragState.lastY = clientY;
-
-                if (startObj.groupId) {
-                    moveGroup(startObj.groupId, deltaX, deltaY);
+                if (
+                    (textDragState.startTextObjs && textDragState.startTextObjs.length > 0) ||
+                    (textDragState.startShapeObjs && textDragState.startShapeObjs.length > 0) ||
+                    (textDragState.startImageObjs && textDragState.startImageObjs.length > 0) ||
+                    (textDragState.start3DObjs && textDragState.start3DObjs.length > 0)
+                ) {
+                    applyMultiDragMove(textDragState, canvasDx, canvasDy);
                 } else {
-                    if (textDragState.startTextObjs && textDragState.startTextObjs.length > 0) {
-                        setTextObjects(prev => prev.map(txt => {
-                            const tObj = textDragState.startTextObjs.find(t => t.id === txt.id);
-                            return tObj ? { ...txt, x: tObj.x + canvasDx, y: tObj.y + canvasDy } : txt;
-                        }));
-                        if (textDragState.startShapeObjs && textDragState.startShapeObjs.length > 0) {
-                            setShapeObjects(prev => prev.map(shp => {
-                                const sObj = textDragState.startShapeObjs.find(s => s.id === shp.id);
-                                return sObj ? { ...shp, x: (sObj.x || 0) + canvasDx, y: (sObj.y || 0) + canvasDy } : shp;
-                            }));
-                        }
-                        if (textDragState.startImageObjs && textDragState.startImageObjs.length > 0) {
-                            setImageObjects(prev => prev.map(img => {
-                                const iObj = textDragState.startImageObjs.find(i => i.id === img.id);
-                                return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
-                            }));
-                        }
-                        if (textDragState.start3DObjs && textDragState.start3DObjs.length > 0) {
-                            setThreeDObjects(prev => prev.map(obj => {
-                                const oObj = textDragState.start3DObjs.find(o => o.id === obj.id);
-                                return oObj ? { ...obj, x: (oObj.x || 0) + canvasDx, y: (oObj.y || 0) + canvasDy } : obj;
-                            }));
-                        }
-                    } else {
-                        setTextObjects(prev => prev.map(txt =>
-                            txt.id === textDragState.id
-                                ? { ...txt, x: startObj.x + canvasDx, y: startObj.y + canvasDy }
-                                : txt
-                        ));
-                    }
+                    setTextObjects(prev => prev.map(txt =>
+                        txt.id === textDragState.id
+                            ? { ...txt, x: (startObj.x || 0) + canvasDx, y: (startObj.y || 0) + canvasDy }
+                            : txt
+                    ));
                 }
             } else if (textDragState.action === 'rotate') {
-                if (!canvasEl) return;
-                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
-                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
-                const centerX = startObj.x + startObj.width / 2;
-                const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + centerX * scaleToScreenX;
-                const canvasCenterY = rect.top + centerY * scaleToScreenY;
-
-                const startAngle = Math.atan2(textDragState.startY - canvasCenterY, textDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
-                const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
-                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
-
+                const newRotation = computeRotatedDragAngle(startObj, textDragState.startX, textDragState.startY, clientX, clientY);
                 setTextObjects(prev => prev.map(txt =>
                     txt.id === textDragState.id
                         ? { ...txt, rotation: newRotation }
@@ -6816,73 +6915,44 @@ export default function Whiteboard({
                 ));
             } else if (textDragState.action.startsWith('resize-')) {
                 const handle = textDragState.action.replace('resize-', '');
-                let newX = startObj.x, newY = startObj.y;
-                let newWidth = startObj.width, newHeight = startObj.height;
-                const minSize = 50;
-
-                if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + canvasDx);
-                }
-                if (handle.includes('w')) {
-                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
-                    newX = startObj.x + widthChange;
-                    newWidth = startObj.width - widthChange;
-                }
-                if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + canvasDy);
-                }
-                if (handle.includes('n')) {
-                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
-                    newY = startObj.y + heightChange;
-                    newHeight = startObj.height - heightChange;
-                }
-
+                const nextBox = computeRotatedResize(startObj, handle, canvasDx, canvasDy, {
+                    minSize: 50,
+                    keepAspect: Boolean(e.shiftKey || isShiftDown),
+                });
                 setTextObjects(prev => prev.map(txt =>
                     txt.id === textDragState.id
-                        ? { ...txt, x: newX, y: newY, width: newWidth, height: newHeight }
+                        ? { ...txt, ...nextBox }
                         : txt
                 ));
             }
         };
 
-        const handleMouseUp = () => {
+        const handlePointerUp = () => {
             setTextDragState(null);
             saveToHistory();
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-        window.addEventListener('touchmove', handleMouseMove, { passive: false });
-        window.addEventListener('touchend', handleMouseUp);
-        window.addEventListener('pointermove', handleMouseMove);
-        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-            window.removeEventListener('touchmove', handleMouseMove);
-            window.removeEventListener('touchend', handleMouseUp);
-            window.removeEventListener('pointermove', handleMouseMove);
-            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
-    }, [textDragState, saveToHistory, setTextObjects]);
+    }, [textDragState, saveToHistory, setTextObjects, screenDeltaToCanvasDelta, applyMultiDragMove, computeRotatedDragAngle, computeRotatedResize, isShiftDown]);
 
     // Handle shape dragging/resizing
     useEffect(() => {
         if (!shapeDragState) return;
 
-        const handleMouseMove = (e) => {
+        const handlePointerMove = (e) => {
             const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
             const dx = clientX - shapeDragState.startX;
             const dy = clientY - shapeDragState.startY;
             const startObj = shapeDragState.startObj;
-
-            const canvasEl = canvasRef.current;
-            const rect = canvasEl ? canvasEl.getBoundingClientRect() : { width: 1, height: 1 };
-            const scaleX = (canvasEl && rect.width > 0) ? (canvasEl.width / rect.width) : 1;
-            const scaleY = (canvasEl && rect.height > 0) ? (canvasEl.height / rect.height) : 1;
-            const canvasDx = dx * scaleX;
-            const canvasDy = dy * scaleY;
+            const { canvasDx, canvasDy } = screenDeltaToCanvasDelta(dx, dy);
 
             if (shapeDragState.action === 'move') {
                 // If initiated as infinite cloner candidate, require movement > 4px before cloning
@@ -6896,51 +6966,28 @@ export default function Whiteboard({
                         shapeDragState.id = cloneId;
                         shapeDragState.startObj = { ...cloneObj };
                         shapeDragState.startObjs = [cloneObj];
+                        shapeDragState.startShapeObjs = [cloneObj];
+                        shapeDragState.startTextObjs = [];
+                        shapeDragState.startImageObjs = [];
+                        shapeDragState.start3DObjs = [];
                     } else {
                         return; // Don't move original shape
                     }
                 }
 
-                const deltaX = (clientX - (shapeDragState.lastX || shapeDragState.startX)) * scaleX;
-                const deltaY = (clientY - (shapeDragState.lastY || shapeDragState.startY)) * scaleY;
-                shapeDragState.lastX = clientX;
-                shapeDragState.lastY = clientY;
-
-                if (startObj.groupId) {
-                    moveGroup(startObj.groupId, deltaX, deltaY);
+                if (
+                    (shapeDragState.startShapeObjs && shapeDragState.startShapeObjs.length > 0) ||
+                    (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) ||
+                    (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) ||
+                    (shapeDragState.startImageObjs && shapeDragState.startImageObjs.length > 0) ||
+                    (shapeDragState.start3DObjs && shapeDragState.start3DObjs.length > 0)
+                ) {
+                    applyMultiDragMove(shapeDragState, canvasDx, canvasDy);
                 } else {
-                    if (shapeDragState.startObjs && shapeDragState.startObjs.length > 0) {
-                        setShapeObjects(prev => prev.map(shp => {
-                            const sObj = shapeDragState.startObjs.find(s => s.id === shp.id);
-                            if (!sObj) return shp;
-                            const nextPoints = sObj.points ? sObj.points.map(p => ({ x: p.x + canvasDx, y: p.y + canvasDy })) : sObj.points;
-                            return { ...shp, x: sObj.x + canvasDx, y: sObj.y + canvasDy, points: nextPoints };
-                        }));
-                        if (shapeDragState.startTextObjs && shapeDragState.startTextObjs.length > 0) {
-                            setTextObjects(prev => prev.map(txt => {
-                                const tObj = shapeDragState.startTextObjs.find(t => t.id === txt.id);
-                                return tObj ? { ...txt, x: tObj.x + canvasDx, y: tObj.y + canvasDy } : txt;
-                            }));
-                        }
-                        if (shapeDragState.startImageObjs && shapeDragState.startImageObjs.length > 0) {
-                            setImageObjects(prev => prev.map(img => {
-                                const iObj = shapeDragState.startImageObjs.find(i => i.id === img.id);
-                                return iObj ? { ...img, x: iObj.x + canvasDx, y: iObj.y + canvasDy } : img;
-                            }));
-                        }
-                        if (shapeDragState.start3DObjs && shapeDragState.start3DObjs.length > 0) {
-                            setThreeDObjects(prev => prev.map(obj => {
-                                const oObj = shapeDragState.start3DObjs.find(o => o.id === obj.id);
-                                return oObj ? { ...obj, x: oObj.x + canvasDx, y: oObj.y + canvasDy } : obj;
-                            }));
-                        }
-                    } else {
-                        setShapeObjects(prev => prev.map(shp => {
-                            if (shp.id !== shapeDragState.id) return shp;
-                            const nextPoints = startObj.points ? startObj.points.map(p => ({ x: p.x + canvasDx, y: p.y + canvasDy })) : startObj.points;
-                            return { ...shp, x: startObj.x + canvasDx, y: startObj.y + canvasDy, points: nextPoints };
-                        }));
-                    }
+                    setShapeObjects(prev => prev.map(shp => {
+                        if (shp.id !== shapeDragState.id) return shp;
+                        return { ...shp, x: (startObj.x || 0) + canvasDx, y: (startObj.y || 0) + canvasDy };
+                    }));
                 }
             } else if (shapeDragState.action === 'line-endpoint-start' || shapeDragState.action === 'line-endpoint-end') {
                 // Center of startObj in canvas coordinates
@@ -6993,19 +7040,7 @@ export default function Whiteboard({
                         : shp
                 ));
             } else if (shapeDragState.action === 'rotate') {
-                if (!canvasEl) return;
-                const scaleToScreenX = (canvasEl && canvasEl.width > 0) ? rect.width / canvasEl.width : 1;
-                const scaleToScreenY = (canvasEl && canvasEl.height > 0) ? rect.height / canvasEl.height : 1;
-                const centerX = startObj.x + startObj.width / 2;
-                const centerY = startObj.y + startObj.height / 2;
-                const canvasCenterX = rect.left + centerX * scaleToScreenX;
-                const canvasCenterY = rect.top + centerY * scaleToScreenY;
-
-                const startAngle = Math.atan2(shapeDragState.startY - canvasCenterY, shapeDragState.startX - canvasCenterX);
-                const currentAngle = Math.atan2(clientY - canvasCenterY, clientX - canvasCenterX);
-                const angleDiff = (currentAngle - startAngle) * (180 / Math.PI);
-                const newRotation = snapRotationAngle((startObj.rotation || 0) + angleDiff);
-
+                const newRotation = computeRotatedDragAngle(startObj, shapeDragState.startX, shapeDragState.startY, clientX, clientY);
                 setShapeObjects(prev => prev.map(shp =>
                     shp.id === shapeDragState.id
                         ? { ...shp, rotation: newRotation }
@@ -7013,45 +7048,23 @@ export default function Whiteboard({
                 ));
             } else if (shapeDragState.action.startsWith('resize-')) {
                 const handle = shapeDragState.action.replace('resize-', '');
-                let newX = startObj.x, newY = startObj.y;
-                let newWidth = startObj.width, newHeight = startObj.height;
-                const minSize = 20;
+                const nextBox = computeRotatedResize(startObj, handle, canvasDx, canvasDy, {
+                    minSize: 20,
+                    keepAspect: Boolean(e.shiftKey || isShiftDown),
+                });
 
-                if (handle.includes('e')) {
-                    newWidth = Math.max(minSize, startObj.width + canvasDx);
-                }
-                if (handle.includes('w')) {
-                    const widthChange = Math.min(canvasDx, startObj.width - minSize);
-                    newX = startObj.x + widthChange;
-                    newWidth = startObj.width - widthChange;
-                }
-                if (handle.includes('s')) {
-                    newHeight = Math.max(minSize, startObj.height + canvasDy);
-                }
-                if (handle.includes('n')) {
-                    const heightChange = Math.min(canvasDy, startObj.height - minSize);
-                    newY = startObj.y + heightChange;
-                    newHeight = startObj.height - heightChange;
-                }
-
-                if ((e.shiftKey || isShiftDown) && (startObj.type === 'circle' || handle.length === 2)) {
-                    const size = Math.max(newWidth, newHeight);
-                    if (handle.includes('w')) newX = startObj.x + (startObj.width - size);
-                    if (handle.includes('n')) newY = startObj.y + (startObj.height - size);
-                    newWidth = size;
-                    newHeight = size;
-                }
-
-                const scaleX = (startObj.width && startObj.width !== 0) ? newWidth / startObj.width : 1;
-                const scaleY = (startObj.height && startObj.height !== 0) ? newHeight / startObj.height : 1;
-                const nextPoints = startObj.points ? startObj.points.map(p => ({
-                    x: Math.round(newX + (p.x - startObj.x) * scaleX),
-                    y: Math.round(newY + (p.y - startObj.y) * scaleY)
-                })) : startObj.points;
-
+                // Freehand path / sparkle_path points remain in local originalWidth x originalHeight space
+                // and are scaled non-destructively at render and canvas-export time.
                 setShapeObjects(prev => prev.map(shp =>
                     shp.id === shapeDragState.id
-                        ? { ...shp, x: newX, y: newY, width: newWidth, height: newHeight, points: nextPoints }
+                        ? {
+                            ...shp,
+                            ...nextBox,
+                            ...(shp.points ? {
+                                originalWidth: shp.originalWidth || startObj.originalWidth || Math.max(startObj.width || 1, 1),
+                                originalHeight: shp.originalHeight || startObj.originalHeight || Math.max(startObj.height || 1, 1),
+                            } : {}),
+                        }
                         : shp
                 ));
             } else if (shapeDragState.action === 'skew') {
@@ -7071,26 +7084,20 @@ export default function Whiteboard({
             }
         };
 
-        const handleMouseUp = () => {
+        const handlePointerUp = () => {
             setShapeDragState(null);
             saveToHistory();
         };
 
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
-        window.addEventListener('touchmove', handleMouseMove, { passive: false });
-        window.addEventListener('touchend', handleMouseUp);
-        window.addEventListener('pointermove', handleMouseMove);
-        window.addEventListener('pointerup', handleMouseUp);
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
-            window.removeEventListener('touchmove', handleMouseMove);
-            window.removeEventListener('touchend', handleMouseUp);
-            window.removeEventListener('pointermove', handleMouseMove);
-            window.removeEventListener('pointerup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
-    }, [shapeDragState, saveToHistory, setShapeObjects]);
+    }, [shapeDragState, saveToHistory, setShapeObjects, screenDeltaToCanvasDelta, applyMultiDragMove, computeRotatedDragAngle, computeRotatedResize, isShiftDown]);
 
     // ─── Drag-to-Connect Engine from Shape Magnetic Hooks ─────────────
     const startConnectorDrag = useCallback((shape, anchor, styleOption, e) => {
@@ -7320,17 +7327,18 @@ export default function Whiteboard({
                 setZoomLevel(newZ);
                 setPanOffset({ x: newPanX, y: newPanY });
             } else {
-                // Without Ctrl/Cmd, mouse wheel / trackpad smoothly pans the canvas
+                // Without Ctrl/Cmd, wheel / trackpad pans smoothly in CSS screen pixels scaled by currentZoom
+                const activeScale = currentZoom || zoomLevel || 1;
                 setPanOffset(prev => ({
-                    x: Math.round(prev.x - e.deltaX),
-                    y: Math.round(prev.y - e.deltaY)
+                    x: Math.round(prev.x - e.deltaX / activeScale),
+                    y: Math.round(prev.y - e.deltaY / activeScale)
                 }));
             }
         };
 
         container.addEventListener('wheel', handleWheel, { passive: false });
         return () => container.removeEventListener('wheel', handleWheel);
-    }, [zoomLevel, panOffset, getPosition]);
+    }, [zoomLevel, currentZoom, panOffset, getPosition]);
 
     // Emit draw event via socket when sharing
     const emitDrawEvent = useCallback((eventData) => {
@@ -9744,6 +9752,54 @@ export default function Whiteboard({
         
         
         } else if (tool === 'select') {
+            const getRotatedOBB = (item, fallbackW = 100, fallbackH = 100) => {
+                const ix = item.x || 0;
+                const iy = item.y || 0;
+                const iw = Math.max(1, item.width || fallbackW);
+                const ih = Math.max(1, item.height || fallbackH);
+                const cx = ix + iw / 2;
+                const cy = iy + ih / 2;
+                const rad = ((item.rotation || 0) * Math.PI) / 180;
+                const cos = Math.cos(rad);
+                const sin = Math.sin(rad);
+                const hw = iw / 2;
+                const hh = ih / 2;
+                const corners = [
+                    { x: cx + (-hw) * cos - (-hh) * sin, y: cy + (-hw) * sin + (-hh) * cos },
+                    { x: cx + hw * cos - (-hh) * sin, y: cy + hw * sin + (-hh) * cos },
+                    { x: cx + hw * cos - hh * sin, y: cy + hw * sin + hh * cos },
+                    { x: cx + (-hw) * cos - hh * sin, y: cy + (-hw) * sin + hh * cos },
+                ];
+                return {
+                    minX: Math.min(...corners.map(c => c.x)),
+                    maxX: Math.max(...corners.map(c => c.x)),
+                    minY: Math.min(...corners.map(c => c.y)),
+                    maxY: Math.max(...corners.map(c => c.y)),
+                    cx,
+                    cy,
+                    corners,
+                };
+            };
+
+            const expandGroupedSelections = (selShapes, selTexts, selImages) => {
+                const groupIdsToSelect = new Set([
+                    ...shapeObjects.filter(s => selShapes.includes(s.id) && s.groupId).map(s => s.groupId),
+                    ...textObjects.filter(s => selTexts.includes(s.id) && s.groupId).map(s => s.groupId),
+                    ...imageObjects.filter(s => selImages.includes(s.id) && s.groupId).map(s => s.groupId),
+                ]);
+                if (groupIdsToSelect.size === 0) {
+                    return { selShapes, selTexts, selImages };
+                }
+                const groupShapeIds = shapeObjects.filter(s => !s.isLocked && groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                const groupTextIds = textObjects.filter(s => !s.isLocked && groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                const groupImageIds = imageObjects.filter(s => !s.isLocked && groupIdsToSelect.has(s.groupId)).map(s => s.id);
+                return {
+                    selShapes: Array.from(new Set([...selShapes, ...groupShapeIds])),
+                    selTexts: Array.from(new Set([...selTexts, ...groupTextIds])),
+                    selImages: Array.from(new Set([...selImages, ...groupImageIds])),
+                };
+            };
+
             if (selectMode === 'lasso') {
                 if (lassoPath.length > 2) {
                     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -9755,7 +9811,7 @@ export default function Whiteboard({
                     }
                     const selWidth = maxX - minX;
                     const selHeight = maxY - minY;
-                    
+
                     const isPtInPoly = (pt, poly) => {
                         let inside = false;
                         for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -9768,60 +9824,48 @@ export default function Whiteboard({
                         return inside;
                     };
 
-                    const isObjInLasso = (item) => {
-                        const ix = item.x || 0;
-                        const iy = item.y || 0;
-                        const iw = item.width || 0;
-                        const ih = item.height || 0;
-                        const cx = ix + iw / 2;
-                        const cy = iy + ih / 2;
-                        if (isPtInPoly({ x: cx, y: cy }, lassoPath)) return true;
-                        const corners = [
-                            { x: ix, y: iy },
-                            { x: ix + iw, y: iy },
-                            { x: ix + iw, y: iy + ih },
-                            { x: ix, y: iy + ih }
-                        ];
-                        return corners.some(c => isPtInPoly(c, lassoPath));
+                    const isObjInLasso = (item, fw = 100, fh = 100) => {
+                        const obb = getRotatedOBB(item, fw, fh);
+                        if (isPtInPoly({ x: obb.cx, y: obb.cy }, lassoPath)) return true;
+                        return obb.corners.some(c => isPtInPoly(c, lassoPath));
                     };
 
                     if (selWidth > 5 && selHeight > 5) {
-                        let selectedShapes = shapeObjects.filter(shape => 
-                            !shape.isLocked && isObjInLasso(shape)
-                        ).map(s => s.id);
-                        
-                        let selectedTexts = textObjects.filter(txt => 
-                            !txt.isLocked && isObjInLasso(txt)
+                        let selectedShapes = shapeObjects.filter(shape =>
+                            !shape.isLocked && isObjInLasso(shape, 100, 100)
                         ).map(s => s.id);
 
-                        let selectedImages = imageObjects.filter(img => 
-                            !img.isLocked && isObjInLasso(img)
+                        let selectedTexts = textObjects.filter(txt =>
+                            !txt.isLocked && isObjInLasso(txt, 120, 40)
                         ).map(s => s.id);
 
-                        let selected3D = threeDObjects.filter(obj => 
-                            !obj.isLocked && isObjInLasso(obj)
+                        let selectedImages = imageObjects.filter(img =>
+                            !img.isLocked && isObjInLasso(img, 100, 100)
+                        ).map(s => s.id);
+
+                        let selected3D = threeDObjects.filter(obj =>
+                            !obj.isLocked && isObjInLasso(obj, 220, 220)
                         ).map(o => o.id);
 
-                        const groupIdsToSelect = new Set([
-                            ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                            ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                        ]);
+                        const hitMedia = (mediaObjects || []).find(m => !m.isLocked && isObjInLasso(m, 480, 300));
+                        const hitPdf = (pdfObjects || []).find(p => !p.isLocked && isObjInLasso(p, 500, 640));
+                        const hitTable = (tableObjects || []).find(t => !t.isLocked && isObjInLasso(t, 400, 220));
+                        const hitDoc = (documentObjects || []).find(d => !d.isLocked && isObjInLasso(d, 420, 320));
 
-                        if (groupIdsToSelect.size > 0) {
-                            const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                            const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                            const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                            selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                            selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                            selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                        }
+                        const expanded = expandGroupedSelections(selectedShapes, selectedTexts, selectedImages);
+                        selectedShapes = expanded.selShapes;
+                        selectedTexts = expanded.selTexts;
+                        selectedImages = expanded.selImages;
 
-                        if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0) {
+                        if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0 || hitMedia || hitPdf || hitTable || hitDoc) {
                             setSelectedShapeIds(selectedShapes);
                             setSelectedTextIds(selectedTexts);
                             setSelectedImageIds(selectedImages);
                             setSelected3DIds(selected3D);
+                            setSelectedMediaId(hitMedia ? hitMedia.id : null);
+                            setSelectedPdfId(hitPdf ? hitPdf.id : null);
+                            setSelectedTableId(hitTable ? hitTable.id : null);
+                            setSelectedDocumentId(hitDoc ? hitDoc.id : null);
                             setSelection(null);
 
                             // Auto-convert selected ink strokes if OCR tool is active
@@ -9831,21 +9875,17 @@ export default function Whiteboard({
                                     handleConvertSelectedInkToText(inkShapes.map(s => s.id), true);
                                 }
                             }
-                        } else if (selWidth > 15 && selHeight > 15) {
-                            setSelectedShapeIds([]);
-                            setSelectedTextIds([]);
-                            setSelectedImageIds([]);
-                            setSelected3DIds([]);
-                            setSelectedMediaId(null);
-                            setSelection(null);
                         } else {
                             setSelectedShapeIds([]);
                             setSelectedTextIds([]);
                             setSelectedImageIds([]);
                             setSelected3DIds([]);
                             setSelectedMediaId(null);
+                            setSelectedPdfId(null);
+                            setSelectedTableId(null);
+                            setSelectedDocumentId(null);
                             setSelection(null);
-                            setEditingTextId(null);
+                            if (selWidth <= 15 || selHeight <= 15) setEditingTextId(null);
                         }
                     } else {
                         setSelectedShapeIds([]);
@@ -9853,6 +9893,9 @@ export default function Whiteboard({
                         setSelectedImageIds([]);
                         setSelected3DIds([]);
                         setSelectedMediaId(null);
+                        setSelectedPdfId(null);
+                        setSelectedTableId(null);
+                        setSelectedDocumentId(null);
                         setSelection(null);
                         setEditingTextId(null);
                     }
@@ -9862,6 +9905,9 @@ export default function Whiteboard({
                     setSelectedImageIds([]);
                     setSelected3DIds([]);
                     setSelectedMediaId(null);
+                    setSelectedPdfId(null);
+                    setSelectedTableId(null);
+                    setSelectedDocumentId(null);
                     setSelection(null);
                     setEditingTextId(null);
                 }
@@ -9872,59 +9918,52 @@ export default function Whiteboard({
                 const selWidth = Math.abs(pos.x - sp.x);
                 const selHeight = Math.abs(pos.y - sp.y);
 
+                const isObjInMarquee = (item, fw = 100, fh = 100) => {
+                    const aabb = getRotatedOBB(item, fw, fh);
+                    return (
+                        aabb.minX < x + selWidth &&
+                        aabb.maxX > x &&
+                        aabb.minY < y + selHeight &&
+                        aabb.maxY > y
+                    );
+                };
+
                 if (selWidth > 5 && selHeight > 5) {
-                    let selectedShapes = shapeObjects.filter(shape => 
-                        !shape.isLocked &&
-                        shape.x < x + selWidth && 
-                        shape.x + shape.width > x && 
-                        shape.y < y + selHeight && 
-                        shape.y + shape.height > y
+                    let selectedShapes = shapeObjects.filter(shape =>
+                        !shape.isLocked && isObjInMarquee(shape, 100, 100)
                     ).map(s => s.id);
 
-                    let selectedTexts = textObjects.filter(txt => 
-                        !txt.isLocked &&
-                        txt.x < x + selWidth && 
-                        txt.x + txt.width > x && 
-                        txt.y < y + selHeight && 
-                        txt.y + txt.height > y
+                    let selectedTexts = textObjects.filter(txt =>
+                        !txt.isLocked && isObjInMarquee(txt, 120, 40)
                     ).map(s => s.id);
 
-                    let selectedImages = imageObjects.filter(img => 
-                        !img.isLocked &&
-                        img.x < x + selWidth && 
-                        img.x + img.width > x && 
-                        img.y < y + selHeight && 
-                        img.y + img.height > y
+                    let selectedImages = imageObjects.filter(img =>
+                        !img.isLocked && isObjInMarquee(img, 100, 100)
                     ).map(s => s.id);
 
-                    let selected3D = threeDObjects.filter(obj => 
-                        !obj.isLocked &&
-                        (obj.x || 0) < x + selWidth && 
-                        (obj.x || 0) + (obj.width || 220) > x && 
-                        (obj.y || 0) < y + selHeight && 
-                        (obj.y || 0) + (obj.height || 220) > y
+                    let selected3D = threeDObjects.filter(obj =>
+                        !obj.isLocked && isObjInMarquee(obj, 220, 220)
                     ).map(o => o.id);
 
-                    const groupIdsToSelect = new Set([
-                        ...shapeObjects.filter(s => selectedShapes.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...textObjects.filter(s => selectedTexts.includes(s.id) && s.groupId).map(s => s.groupId),
-                        ...imageObjects.filter(s => selectedImages.includes(s.id) && s.groupId).map(s => s.groupId)
-                    ]);
+                    const hitMedia = (mediaObjects || []).find(m => !m.isLocked && isObjInMarquee(m, 480, 300));
+                    const hitPdf = (pdfObjects || []).find(p => !p.isLocked && isObjInMarquee(p, 500, 640));
+                    const hitTable = (tableObjects || []).find(t => !t.isLocked && isObjInMarquee(t, 400, 220));
+                    const hitDoc = (documentObjects || []).find(d => !d.isLocked && isObjInMarquee(d, 420, 320));
 
-                    if (groupIdsToSelect.size > 0) {
-                        const groupShapeIds = shapeObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                        const groupTextIds = textObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                        const groupImageIds = imageObjects.filter(s => groupIdsToSelect.has(s.groupId)).map(s => s.groupId);
-                        selectedShapes = Array.from(new Set([...selectedShapes, ...groupShapeIds]));
-                        selectedTexts = Array.from(new Set([...selectedTexts, ...groupTextIds]));
-                        selectedImages = Array.from(new Set([...selectedImages, ...groupImageIds]));
-                    }
+                    const expanded = expandGroupedSelections(selectedShapes, selectedTexts, selectedImages);
+                    selectedShapes = expanded.selShapes;
+                    selectedTexts = expanded.selTexts;
+                    selectedImages = expanded.selImages;
 
-                    if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0) {
+                    if (selectedShapes.length > 0 || selectedTexts.length > 0 || selectedImages.length > 0 || selected3D.length > 0 || hitMedia || hitPdf || hitTable || hitDoc) {
                         setSelectedShapeIds(selectedShapes);
                         setSelectedTextIds(selectedTexts);
                         setSelectedImageIds(selectedImages);
                         setSelected3DIds(selected3D);
+                        setSelectedMediaId(hitMedia ? hitMedia.id : null);
+                        setSelectedPdfId(hitPdf ? hitPdf.id : null);
+                        setSelectedTableId(hitTable ? hitTable.id : null);
+                        setSelectedDocumentId(hitDoc ? hitDoc.id : null);
                         setSelection(null);
 
                         // Auto-convert selected ink strokes if OCR tool is active
@@ -10693,9 +10732,18 @@ export default function Whiteboard({
             ctx.beginPath();
             if (shpObj.type === 'path') {
                 if (shpObj.points && shpObj.points.length > 0) {
+                    const pts = shpObj.points;
+                    const maxPx = Math.max(...pts.map(p => p.x));
+                    const minPx = Math.min(...pts.map(p => p.x));
+                    const maxPy = Math.max(...pts.map(p => p.y));
+                    const minPy = Math.min(...pts.map(p => p.y));
+                    const origW = (shpObj.originalWidth && shpObj.originalWidth > 0) ? shpObj.originalWidth : Math.max(maxPx - minPx, 1);
+                    const origH = (shpObj.originalHeight && shpObj.originalHeight > 0) ? shpObj.originalHeight : Math.max(maxPy - minPy, 1);
+                    const sx = (shpObj.width > 0 && origW > 0) ? shpObj.width / origW : 1;
+                    const sy = (shpObj.height > 0 && origH > 0) ? shpObj.height / origH : 1;
                     ctx.save();
                     ctx.translate(shpObj.x || 0, shpObj.y || 0);
-                    const pts = shpObj.points;
+                    ctx.scale(sx, sy);
                     ctx.moveTo(pts[0].x, pts[0].y);
                     if (shpObj.isSmoothed || shpObj.smooth) {
                         for (let i = 1; i < pts.length - 1; i++) {
@@ -11350,13 +11398,23 @@ export default function Whiteboard({
             } else if (shpObj.type === 'sparkle_path') {
                 if (shpObj.points && shpObj.points.length > 0) {
                     const pts = shpObj.points;
+                    const maxPx = Math.max(...pts.map(p => p.x));
+                    const minPx = Math.min(...pts.map(p => p.x));
+                    const maxPy = Math.max(...pts.map(p => p.y));
+                    const minPy = Math.min(...pts.map(p => p.y));
+                    const origW = (shpObj.originalWidth && shpObj.originalWidth > 0) ? shpObj.originalWidth : Math.max(maxPx - minPx, 1);
+                    const origH = (shpObj.originalHeight && shpObj.originalHeight > 0) ? shpObj.originalHeight : Math.max(maxPy - minPy, 1);
+                    const sx = (shpObj.width > 0 && origW > 0) ? shpObj.width / origW : 1;
+                    const sy = (shpObj.height > 0 && origH > 0) ? shpObj.height / origH : 1;
                     ctx.save();
                     if (shpObj.opacity !== undefined) {
                         ctx.globalAlpha = shpObj.opacity;
                     }
+                    ctx.translate(shpObj.x || 0, shpObj.y || 0);
+                    ctx.scale(sx, sy);
                     ctx.beginPath();
                     const theme = shpObj.sparkleTheme || 'galaxy';
-                    const grad = ctx.createLinearGradient(shpObj.x, shpObj.y, shpObj.x + shpObj.width, shpObj.y + shpObj.height);
+                    const grad = ctx.createLinearGradient(0, 0, origW, origH);
                     if (theme === 'galaxy') {
                         grad.addColorStop(0, '#3b0764');
                         grad.addColorStop(0.2, '#7c3aed');
@@ -11392,16 +11450,16 @@ export default function Whiteboard({
                     ctx.lineWidth = shpObj.strokeWidth || 3;
                     ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
-                    ctx.moveTo(shpObj.x + pts[0].x, shpObj.y + pts[0].y);
+                    ctx.moveTo(pts[0].x, pts[0].y);
                     for (let i = 1; i < pts.length; i++) {
-                        ctx.lineTo(shpObj.x + pts[i].x, shpObj.y + pts[i].y);
+                        ctx.lineTo(pts[i].x, pts[i].y);
                     }
                     ctx.stroke();
                     const particles = shpObj.particles || [];
                     particles.forEach(p => {
                         const s = Math.min(7, Math.max(2, p.size || 3.5));
                         ctx.save();
-                        ctx.translate(shpObj.x + p.x, shpObj.y + p.y);
+                        ctx.translate(p.x, p.y);
                         ctx.rotate(((p.rotation || 0) * Math.PI) / 180);
                         const rOut = s;
                         const rIn = s * 0.22;
@@ -21916,9 +21974,9 @@ export default function Whiteboard({
     return (
         <div
             ref={containerRef}
-            className={`relative bg-slate-900 rounded-xl shadow-2xl flex flex-row overflow-hidden ${isFullscreen ? 'h-full w-full border-0 rounded-none' : 'w-full h-full'}`}
+            className={`relative bg-slate-900 rounded-xl shadow-2xl overflow-hidden ${isFullscreen ? 'h-full w-full border-0 rounded-none' : 'w-full h-full'}`}
         >
-            {/* Left Sideroll: AI Quiz Hub (Closed / Partial / Full) */}
+            {/* Overlay Shutter Panels (slide over full-bleed canvas without squeezing) */}
             <WhiteboardQuizSideroll
                 mode={leftSiderollMode}
                 onModeChange={setLeftSiderollMode}
@@ -21932,36 +21990,42 @@ export default function Whiteboard({
                 onClearActiveTakingQuiz={() => setActiveTakingQuiz(null)}
             />
 
-            {/* Center Canvas Area (Dynamic Width Adjustment) */}
-            <div className="flex-1 h-full min-w-0 relative flex flex-col overflow-hidden bg-white">
-                {/* Left Edge Open Button when closed */}
+            {/* Full-Bleed Invariant Canvas Area */}
+            <div
+                className="w-full h-full relative flex flex-col overflow-hidden bg-white"
+                inert={(leftSiderollMode === 'full' || rightSiderollMode === 'full') ? '' : undefined}
+            >
+                {/* Left Edge Icon-Only Shutter Trigger (AI Quiz Hub) */}
                 {leftSiderollMode === 'closed' && (
                     <button
+                        type="button"
                         onClick={() => setLeftSiderollMode('partial')}
-                        className="absolute left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-indigo-600 text-white p-2 py-3 rounded-r-2xl shadow-xl border border-l-0 border-slate-700/80 transition flex items-center gap-1 group"
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-indigo-600 text-white p-2 py-3 rounded-r-2xl shadow-xl border border-l-0 border-slate-700/80 transition flex items-center gap-0.5 group backdrop-blur-md"
                         title="Open AI Quiz Hub"
+                        aria-label="Open AI Quiz Hub"
                     >
-                        <HelpCircle className="w-4 h-4 text-indigo-400 group-hover:text-white" />
-                        <span className="text-[11px] font-bold pr-1 hidden group-hover:inline">AI Quiz</span>
-                        <ChevronRight className="w-3 h-3 text-slate-400 group-hover:text-white" />
+                        <FluentQuizIcon className="w-5 h-5" aria-hidden="true" />
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" aria-hidden="true" />
                     </button>
                 )}
 
-                {/* Right Edge Open Button when closed */}
+                {/* Right Edge Icon-Only Shutter Trigger (Web & Media Research Hub) */}
                 {rightSiderollMode === 'closed' && (
                     <button
+                        type="button"
                         onClick={() => setRightSiderollMode('partial')}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-emerald-600 text-white p-2 py-3 rounded-l-2xl shadow-xl border border-r-0 border-slate-700/80 transition flex items-center gap-1 group"
-                        title="Open Research Browser"
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-40 bg-slate-900/90 hover:bg-emerald-600 text-white p-2 py-3 rounded-l-2xl shadow-xl border border-r-0 border-slate-700/80 transition flex items-center gap-0.5 group backdrop-blur-md"
+                        title="Open Research & Media Hub"
+                        aria-label="Open Research & Media Hub"
                     >
-                        <ChevronLeft className="w-3 h-3 text-slate-400 group-hover:text-white" />
-                        <span className="text-[11px] font-bold pl-1 hidden group-hover:inline">Research</span>
-                        <Globe className="w-4 h-4 text-emerald-400 group-hover:text-white" />
+                        <ChevronLeft className="w-3.5 h-3.5 text-slate-400 group-hover:text-white" aria-hidden="true" />
+                        <ArgonBrowserIcon className="w-5 h-5" aria-hidden="true" />
                     </button>
                 )}
 
-                {/* Top Edge Tab for Roll-Down AI Slide Show & Screen Curtain */}
+                {/* Top-Center Icon-Only Tab for Roll-Down AI Slide Show & Screen Curtain */}
                 <button
+                    type="button"
                     onClick={() => {
                         setIsCurtainActive(prev => {
                             const next = !prev;
@@ -21969,289 +22033,129 @@ export default function Whiteboard({
                             return next;
                         });
                     }}
-                    className="absolute top-0 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 hover:bg-violet-600 text-white px-3.5 py-1.5 rounded-b-2xl shadow-xl border border-t-0 border-slate-700/80 transition-all flex items-center gap-1.5 group text-xs font-bold"
-                    title={isCurtainActive ? "Hide AI Slides & Screen Curtain" : "Roll Down AI Slide Show & Screen Curtain"}
+                    className="absolute top-0 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 hover:bg-violet-600 text-white px-3 py-1.5 rounded-b-2xl shadow-xl border border-t-0 border-slate-700/80 transition-all flex items-center gap-1.5 group backdrop-blur-md"
+                    title={isCurtainActive ? 'Hide AI Slides & Screen Curtain' : 'Roll Down AI Slide Show & Screen Curtain'}
+                    aria-label={isCurtainActive ? 'Hide AI Slides and Screen Curtain' : 'Open AI Slides and Screen Curtain'}
                 >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-12 transition-transform" />
-                    <span>AI Slides & Curtain</span>
-                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} />
+                    <ArgonSlideshowIcon className="w-4 h-4" aria-hidden="true" />
+                    <ArgonCurtainIcon className="w-4 h-4" aria-hidden="true" />
+                    <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
 
-                {/* Top-Right Maximize / Fullscreen Button */}
+                {/* Single Top-Right Icon-Only Fullscreen Toggle (toolbar duplicate eliminated) */}
                 {onToggleFullscreen && (
                     <button
+                        type="button"
                         onClick={onToggleFullscreen}
-                        className="absolute top-2.5 right-3 z-40 bg-slate-900/90 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded-xl shadow-xl border border-slate-700/80 transition-all flex items-center gap-1.5 group text-xs font-semibold backdrop-blur-md"
-                        title={isFullscreen ? "Exit Fullscreen (Esc)" : "Maximize Whiteboard"}
+                        className="absolute top-2.5 right-3 z-40 w-9 h-9 bg-slate-900/90 hover:bg-slate-800 text-white rounded-xl shadow-xl border border-slate-700/80 transition-all flex items-center justify-center group backdrop-blur-md"
+                        title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Maximize Whiteboard (F)'}
+                        aria-label={isFullscreen ? 'Exit Fullscreen' : 'Maximize Whiteboard'}
                     >
                         {isFullscreen ? (
-                            <>
-                                <Minimize2 className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
-                                <span className="hidden sm:inline text-xs">Exit Fullscreen</span>
-                            </>
+                            <ArgonFullscreenExitIcon className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" aria-hidden="true" />
                         ) : (
-                            <>
-                                <Maximize2 className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
-                                <span className="hidden sm:inline text-xs">Maximize</span>
-                            </>
+                            <ArgonFullscreenIcon className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" aria-hidden="true" />
                         )}
                     </button>
                 )}
 
             {/* Whiteboard Workspace Container */}
 
-            {/* Floating Sleek Toolbar / View-Only Status Pill */}
+            {/* View-Only Status Pill (Fullscreen stays single Top-Right icon button) */}
             {!canUserDraw ? (
-                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-4 py-2.5 flex items-center gap-3.5 rounded-full z-40 animate-in fade-in">
-                    <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
-                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>View Only (Whiteboard drawing is disabled by Host)</span>
-                    </div>
-                    <button
-                        onClick={onToggleFullscreen}
-                        className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition"
-                        title="Toggle Fullscreen"
-                    >
-                        {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                    </button>
+                <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-3.5 py-2 flex items-center gap-2 rounded-full z-40 animate-in fade-in">
+                    <Lock className="w-4 h-4 text-amber-400 shrink-0" aria-hidden="true" />
+                    <span className="text-amber-300 text-xs font-semibold">View Only</span>
                 </div>
             ) : (() => {
                 const isVertical = toolbarDock === 'left' || toolbarDock === 'right';
                 const isFloating = toolbarDock === 'float';
                 const popoverPos = toolbarDock === 'left'
-                    ? 'left-[125%] top-0'
+                    ? 'left-[120%] top-0'
                     : toolbarDock === 'right'
-                    ? 'right-[125%] top-0'
+                    ? 'right-[120%] top-0'
                     : toolbarDock === 'top'
                     ? 'top-full left-1/2 -translate-x-1/2 mt-2'
                     : 'bottom-full left-1/2 -translate-x-1/2 mb-2';
+                const rightAnchoredPopoverPos = isVertical
+                    ? popoverPos
+                    : toolbarDock === 'top'
+                    ? 'top-full right-0 mt-2'
+                    : 'bottom-full right-0 mb-2';
 
-                const allTools = [
-                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)', important: true },
-                    { id: 'grab', icon: Hand, label: 'Hand / Pan (H or hold Space)', important: true },
-                    { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)', important: true },
-                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)', important: true },
-                    { id: 'eraser', icon: Eraser, label: 'Eraser (E)', important: true },
-                    { id: 'fill', icon: PaintBucket, label: 'Fill Bucket (G) - Solid, Pattern, Gradient', important: true },
-                    { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows', important: false },
-                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes', important: true },
-                    { id: 'table', icon: Table, label: 'Classroom Table & Grid', important: true },
-                    { id: 'text', icon: Type, label: 'Text (T)', important: true },
-                    { id: 'math_tablet', icon: Calculator, label: 'Math Input Tablet (Windows MIP)', important: true },
-                    { id: 'math_solver', icon: Sparkles, label: 'Auto Math Solver (Timed Steps)', important: true },
-                    { id: 'parametric_shape', icon: Compass, label: 'Parametric Geometry (Equations/Angles)', important: true },
-                    { id: 'geometry_instruments', icon: Compass, label: 'Geometry Instruments (myViewBoard)', important: true },
-                    { id: 'browser_panel', icon: Globe, label: 'Search Panel (Google & YouTube)', important: true },
-                    { id: 'image', icon: ImageIcon, label: 'Insert Image', important: false },
-                    { id: 'media', icon: Film, label: 'Media & Documents (PDF, Video, Audio, Record, Web)', important: true },
-                    { id: 'domain_3d', icon: Box, label: '3D Objects & Domain Library', important: true },
-                    { id: 'graph_plotter', icon: LineChart, label: 'Graph Plotter / Equation Graphing', important: true },
-                    { id: 'physics_space', icon: Atom, label: 'Physics Space (Simulation Lab)', important: true },
-                    { id: 'tasks', icon: ListTodo, label: 'Whiteboard Tasks Checklist', important: true },
-                    { id: 'templates', icon: LayoutTemplate, label: 'Templates & SmartArt', important: false },
-                    { id: 'shortcuts', icon: Keyboard, label: 'Keyboard Shortcuts (Cmd+/ or ?)', important: false },
-                    { id: 'timer', icon: Clock, label: 'Classroom Timer & Stopwatch', important: false },
-                    { id: 'spotlight', icon: TorchIcon, label: 'Spotlight Focus', important: false },
-                    { id: 'curtain', icon: StickyNoteIcon, label: 'Screen Curtain', important: false },
-                    { id: 'laser', icon: Sparkles, label: 'Laser Pointer (L)', important: false },
-                    { id: 'datetime', icon: CalendarClock, label: 'Insert DateTime', important: false },
-                    { id: 'recorder', icon: Video, label: 'Screen/Board Recorder', important: false },
-                    { id: 'games', icon: Gamepad2, label: 'Whiteboard Games 🎮', important: false },
-                    ...(isInstructor ? [{ id: 'permissions', icon: Users, label: 'Manage Permissions', important: false }] : []),
-                ];
-
+                // 9 Core Drawing Primitives — special/advanced tools consolidated into the 3 Suite drop-ups
                 const coreTools = [
-                    { id: 'select', icon: selectMode === 'lasso' ? Wand2 : MousePointer2, label: 'Select (V)' },
-                    { id: 'grab', icon: Hand, label: 'Hand / Pan (H)' },
-                    { id: 'pen', icon: penMode === 'sparkle' ? Sparkles : Pencil, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Smart Draw (P)' },
-                    { id: 'highlighter', icon: Highlighter, label: 'Highlighter (H)' },
-                    { id: 'eraser', icon: Eraser, label: 'Eraser (E)' },
-                    { id: 'fill', icon: PaintBucket, label: 'Fill Bucket (G)' },
-                    { id: 'line', icon: lineType.startsWith('connector') ? Waypoints : (lineType === 'arrow' ? MoveRight : Minus), label: 'Lines & Arrows' },
-                    { id: 'shape', icon: shapeType === 'circle' ? Circle : (shapeType === 'triangle' ? Triangle : (shapeType === 'star' ? Star : (shapeType === 'parallelogram' ? ParallelogramIcon : RectangleHorizontal))), label: 'Shapes' },
-                    { id: 'table', icon: Table, label: 'Table (Grid)' },
-                    { id: 'text', icon: Type, label: 'Text (T)' },
+                    { id: 'select', icon: selectMode === 'lasso' ? ArgonLassoIcon : ArgonSelectIcon, label: 'Select / Lasso (V)' },
+                    { id: 'grab', icon: ArgonGrabIcon, label: 'Hand / Pan (H or Space)' },
+                    { id: 'pen', icon: penMode === 'sparkle' ? ArgonSparkleIcon : ArgonPenIcon, label: penMode === 'sparkle' ? 'Sparkle Pen (P)' : 'Pen & Brushes (P)' },
+                    { id: 'highlighter', icon: ArgonHighlighterIcon, label: 'Highlighter (H)' },
+                    { id: 'eraser', icon: ArgonEraserIcon, label: 'Eraser & Clear (E)' },
+                    { id: 'fill', icon: ArgonFillIcon, label: 'Fill Bucket & Eyedropper (G)' },
+                    { id: 'line', icon: lineType.startsWith('connector') ? ArgonConnectorIcon : (lineType === 'arrow' ? MoveRight : ArgonLineIcon), label: 'Lines & Snap Connectors' },
+                    { id: 'shape', icon: ArgonShapeIcon, label: 'Shapes, Sticky Notes & Quick Geometry' },
+                    { id: 'text', icon: ArgonTextIcon, label: 'Text Box (T)' },
                 ];
 
-                const displayedTools = isToolbarCollapsed ? coreTools : allTools;
+                const toolBtnSizeClass = 'w-[clamp(30px,3.2vw,36px)] h-[clamp(30px,3.2vw,36px)] [@media(pointer:coarse)]:min-w-[38px] [@media(pointer:coarse)]:min-h-[38px] p-1 rounded-xl transition-all flex items-center justify-center relative shrink-0';
 
                 return (
-                <div 
+                <div
                     ref={toolbarRef}
+                    role="toolbar"
+                    aria-label="Whiteboard Primary Toolbar"
                     style={{
                         ...(isFloating ? { left: `${Math.round(toolbarPos.x)}px`, top: `${Math.round(toolbarPos.y)}px` } : {}),
                     }}
-                    className={`absolute bg-slate-900/95 shadow-2xl border border-slate-700/60 flex z-50 overflow-visible whitespace-nowrap hide-scrollbar ${isDraggingToolbar ? '' : 'transition-opacity duration-200'} ${
+                    className={`absolute bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 flex z-50 overflow-visible hide-scrollbar ${isDraggingToolbar ? '' : 'transition-opacity duration-200'} ${
                     !isStateLoaded ? 'pointer-events-none opacity-60' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-95 hover:opacity-100')
                 } ${
                     toolbarDock === 'top'
-                        ? 'top-4 inset-x-0 mx-auto w-fit flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
+                        ? 'top-12 sm:top-4 inset-x-0 mx-auto w-fit flex-row flex-wrap sm:flex-nowrap justify-center items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[calc(100vw-16px)]'
                         : toolbarDock === 'left'
-                        ? 'left-4 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        ? 'left-3 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2 px-1 rounded-2xl gap-1 max-h-[86vh] overflow-y-auto overflow-x-visible'
                         : toolbarDock === 'right'
-                        ? 'right-4 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2.5 px-1 rounded-2xl gap-1 max-h-[90vh] overflow-y-auto overflow-x-hidden'
+                        ? 'right-3 inset-y-0 my-auto h-fit flex-col items-center w-12 py-2 px-1 rounded-2xl gap-1 max-h-[86vh] overflow-y-auto overflow-x-visible'
                         : isFloating
-                        ? 'flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
-                        : 'bottom-4 inset-x-0 mx-auto w-fit flex-row items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[95%]'
+                        ? 'flex-row flex-wrap sm:flex-nowrap justify-center items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[calc(100vw-16px)]'
+                        : 'bottom-3 inset-x-0 mx-auto w-fit flex-row flex-wrap sm:flex-nowrap justify-center items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[calc(100vw-16px)]'
                 }`}>
                     {/* Floatable Toolbar Drag Grip */}
                     <div
-                        onMouseDown={handleToolbarDragStart}
                         onPointerDown={handleToolbarDragStart}
                         className="p-1 cursor-grab active:cursor-grabbing text-slate-400 hover:text-white rounded transition flex items-center justify-center shrink-0"
+                        style={{ touchAction: 'none' }}
                         title="Drag to float toolbar anywhere on screen"
+                        aria-label="Drag toolbar"
                     >
-                        <GripVertical className="w-3.5 h-3.5" />
+                        <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
                     </div>
+                    <div role="separator" aria-orientation={isVertical ? 'horizontal' : 'vertical'} className={`${isVertical ? 'h-px w-6 my-0.5' : 'w-px h-4 mx-0.5'} bg-slate-700/80 shrink-0`} />
 
-                    {/* Toggle between Grouped Categories Mode (default) and Flat All-Tools Mode */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setIsToolbarCollapsed(prev => !prev);
-                            setShowMathFlyout(false);
-                            setShowScienceFlyout(false);
-                            setShowMediaFlyout(false);
-                            setShowToolsFlyout(false);
-                        }}
-                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-amber-400 rounded-full transition flex items-center justify-center shrink-0"
-                        title={isToolbarCollapsed ? "Expand Toolbar: Flat layout (All 28 Tools)" : "Group Toolbar: Compact categories (Clean View)"}
-                    >
-                        {isToolbarCollapsed ? <Maximize2 className="w-3.5 h-3.5 text-amber-400" /> : <Minimize2 className="w-3.5 h-3.5" />}
-                    </button>
-                    {/* Customize Toolbar Icons Trigger */}
-                    <button
-                        type="button"
-                        onClick={() => setShowCustomIconsModal(true)}
-                        className="p-1 hover:bg-slate-800 text-slate-400 hover:text-indigo-400 rounded-full transition flex items-center justify-center shrink-0"
-                        title="Customize Toolbar Icons (Custom SVG, Images, Packs)"
-                    >
-                        <Palette className="w-3.5 h-3.5" />
-                    </button>
-                    <div className={`w-px ${isVertical ? 'h-0.5 w-5 my-0.5' : 'h-4 mx-0.5'} bg-slate-700 shrink-0`} />
-
-                    {/* Tools */}
-                    <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
-                        <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'} relative`}>
-                        {displayedTools.map(t => (
+                    {/* Core Drawing Tools & Suite Drop-Ups */}
+                    <div role="group" aria-label="Core Drawing Tools" className={`flex ${isVertical ? 'flex-col gap-1' : 'flex-wrap sm:flex-nowrap justify-center items-center gap-0.5'}`}>
+                        <div className={`flex ${isVertical ? 'flex-col gap-1' : 'flex-wrap sm:flex-nowrap justify-center items-center gap-0.5'} relative`}>
+                        {coreTools.map(t => (
                             <div key={t.id} className="relative">
                                 <button
+                                    type="button"
                                     onClick={() => {
                                         setShowMathFlyout(false);
                                         setShowScienceFlyout(false);
                                         setShowMediaFlyout(false);
                                         setShowToolsFlyout(false);
-                                        if (t.id === 'math_tablet') {
-                                            setShowMathTablet(true);
-                                            return;
-                                        }
-                                        if (t.id === 'math_solver') {
-                                            setShowMathSolver(true);
-                                            return;
-                                        }
-                                        if (t.id === 'parametric_shape') {
-                                            setShowParametricModal(true);
-                                            return;
-                                        }
-                                        if (t.id === 'equation') {
-                                            setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
-                                            setEditingEquationId(null);
-                                            setShowEquationModal(true);
-                                            return;
-                                        }
-                                        if (t.id === 'media') {
-                                            setShowMediaModal(true);
-                                            return;
-                                        }
-                                        if (t.id === 'domain_3d') {
-                                            setShowDomainLibrary(true);
-                                            return;
-                                        }
-                                        if (t.id === 'graph_plotter') {
-                                            handleInsertGraph();
-                                            return;
-                                        }
-                                        if (t.id === 'physics_space') {
-                                            setShowPhysicsSpace(prev => !prev);
-                                            return;
-                                        }
-                                        if (t.id === 'geometry_instruments') {
-                                            setShowGeometryInstruments(prev => !prev);
-                                            return;
-                                        }
-                                        if (t.id === 'browser_panel') {
-                                            setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
-                                            return;
-                                        }
-                                        if (t.id === 'tasks') {
-                                            setShowTasksPanel(prev => !prev);
-                                            return;
-                                        }
-                                        if (t.id === 'shortcuts') {
-                                            setShortcutsModalTab('shortcuts');
-                                            setShowShortcutsModal(true);
-                                            return;
-                                        }
-                                        if (t.id === 'templates') {
-                                            setShowTemplateGallery(true);
-                                            return;
-                                        }
-                                        if (t.id === 'timer') {
-                                            setShowClassroomTimer(prev => !prev);
-                                            return;
-                                        }
-                                        if (t.id === 'spotlight') {
-                                            setIsSpotlightActive(prev => {
-                                                const next = !prev;
-                                                if (next) {
-                                                    toast('Spotlight active: move cursor to illuminate, scroll to zoom', { icon: '🔦' });
-                                                    setSelectedShapeIds([]);
-                                                    setSelectedTextIds([]);
-                                                    setSelectedImageId(null);
-                                                }
-                                                return next;
-                                            });
-                                            return;
-                                        }
-                                        if (t.id === 'curtain') {
-                                            setIsCurtainActive(prev => {
-                                                const next = !prev;
-                                                if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
-                                                return next;
-                                            });
-                                            return;
-                                        }
-                                        if (t.id === 'datetime') {
-                                            handleInsertDateTime();
-                                            return;
-                                        }
-                                        if (t.id === 'recorder') {
-                                            setShowRecorder(!showRecorder);
-                                            return;
-                                        }
-                                        if (t.id === 'games') {
-                                            setShowGameSelector(true);
-                                            return;
-                                        }
-                                        if (t.id === 'table') {
-                                            setShowTableModal(true);
-                                            return;
-                                        }
+                                        setShowShareFlyout(false);
+                                        setShowDisplayAudioControls(false);
                                         if (t.id === 'fill') {
                                             if (tool === 'fill') {
                                                 setShowFillPicker(prev => !prev);
                                             } else {
+                                                closeAllToolContextOverlays();
                                                 setTool('fill');
                                                 setShowFillPicker(true);
                                             }
                                             return;
                                         }
-                                        if (t.id === 'permissions') {
-                                            setShowPermissions(true);
-                                            return;
-                                        }
                                         if (tool === t.id) {
-                                            // Re-click to open popup
                                             if (t.id === 'pen') setShowStrokePicker(!showStrokePicker);
                                             if (t.id === 'eraser') setShowEraserPicker(!showEraserPicker);
                                             if (t.id === 'fill') setShowFillPicker(!showFillPicker);
@@ -22259,38 +22163,25 @@ export default function Whiteboard({
                                             if (t.id === 'shape') setShowShapePicker(!showShapePicker);
                                             if (t.id === 'highlighter') setShowHighlighterPicker(!showHighlighterPicker);
                                             if (t.id === 'line') setShowLinePicker(!showLinePicker);
-                                            if (t.id === 'image') setShowImagePicker(!showImagePicker);
                                         } else {
                                             setTool(t.id);
                                             closeAllToolContextOverlays();
-                                            if (t.id === 'image') setShowImagePicker(true);
                                         }
                                     }}
-                                    className={`p-1.5 rounded-xl transition-colors flex items-center justify-center relative ${
-                                        (tool === t.id ||
-                                        (t.id === 'math_tablet' && showMathTablet) ||
-                                        (t.id === 'math_solver' && showMathSolver) ||
-                                        (t.id === 'parametric_shape' && showParametricModal) ||
-                                        (t.id === 'geometry_instruments' && showGeometryInstruments) ||
-                                        (t.id === 'browser_panel' && rightSiderollMode !== 'closed') ||
-                                        (t.id === 'recorder' && showRecorder) ||
-                                        (t.id === 'timer' && showClassroomTimer) ||
-                                        (t.id === 'spotlight' && isSpotlightActive) ||
-                                        (t.id === 'curtain' && isCurtainActive) ||
-                                        (t.id === 'tasks' && showTasksPanel) ||
-                                        (t.id === 'table' && showTableModal) ||
-                                        (t.id === 'fill' && showFillPicker))
+                                    className={`${toolBtnSizeClass} ${
+                                        (tool === t.id || (t.id === 'fill' && showFillPicker))
                                             ? 'bg-slate-800 text-white shadow-lg ring-2 ring-primary-500/70 border border-primary-500/40'
                                             : 'text-slate-300 hover:bg-slate-800/70'
                                     }`}
                                     title={t.label}
+                                    aria-label={t.label}
                                 >
                                     {(() => {
                                         const IconComp = getCustomToolbarIcon(t.id, t.icon);
                                         if (t.id === 'highlighter') {
                                             return (
                                                 <div className="relative flex items-center justify-center">
-                                                    <IconComp className="w-5 h-5 flex-shrink-0" />
+                                                    <IconComp className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
                                                     <span
                                                         className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900 shadow-sm"
                                                         style={{ backgroundColor: highlighterColor }}
@@ -22301,7 +22192,7 @@ export default function Whiteboard({
                                         if (t.id === 'pen') {
                                             return (
                                                 <div className="relative flex items-center justify-center">
-                                                    <IconComp className="w-5 h-5 flex-shrink-0" />
+                                                    <IconComp className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
                                                     <span
                                                         className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900 shadow-sm"
                                                         style={{ backgroundColor: color }}
@@ -22309,7 +22200,7 @@ export default function Whiteboard({
                                                 </div>
                                             );
                                         }
-                                        return <IconComp className="w-5 h-5 flex-shrink-0" />;
+                                        return <IconComp className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />;
                                     })()}
                                 </button>
                                 
@@ -22328,7 +22219,7 @@ export default function Whiteboard({
                                                     penMode === 'normal' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
                                                 }`}
                                             >
-                                                <Pencil className="w-3 h-3" />
+                                                <ArgonPenIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                                 Normal
                                             </button>
                                             <button
@@ -22338,7 +22229,7 @@ export default function Whiteboard({
                                                     penMode === 'sparkle' ? 'bg-gradient-to-r from-amber-400 to-amber-500 text-slate-950 font-bold shadow-xs' : 'text-slate-400 hover:text-amber-300'
                                                 }`}
                                             >
-                                                <Sparkles className="w-3.5 h-3.5" />
+                                                <ArgonSparkleIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                                 Sparkle
                                             </button>
                                         </div>
@@ -22663,15 +22554,48 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'eraser' && showEraserPicker && (
-                                    <div className={`absolute ${popoverPos} p-3 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-2 w-48`}>
+                                    <div className={`absolute ${popoverPos} p-3 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700/80 z-50 flex flex-col gap-2.5 w-52 text-slate-200`}>
+                                        <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                                            <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                                                <ArgonEraserIcon className="w-4 h-4" />
+                                                Eraser
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => { setShowEraserPicker(false); setShowClearBoardConfirm(true); }}
+                                                className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-semibold flex items-center gap-1 transition"
+                                                title="Clear Entire Page"
+                                            >
+                                                <ArgonBroomIcon className="w-3.5 h-3.5" />
+                                                <span>Clear Page</span>
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-slate-800 p-0.5 rounded-xl border border-slate-700/60 text-[11px]">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEraserMode('rub')}
+                                                className={`flex-1 py-1 px-2 rounded-lg font-medium flex items-center justify-center gap-1 transition ${eraserMode === 'rub' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                <Scissors className="w-3 h-3" />
+                                                <span>Rub</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEraserMode('object')}
+                                                className={`flex-1 py-1 px-2 rounded-lg font-medium flex items-center justify-center gap-1 transition ${eraserMode === 'object' ? 'bg-primary-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                                <span>Object</span>
+                                            </button>
+                                        </div>
                                         <div className="flex justify-between text-xs text-slate-300">
                                             <span>Size</span>
-                                            <span>{eraserSize}px</span>
+                                            <span className="font-mono">{eraserSize}px</span>
                                         </div>
                                         <input
                                             type="range"
-                                            min="1"
-                                            max="30"
+                                            min="4"
+                                            max="72"
                                             value={eraserSize}
                                             onChange={(e) => setEraserSize(parseInt(e.target.value))}
                                             className="w-full accent-primary-500 cursor-pointer"
@@ -22684,16 +22608,27 @@ export default function Whiteboard({
                                     <div className={`absolute ${popoverPos} p-3 bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl z-50 flex flex-col gap-2.5 w-[310px] text-slate-200 backdrop-blur-md animate-in fade-in zoom-in-95`}>
                                         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                                             <div className="flex items-center gap-1.5">
-                                                <PaintBucket className="w-4 h-4 text-emerald-400" />
+                                                <ArgonFillIcon className="w-4 h-4" />
                                                 <span className="text-xs font-bold text-white uppercase tracking-wider">Fill Bucket</span>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowFillPicker(false)}
-                                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
-                                            >
-                                                <X className="w-3.5 h-3.5" />
-                                            </button>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setTool('eyedropper'); setShowFillPicker(false); toast('Click any pixel or shape to sample color', { icon: '💧' }); }}
+                                                    className={`px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1 border transition ${tool === 'eyedropper' ? 'bg-fuchsia-600 text-white border-fuchsia-400' : 'bg-slate-800 hover:bg-slate-700 text-fuchsia-300 border-slate-700'}`}
+                                                    title="Eyedropper Color Picker"
+                                                >
+                                                    <ArgonEyedropperIcon className="w-3.5 h-3.5" />
+                                                    <span>Pick</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowFillPicker(false)}
+                                                    className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="flex items-center bg-slate-800/80 p-0.5 rounded-xl border border-slate-700/60 text-xs">
@@ -22990,75 +22925,84 @@ export default function Whiteboard({
                                 )}
 
                                 {tool === t.id && t.id === 'select' && showSelectPicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-1 w-[120px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700/80 z-50 flex flex-col gap-1 w-[140px] max-h-[65dvh] overflow-y-auto`}>
                                         <button
+                                            type="button"
                                             onClick={() => { setSelectMode('rectangle'); setShowSelectPicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'rectangle' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Rectangle Select"
                                         >
-                                            <RectangleHorizontal className="w-3.5 h-3.5" /> Rect Select
+                                            <ArgonSelectIcon className="w-4 h-4" /> Rect Select
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setSelectMode('lasso'); setShowSelectPicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'lasso' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${selectMode === 'lasso' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Lasso Select"
                                         >
-                                            <Wand2 className="w-3.5 h-3.5" /> Lasso Select
+                                            <ArgonLassoIcon className="w-4 h-4" /> Lasso Select
                                         </button>
                                     </div>
                                 )}
 
                                 {tool === t.id && t.id === 'line' && showLinePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 flex flex-col gap-1 w-[150px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700/80 z-50 flex flex-col gap-1 w-[165px] max-h-[65dvh] overflow-y-auto`}>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('line'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'line' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Line"
                                         >
-                                            <Minus className="w-3.5 h-3.5" /> Line
+                                            <ArgonLineIcon className="w-4 h-4" /> Line
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('arrow'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arrow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arrow' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Arrow"
                                         >
-                                            <MoveRight className="w-3.5 h-3.5" /> Arrow
+                                            <MoveRight className="w-4 h-4 text-sky-400" /> Arrow
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('double_arrow'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'double_arrow' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'double_arrow' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Double Arrow"
                                         >
-                                            <ArrowLeftRight className="w-3.5 h-3.5" /> 2-Way
+                                            <ArrowLeftRight className="w-4 h-4 text-emerald-400" /> 2-Way
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('arc'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arc' ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'arc' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Curved Arc"
                                         >
-                                            <Spline className="w-3.5 h-3.5" /> Curved Arc
+                                            <Spline className="w-4 h-4 text-amber-400" /> Curved Arc
                                         </button>
                                         <div className="w-full h-px bg-slate-700 my-1" />
                                         <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider px-1">Connectors</div>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('connector_straight'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_straight' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_straight' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Straight Snap Connector"
                                         >
-                                            <MoveRight className="w-4 h-4 text-sky-400" />
+                                            <ArgonConnectorIcon className="w-4 h-4" />
                                             <span className="font-mono text-[11px]">━ Straight</span>
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('connector_elbow'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_elbow' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_elbow' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Elbow (90°) Connector"
                                         >
-                                            <Waypoints className="w-4 h-4 text-purple-400" />
+                                            <ArgonFlowchartIcon className="w-4 h-4" />
                                             <span className="font-mono text-[11px]">└ Elbow</span>
                                         </button>
                                         <button
+                                            type="button"
                                             onClick={() => { setLineType('connector_curved'); setShowLinePicker(false); }}
-                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_curved' ? 'bg-primary-500/20 text-primary-400 font-semibold' : 'text-slate-300 hover:bg-slate-700'}`}
+                                            className={`flex items-center gap-2 p-1.5 rounded-lg text-xs w-full text-left transition ${lineType === 'connector_curved' ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                             title="Curved Path Connector"
                                         >
                                             <Spline className="w-4 h-4 text-amber-400" />
@@ -23066,11 +23010,9 @@ export default function Whiteboard({
                                         </button>
                                     </div>
                                 )}
-                                
-
 
                                 {tool === t.id && t.id === 'shape' && showShapePicker && (
-                                    <div className={`absolute ${popoverPos} p-2 bg-slate-800 rounded-2xl shadow-2xl border border-slate-700 z-50 grid grid-cols-3 gap-1 w-[210px]`}>
+                                    <div className={`absolute ${popoverPos} p-2 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700/80 z-50 grid grid-cols-3 gap-1 w-[225px] max-h-[65dvh] overflow-y-auto`}>
                                         {[
                                             { id: 'rectangle', icon: RectangleHorizontal, label: 'Rectangle' },
                                             { id: 'rounded_rect', icon: RectangleHorizontal, label: 'Rounded' },
@@ -23085,17 +23027,18 @@ export default function Whiteboard({
                                             { id: 'parallelogram', icon: ParallelogramIcon, label: 'Parallelogram' },
                                             { id: 'terminator', icon: RectangleHorizontal, label: 'Terminator' },
                                             { id: 'cylinder', icon: Database, label: 'Cylinder' },
-                                            { id: 'document', icon: FileText, label: 'Document' },
+                                            { id: 'document', icon: ArgonDocumentIcon, label: 'Document' },
                                             { id: 'callout', icon: MessageSquare, label: 'Callout' },
-                                            { id: 'cube', icon: Box, label: 'Cube' },
+                                            { id: 'cube', icon: Argon3DIcon, label: 'Cube' },
                                             { id: 'arc', icon: Spline, label: 'Curved Arc' },
                                             { id: 'cloud', icon: Cloud, label: 'Cloud' },
-                                            { id: 'sticky_note', icon: StickyNoteIcon, label: 'Sticky Note' },
-                                            { id: 'graph', icon: LineChart, label: '2D Graph' },
-                                            { id: 'ruler', icon: Ruler, label: 'Ruler' },
-                                            { id: 'protractor', icon: Compass, label: 'Protractor' },
+                                            { id: 'sticky_note', icon: ArgonStickyNoteIcon, label: 'Sticky Note' },
+                                            { id: 'graph', icon: ArgonGraphIcon, label: '2D Graph' },
+                                            { id: 'ruler', icon: ArgonRulerIcon, label: 'Ruler' },
+                                            { id: 'protractor', icon: ArgonProtractorIcon, label: 'Protractor' },
                                         ].map(s => (
                                             <button
+                                                type="button"
                                                 key={s.id}
                                                 onClick={() => {
                                                     if (s.id === 'sticky_note') {
@@ -23117,7 +23060,7 @@ export default function Whiteboard({
                                                     }
                                                     setShowShapePicker(false);
                                                 }}
-                                                className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs transition gap-0.5 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-400' : 'text-slate-300 hover:bg-slate-700'}`}
+                                                className={`flex flex-col items-center justify-center p-1.5 rounded-lg text-xs transition gap-0.5 ${shapeType === s.id ? 'bg-primary-500/20 text-primary-300 font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}
                                                 title={s.label}
                                             >
                                                 <s.icon className="w-4 h-4" />
@@ -23135,7 +23078,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('circle'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-rose-600/30 hover:border-rose-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-rose-600/30 hover:border-rose-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Circle with Center O and Radius r"
                                                 >
                                                     <Circle className="w-3 h-3 text-rose-400" />
@@ -23144,7 +23087,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('concentric_circles'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-blue-600/30 hover:border-blue-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-blue-600/30 hover:border-blue-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Concentric Circles with common Center O"
                                                 >
                                                     <span className="text-blue-400 font-bold text-xs leading-none">◎</span>
@@ -23153,7 +23096,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('cone'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-amber-600/30 hover:border-amber-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-amber-600/30 hover:border-amber-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Cone with altitude & radius markings"
                                                 >
                                                     <ConeIcon className="w-3 h-3 text-amber-400" />
@@ -23162,7 +23105,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('right_triangle'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-sky-600/30 hover:border-sky-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-sky-600/30 hover:border-sky-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Right-Angled Triangle with 90° marker"
                                                 >
                                                     <RightTriangleIcon className="w-3 h-3 text-sky-400" />
@@ -23171,7 +23114,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('incline_plane'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-emerald-600/30 hover:border-emerald-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-emerald-600/30 hover:border-emerald-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Inclined Plane with mass block & angle θ"
                                                 >
                                                     <InclinePlaneIcon className="w-3 h-3 text-emerald-400" />
@@ -23180,7 +23123,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('cylinder'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-indigo-600/30 hover:border-indigo-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Cylinder with radius & height"
                                                 >
                                                     <Database className="w-3 h-3 text-indigo-400" />
@@ -23189,7 +23132,7 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('triangle'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-purple-600/30 hover:border-purple-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-purple-600/30 hover:border-purple-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant Triangle with altitude line"
                                                 >
                                                     <Triangle className="w-3 h-3 text-purple-400" />
@@ -23198,704 +23141,661 @@ export default function Whiteboard({
                                                 <button
                                                     type="button"
                                                     onClick={() => { stampQuickShape('axes'); setShowShapePicker(false); }}
-                                                    className="py-1 px-1 rounded-md bg-slate-700/80 hover:bg-cyan-600/30 hover:border-cyan-500/50 border border-slate-600/60 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
+                                                    className="py-1 px-1 rounded-md bg-slate-800 hover:bg-cyan-600/30 hover:border-cyan-500/50 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center gap-1 text-[9.5px] font-medium transition"
                                                     title="Instant 2D Cartesian Coordinate Axes"
                                                 >
-                                                    <LineChart className="w-3 h-3 text-cyan-400" />
+                                                    <ArgonGraphIcon className="w-3 h-3" />
                                                     <span>2D Axes</span>
                                                 </button>
                                             </div>
                                         </div>
 
-                                        {/* Domain Symbols Library Button */}
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setShowShapePicker(false);
-                                                setShowDomainLibrary(true);
-                                            }}
-                                            className="col-span-3 mt-1 py-1.5 px-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 hover:text-white flex items-center justify-center gap-1.5 text-[11px] font-medium transition shadow-sm"
-                                        >
-                                            <Library className="w-3.5 h-3.5 text-indigo-400" />
-                                            <span>Domain Symbols Library</span>
-                                        </button>
+                                        {/* Classroom Table & Domain Symbols Library Actions */}
+                                        <div className="col-span-3 grid grid-cols-2 gap-1 mt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowShapePicker(false);
+                                                    setShowTableModal(true);
+                                                }}
+                                                className="py-1.5 px-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-200 hover:text-white flex items-center justify-center gap-1 text-[10.5px] font-medium transition"
+                                            >
+                                                <ArgonTableIcon className="w-3.5 h-3.5" />
+                                                <span>Table</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setShowShapePicker(false);
+                                                    setShowDomainLibrary(true);
+                                                }}
+                                                className="py-1.5 px-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-200 hover:text-white flex items-center justify-center gap-1 text-[10.5px] font-medium transition"
+                                            >
+                                                <ArgonStemSuiteIcon className="w-3.5 h-3.5" />
+                                                <span>Library</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
                         ))}
 
-                        {/* Grouped Category Flyouts (Active when Toolbar is in Grouped Mode) */}
-                        {isToolbarCollapsed && (
-                            <>
-                                <div className={`w-px ${isVertical ? 'h-0.5 w-5 my-0.5' : 'h-4 mx-0.5'} bg-slate-700/80 shrink-0`} />
+                        {/* Consolidated 3 Parent Suite Drop-Ups (Zero removed tools, 100% Fluent 2 icons) */}
+                        <div role="separator" aria-orientation={isVertical ? 'horizontal' : 'vertical'} className={`${isVertical ? 'h-px w-6 my-0.5' : 'w-px h-4 mx-0.5'} bg-slate-700/80 shrink-0`} />
 
-                                {/* 1. Math & Geometry Suite Flyout */}
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowMathFlyout(prev => !prev);
-                                            setShowScienceFlyout(false);
-                                            setShowMediaFlyout(false);
-                                            setShowToolsFlyout(false);
-                                            setShowStrokePicker(false);
-                                            setShowShapePicker(false);
-                                            setShowEraserPicker(false);
-                                            setShowSelectPicker(false);
-                                            setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                        }}
-                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
-                                            showMathFlyout ||
-                                            showGeometryInstruments ||
-                                            showParametricModal ||
-                                            showMathTablet ||
-                                            showMathSolver ||
-                                            showEquationModal ||
-                                            showEstimator ||
-                                            showFlashcards
-                                                ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200 scale-105'
-                                                : 'text-cyan-400 bg-cyan-500/15 hover:bg-cyan-500/30 hover:text-cyan-200 hover:scale-105'
-                                        }`}
-                                        title="Math & Geometry Suite (Instruments, Calculator, Flashcards, Graph, Solver)"
+                        <div role="group" aria-label="STEM, Media & Utilities Suites" className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
+                            {/* 1. STEM Suite Drop-Up (Math, Drafting, Science Lab & 3D) */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = !showMathFlyout;
+                                        closeAllToolContextOverlays();
+                                        setShowPageNavMenu(false);
+                                        setShowDisplayAudioControls(false);
+                                        setShowMathFlyout(next);
+                                    }}
+                                    className={`${toolBtnSizeClass} ${
+                                        showMathFlyout ||
+                                        showGeometryInstruments ||
+                                        showParametricModal ||
+                                        showMathTablet ||
+                                        showMathSolver ||
+                                        showEquationModal ||
+                                        showEstimator ||
+                                        showFlashcards ||
+                                        showPhysicsSpace ||
+                                        showDomainLibrary
+                                            ? 'bg-cyan-500 text-slate-950 font-bold shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-200'
+                                            : 'text-slate-200 bg-cyan-500/15 hover:bg-cyan-500/30'
+                                    }`}
+                                    title="STEM Suite (Geometry Instruments, Solver, Graph, Physics Lab, 3D Models, Flashcards)"
+                                    aria-label="Open STEM Suite"
+                                    aria-expanded={showMathFlyout}
+                                >
+                                    <ArgonStemSuiteIcon className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
+                                    {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal || showEstimator || showFlashcards || showPhysicsSpace || showDomainLibrary) && (
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-900 animate-pulse" />
+                                    )}
+                                </button>
+
+                                {showMathFlyout && (
+                                    <div
+                                        className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 w-[min(272px,92vw)] max-h-[65dvh] overflow-y-auto text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                        style={{ backgroundColor: '#0f172a' }}
                                     >
-                                        <ArgonMathIcon className="w-5 h-5 flex-shrink-0" />
-                                        {(showGeometryInstruments || showParametricModal || showMathTablet || showMathSolver || showEquationModal || showEstimator || showFlashcards) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-cyan-400 border border-slate-900 animate-pulse" />
-                                        )}
-                                    </button>
-
-                                    {showMathFlyout && (
-                                        <div
-                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
-                                            style={{ backgroundColor: '#0f172a' }}
-                                        >
-                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
-                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <Calculator className="w-3 h-3 text-primary-400" />
-                                                    Math & Geometry Suite
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowMathFlyout(false)}
-                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
-                                            </div>
-
+                                        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-0.5 shrink-0">
+                                            <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                <ArgonStemSuiteIcon className="w-3.5 h-3.5" />
+                                                STEM &amp; Lab Suite
+                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setShowGeometryInstruments(prev => !prev);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showGeometryInstruments ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
+                                                onClick={() => setShowMathFlyout(false)}
+                                                className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                aria-label="Close STEM Suite"
                                             >
-                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                                                    <Compass className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Geometry Instruments</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Ruler, Compass, Divider, Protractor, Set Square</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowParametricModal(true);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showParametricModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-                                                    <Compass className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Parametric Geometry</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Equations, angles & curves</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    handleInsertGraph();
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
-                                                    <LineChart className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Graph Plotter</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Plot 2D equations & functions</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowMathTablet(true);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showMathTablet ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                                                    <Calculator className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Math Input Tablet</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Handwriting to LaTeX (MIP)</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowMathSolver(true);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showMathSolver ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                                    <Sparkles className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Auto Math Solver</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Step-by-step problem solver</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
-                                                    setEditingEquationId(null);
-                                                    setShowEquationModal(true);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                                                    <Sigma className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">LaTeX Equation Editor</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Insert custom math formula</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowEstimator(prev => !prev);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showEstimator ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                                                    <Calculator className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Estimator (Sci-Calc)</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Trig, logs, roots, fractions & board insert</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowFlashcards(prev => !prev);
-                                                    setShowMathFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showFlashcards ? 'bg-sky-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
-                                                    <Layers className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">STEM Flashcards</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">3D flip cards & spaced repetition</span>
-                                                </div>
+                                                <X className="w-3 h-3" />
                                             </button>
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* 2. Science Lab & 3D Flyout */}
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowScienceFlyout(prev => !prev);
-                                            setShowMathFlyout(false);
-                                            setShowMediaFlyout(false);
-                                            setShowToolsFlyout(false);
-                                            setShowStrokePicker(false);
-                                            setShowShapePicker(false);
-                                            setShowEraserPicker(false);
-                                            setShowSelectPicker(false);
-                                            setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                        }}
-                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
-                                            showScienceFlyout || showPhysicsSpace || showDomainLibrary
-                                                ? 'bg-violet-600 text-white font-bold shadow-lg shadow-violet-500/30 ring-2 ring-violet-300 scale-105'
-                                                : 'text-violet-400 bg-violet-500/15 hover:bg-violet-500/30 hover:text-violet-200 hover:scale-105'
-                                        }`}
-                                        title="Science Lab & 3D (Physics Space, 3D Domain Models)"
-                                    >
-                                        <ArgonPhysicsIcon className="w-5 h-5 flex-shrink-0" />
-                                        {(showPhysicsSpace || showDomainLibrary) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-violet-400 border border-slate-900 animate-pulse" />
-                                        )}
-                                    </button>
+                                        <div className="text-[9.5px] font-semibold uppercase tracking-wider text-cyan-400/90 px-2 pt-0.5">Math &amp; Drafting</div>
 
-                                    {showScienceFlyout && (
-                                        <div
-                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
-                                            style={{ backgroundColor: '#0f172a' }}
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowGeometryInstruments(prev => !prev); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showGeometryInstruments ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
                                         >
-                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
-                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <Atom className="w-3 h-3 text-violet-400" />
-                                                    Science Lab & 3D
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowScienceFlyout(false)}
-                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonCompassIcon className="w-4 h-4" />
                                             </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Geometry Instruments</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Ruler, Compass, Divider, Protractor</span>
+                                            </div>
+                                        </button>
 
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowParametricModal(true); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showParametricModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonParametricIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Parametric Geometry</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Equations, angles &amp; curves</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { handleInsertGraph(); setShowMathFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonGraphIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Graph Plotter</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Plot 2D equations &amp; functions</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowMathTablet(true); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showMathTablet ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonMathIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Math Input Tablet</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Handwriting to LaTeX (MIP)</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowMathSolver(true); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showMathSolver ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonSparkleIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Auto Math Solver</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Step-by-step problem solver</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setEquationInitialLatex('\\int_{0}^{\\infty} x^2 e^{-x}\\,dx = 2');
+                                                setEditingEquationId(null);
+                                                setShowEquationModal(true);
+                                                setShowMathFlyout(false);
+                                            }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <FluentToolIcon icon="fluent:math-formula-24-filled" className="w-4 h-4 text-indigo-400" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">LaTeX Equation Editor</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Insert custom math formula</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowEstimator(prev => !prev); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showEstimator ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonCalculatorIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Estimator (Sci-Calc)</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Trig, logs, roots &amp; board insert</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowFlashcards(prev => !prev); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showFlashcards ? 'bg-sky-600 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonFlashcardsIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">STEM Flashcards</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">3D flip cards &amp; spaced repetition</span>
+                                            </div>
+                                        </button>
+
+                                        <div className="border-t border-slate-800 my-0.5" />
+                                        <div className="text-[9.5px] font-semibold uppercase tracking-wider text-violet-400/90 px-2">Science Lab &amp; 3D</div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowPhysicsSpace(prev => !prev); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showPhysicsSpace ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonPhysicsIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Physics Space Lab</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Matter.js 2D physics &amp; gravity</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowDomainLibrary(true); setShowMathFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showDomainLibrary ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <Argon3DIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">3D Objects &amp; Domain Library</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Interactive 3D geometry &amp; models</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 2. Insert & Media Drop-Up (Research Browser, Media, Images, Tables, Templates, Recorder) */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = !showMediaFlyout;
+                                        closeAllToolContextOverlays();
+                                        setShowPageNavMenu(false);
+                                        setShowDisplayAudioControls(false);
+                                        setShowMediaFlyout(next);
+                                    }}
+                                    className={`${toolBtnSizeClass} ${
+                                        showMediaFlyout || rightSiderollMode !== 'closed' || showMediaModal || showTableModal || showTemplateGallery || showRecorder
+                                            ? 'bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300'
+                                            : 'text-slate-200 bg-emerald-500/15 hover:bg-emerald-500/30'
+                                    }`}
+                                    title="Insert & Media (Research Browser, PDF/Video, Image Upload, Table, Templates, Recorder)"
+                                    aria-label="Open Insert and Media Suite"
+                                    aria-expanded={showMediaFlyout}
+                                >
+                                    <ArgonMediaIcon className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
+                                    {(rightSiderollMode !== 'closed' || showMediaModal || showRecorder) && (
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-slate-900 animate-pulse" />
+                                    )}
+                                </button>
+
+                                {showMediaFlyout && (
+                                    <div
+                                        className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 w-[min(256px,92vw)] max-h-[65dvh] overflow-y-auto text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                        style={{ backgroundColor: '#0f172a' }}
+                                    >
+                                        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-0.5 shrink-0">
+                                            <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                <ArgonMediaIcon className="w-3.5 h-3.5" />
+                                                Insert &amp; Media
+                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setShowPhysicsSpace(prev => !prev);
-                                                    setShowScienceFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showPhysicsSpace ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
+                                                onClick={() => setShowMediaFlyout(false)}
+                                                className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                aria-label="Close Insert and Media"
                                             >
-                                                <div className="w-6 h-6 rounded-lg bg-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
-                                                    <Atom className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Physics Space Lab</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Matter.js 2D physics & gravity</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowDomainLibrary(true);
-                                                    setShowScienceFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showDomainLibrary ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
-                                                    <Box className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">3D Objects Library</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Interactive 3D geometry & models</span>
-                                                </div>
+                                                <X className="w-3 h-3" />
                                             </button>
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* 3. Media & Research Flyout */}
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowMediaFlyout(prev => !prev);
-                                            setShowMathFlyout(false);
-                                            setShowScienceFlyout(false);
-                                            setShowToolsFlyout(false);
-                                            setShowStrokePicker(false);
-                                            setShowShapePicker(false);
-                                            setShowEraserPicker(false);
-                                            setShowSelectPicker(false);
-                                            setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                        }}
-                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
-                                            showMediaFlyout || rightSiderollMode !== 'closed' || showMediaModal
-                                                ? 'bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-300 scale-105'
-                                                : 'text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/30 hover:text-emerald-200 hover:scale-105'
-                                        }`}
-                                        title="Media & Research (Google Images, YouTube, PDF, Video, Audio)"
-                                    >
-                                        <ArgonBrowserIcon className="w-5 h-5 flex-shrink-0" />
-                                        {(rightSiderollMode !== 'closed' || showMediaModal) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-slate-900 animate-pulse" />
-                                        )}
-                                    </button>
-
-                                    {showMediaFlyout && (
-                                        <div
-                                            className={`absolute ${popoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[240px] text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
-                                            style={{ backgroundColor: '#0f172a' }}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
+                                                setShowMediaFlyout(false);
+                                            }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                rightSiderollMode !== 'closed' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
                                         >
-                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1">
-                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <Globe className="w-3 h-3 text-emerald-400" />
-                                                    Media & Research
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowMediaFlyout(false)}
-                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonBrowserIcon className="w-4 h-4" />
                                             </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Research Side Panel</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Web, Google Images &amp; YouTube</span>
+                                            </div>
+                                        </button>
 
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowMediaModal(true); setShowMediaFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showMediaModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonMediaIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Media &amp; Documents</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">PDF, Video, Audio, Web Embed</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { imageInputRef.current?.click(); setShowMediaFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonImageIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Upload Local Image</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Insert image file from device</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowImagePickerModal(true); setShowMediaFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonDocumentIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Drive &amp; Asset Gallery</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Pick from Drive or Docs</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowTableModal(true); setShowMediaFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showTableModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonTableIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Classroom Table</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Insert interactive grid &amp; cells</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowTemplateGallery(true); setShowMediaFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showTemplateGallery ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonTemplatesIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Templates &amp; SmartArt</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Mind maps, grids &amp; charts</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowRecorder(!showRecorder); setShowMediaFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showRecorder ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonRecorderIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs">Screen Recorder</span>
+                                                <span className="text-[10px] text-slate-400 font-normal truncate">Record lesson video &amp; board</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 3. Utilities Drop-Up (Timer, Spotlight, Curtain, Laser, Tasks, Games, Search, Brightness/Volume, Custom Icons, Shortcuts, Permissions) */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = !showToolsFlyout;
+                                        closeAllToolContextOverlays();
+                                        setShowPageNavMenu(false);
+                                        setShowDisplayAudioControls(false);
+                                        setShowToolsFlyout(next);
+                                    }}
+                                    className={`${toolBtnSizeClass} ${
+                                        showToolsFlyout ||
+                                        showClassroomTimer ||
+                                        isSpotlightActive ||
+                                        isCurtainActive ||
+                                        tool === 'laser' ||
+                                        showTasksPanel ||
+                                        showGameSelector ||
+                                        showShortcutsModal ||
+                                        showCustomIconsModal ||
+                                        showDisplayAudioControls ||
+                                        showPermissions
+                                            ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200'
+                                            : 'text-slate-200 bg-amber-500/15 hover:bg-amber-500/30'
+                                    }`}
+                                    title="Utilities & Settings (Timer, Spotlight, Curtain, Laser, Tasks, Games, Brightness, Search, Custom Icons)"
+                                    aria-label="Open Utilities and Classroom Settings"
+                                    aria-expanded={showToolsFlyout}
+                                >
+                                    <ArgonUtilitiesIcon className="w-[18px] h-[18px] flex-shrink-0" aria-hidden="true" />
+                                    {(showClassroomTimer || isSpotlightActive || isCurtainActive || tool === 'laser' || showTasksPanel) && (
+                                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-900 animate-pulse" />
+                                    )}
+                                </button>
+
+                                {showToolsFlyout && (
+                                    <div
+                                        className={`absolute ${rightAnchoredPopoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 w-[min(248px,92vw)] max-h-[65dvh] overflow-y-auto text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                        style={{ backgroundColor: '#0f172a' }}
+                                    >
+                                        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-0.5 shrink-0">
+                                            <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                <ArgonUtilitiesIcon className="w-3.5 h-3.5" />
+                                                Utilities &amp; Tools
+                                            </span>
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setRightSiderollMode(prev => prev === 'closed' ? 'partial' : 'closed');
-                                                    setShowMediaFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    rightSiderollMode !== 'closed' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
+                                                onClick={() => setShowToolsFlyout(false)}
+                                                className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                                aria-label="Close Utilities"
                                             >
-                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                                                    <Globe className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Search Side Panel</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Google Images & YouTube search</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowMediaModal(true);
-                                                    setShowMediaFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showMediaModal ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                                    <Film className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Media & Documents</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">PDF, Video, Audio, Record, Web</span>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    imageInputRef.current?.click();
-                                                    setShowMediaFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center shrink-0">
-                                                    <ImageIcon className="w-3.5 h-3.5" />
-                                                </div>
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-xs">Insert Local Image</span>
-                                                    <span className="text-[10px] text-slate-400 font-normal">Upload image file from device</span>
-                                                </div>
+                                                <X className="w-3 h-3" />
                                             </button>
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* 4. Classroom Toolbox Flyout */}
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowToolsFlyout(prev => !prev);
-                                            setShowMathFlyout(false);
-                                            setShowScienceFlyout(false);
-                                            setShowMediaFlyout(false);
-                                            setShowStrokePicker(false);
-                                            setShowShapePicker(false);
-                                            setShowEraserPicker(false);
-                                            setShowSelectPicker(false);
-                                            setShowHighlighterPicker(false);
-                                            setShowLinePicker(false);
-                                        }}
-                                        className={`p-1.5 rounded-xl transition-all flex items-center justify-center relative ${
-                                            showToolsFlyout ||
-                                            showClassroomTimer ||
-                                            isSpotlightActive ||
-                                            isCurtainActive ||
-                                            tool === 'laser' ||
-                                            showRecorder ||
-                                            showTasksPanel ||
-                                            showTemplateGallery ||
-                                            showGameSelector ||
-                                            showShortcutsModal ||
-                                            showPermissions
-                                                ? 'bg-amber-500 text-slate-950 font-bold shadow-lg shadow-amber-400/40 ring-2 ring-amber-200 scale-105'
-                                                : 'text-amber-400 bg-amber-500/15 hover:bg-amber-500/30 hover:text-amber-200 hover:scale-105'
-                                        }`}
-                                        title="Classroom Toolbox & Utilities (Timer, Spotlight, Curtain, Laser, Recorder...)"
-                                    >
-                                        <ArgonTemplatesIcon className="w-5 h-5 flex-shrink-0" />
-                                        {(showClassroomTimer || isSpotlightActive || isCurtainActive || tool === 'laser' || showRecorder || showTasksPanel) && (
-                                            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 border border-slate-900 animate-pulse" />
-                                        )}
-                                    </button>
-
-                                    {showToolsFlyout && (
-                                        <div
-                                            className={`absolute ${isVertical ? popoverPos : (toolbarDock === 'top' ? 'top-full right-0 mt-2' : 'bottom-full right-0 mb-2')} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 min-w-[230px] max-h-[70vh] overflow-y-auto hide-scrollbar text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
-                                            style={{ backgroundColor: '#0f172a' }}
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowClassroomTimer(prev => !prev); setShowToolsFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showClassroomTimer ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
                                         >
-                                            <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-1 shrink-0">
-                                                <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                                                    <MoreHorizontal className="w-3 h-3 text-primary-400" />
-                                                    Classroom Toolbox
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowToolsFlyout(false)}
-                                                    className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
-                                                >
-                                                    <X className="w-3 h-3" />
-                                                </button>
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonTimerIcon className="w-4 h-4" />
                                             </div>
+                                            <span>Timer &amp; Stopwatch</span>
+                                        </button>
 
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsSpotlightActive(prev => {
+                                                    const next = !prev;
+                                                    if (next) {
+                                                        toast('Spotlight active: move cursor to illuminate, scroll to zoom', { icon: '🔦' });
+                                                        setSelectedShapeIds([]);
+                                                        setSelectedTextIds([]);
+                                                        setSelectedImageId(null);
+                                                    }
+                                                    return next;
+                                                });
+                                                setShowToolsFlyout(false);
+                                            }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                isSpotlightActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonSpotlightIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Spotlight Focus</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsCurtainActive(prev => {
+                                                    const next = !prev;
+                                                    if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
+                                                    return next;
+                                                });
+                                                setShowToolsFlyout(false);
+                                            }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                isCurtainActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonCurtainIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Screen Curtain</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setTool('laser'); setShowToolsFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                tool === 'laser' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonSparkleIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Laser Pointer (L)</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { handleInsertDateTime(); setShowToolsFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <CalendarClock className="w-3.5 h-3.5 text-cyan-400" />
+                                            </div>
+                                            <span>Insert DateTime</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowTasksPanel(prev => !prev); setShowToolsFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showTasksPanel ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonTasksIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Tasks Checklist</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowGameSelector(true); setShowToolsFlyout(false); }}
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showGameSelector ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonGamesIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Whiteboard Games</span>
+                                        </button>
+
+                                        <div className="border-t border-slate-800 my-0.5" />
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowDisplayAudioControls(prev => !prev); setShowToolsFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonBrightnessIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Brightness &amp; AI Volume</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { window.dispatchEvent(new CustomEvent('open-global-search')); setShowToolsFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonSearchIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Quick Search (Cmd+K)</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowCustomIconsModal(true); setShowToolsFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonCustomIconsIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Customize Toolbar Icons</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShortcutsModalTab('shortcuts'); setShowShortcutsModal(true); setShowToolsFlyout(false); }}
+                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                        >
+                                            <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                <ArgonShortcutsIcon className="w-4 h-4" />
+                                            </div>
+                                            <span>Shortcuts (Cmd+/)</span>
+                                        </button>
+
+                                        {isInstructor && (
                                             <button
                                                 type="button"
-                                                onClick={() => {
-                                                    setShowClassroomTimer(prev => !prev);
-                                                    setShowToolsFlyout(false);
-                                                }}
+                                                onClick={() => { setShowPermissions(true); setShowToolsFlyout(false); }}
                                                 className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showClassroomTimer ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                                    showPermissions ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                                                 }`}
                                             >
-                                                <div className="w-6 h-6 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center shrink-0">
-                                                    <Clock className="w-3.5 h-3.5" />
+                                                <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                                    <ArgonPermissionsIcon className="w-4 h-4" />
                                                 </div>
-                                                <span>Timer & Stopwatch</span>
+                                                <span>Manage Permissions</span>
                                             </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setIsSpotlightActive(prev => {
-                                                        const next = !prev;
-                                                        if (next) {
-                                                            toast('Spotlight active: move cursor to illuminate, scroll to zoom', { icon: '🔦' });
-                                                            setSelectedShapeIds([]);
-                                                            setSelectedTextIds([]);
-                                                            setSelectedImageId(null);
-                                                        }
-                                                        return next;
-                                                    });
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    isSpotlightActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-yellow-500/20 text-yellow-400 flex items-center justify-center shrink-0">
-                                                    <TorchIcon className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Spotlight Focus</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setIsCurtainActive(prev => {
-                                                        const next = !prev;
-                                                        if (next) toast('Screen Curtain active: drag bottom bar to reveal', { icon: '🎭' });
-                                                        return next;
-                                                    });
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    isCurtainActive ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                                                    <StickyNoteIcon className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Screen Curtain</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setTool('laser');
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    tool === 'laser' ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
-                                                    <Sparkles className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Laser Pointer (L)</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    handleInsertDateTime();
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
-                                                    <CalendarClock className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Insert DateTime</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowRecorder(!showRecorder);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showRecorder ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center shrink-0">
-                                                    <Video className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Screen Recorder</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowTasksPanel(prev => !prev);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showTasksPanel ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center shrink-0">
-                                                    <ListTodo className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Tasks Checklist</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowTemplateGallery(true);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showTemplateGallery ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                                                    <LayoutTemplate className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Templates & SmartArt</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowGameSelector(true);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                    showGameSelector ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                }`}
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                                                    <Gamepad2 className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Whiteboard Games</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShortcutsModalTab('shortcuts');
-                                                    setShowShortcutsModal(true);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-slate-500/20 text-slate-400 flex items-center justify-center shrink-0">
-                                                    <Keyboard className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Shortcuts (Cmd+/)</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowCustomIconsModal(true);
-                                                    setShowToolsFlyout(false);
-                                                }}
-                                                className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
-                                            >
-                                                <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                                                    <Palette className="w-3.5 h-3.5" />
-                                                </div>
-                                                <span>Customize Toolbar Icons</span>
-                                            </button>
-
-                                            {isInstructor && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setShowPermissions(true);
-                                                        setShowToolsFlyout(false);
-                                                    }}
-                                                    className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
-                                                        showPermissions ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                    }`}
-                                                >
-                                                    <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                                                        <Users className="w-3.5 h-3.5" />
-                                                    </div>
-                                                    <span>Manage Permissions</span>
-                                                </button>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                         <input
                             type="file"
                             ref={imageInputRef}
@@ -24456,51 +24356,22 @@ export default function Whiteboard({
                         />
                     </div>
 
-                    {/* Start New Problem / AI Chat Icon Button (No Text Label) */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setAiSolutionData(null);
-                            setAiSpeakingText('');
-                            setVoiceTranscript('');
-                            setInterimVoiceTranscript('');
-                            setVoiceFeedback('');
-                            if (stopAiSpeech) stopAiSpeech();
-                            setShowClosedCaptions(true);
-                            setShowAiAssistantModal(true);
-                        }}
-                        className="p-1.5 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition flex items-center justify-center shadow-md hover:shadow-indigo-500/30 border border-indigo-400/40 cursor-pointer"
-                        title="Start New Chat / Ask Question"
-                    >
-                        <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                    </button>
-
-                    {/* Whiteboard Display Brightness & Audio Volume Controls Popover */}
-                    <div className="relative">
-                        <button
-                            type="button"
-                            onClick={() => setShowDisplayAudioControls(prev => !prev)}
-                            className={`p-1.5 rounded-full transition cursor-pointer ${
-                                showDisplayAudioControls ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
-                            }`}
-                            title="Whiteboard Display Brightness & Audio Volume"
-                        >
-                            <Sliders className="w-3.5 h-3.5" />
-                        </button>
+                        {/* Display Brightness & Audio Volume Controls Popover (Opened via Utilities Suite) */}
                         {showDisplayAudioControls && (
                             <div
-                                className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3.5 z-50 flex flex-col gap-3 min-w-[220px] text-xs text-slate-200 animate-in fade-in duration-100"
+                                className={`absolute ${rightAnchoredPopoverPos} bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl p-3.5 z-60 flex flex-col gap-3 w-[min(240px,92vw)] text-xs text-slate-200 animate-in fade-in duration-100`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
                                     <span className="font-bold text-[11.5px] text-white flex items-center gap-1.5">
-                                        <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                                        <ArgonBrightnessIcon className="w-4 h-4" />
                                         Display &amp; Sound
                                     </span>
                                     <button
                                         type="button"
                                         onClick={() => setShowDisplayAudioControls(false)}
                                         className="text-slate-400 hover:text-white"
+                                        aria-label="Close Display and Sound"
                                     >
                                         <X className="w-3.5 h-3.5" />
                                     </button>
@@ -24510,7 +24381,7 @@ export default function Whiteboard({
                                 <div className="space-y-1">
                                     <div className="flex items-center justify-between text-[11px]">
                                         <span className="flex items-center gap-1.5 text-amber-300 font-semibold">
-                                            <Sun className="w-3.5 h-3.5 text-amber-400" />
+                                            <ArgonBrightnessIcon className="w-3.5 h-3.5" />
                                             Brightness
                                         </span>
                                         <span className="font-mono text-slate-300 font-bold">{whiteboardBrightness}%</span>
@@ -24535,7 +24406,7 @@ export default function Whiteboard({
                                 <div className="space-y-1">
                                     <div className="flex items-center justify-between text-[11px]">
                                         <span className="flex items-center gap-1.5 text-purple-300 font-semibold">
-                                            <Volume2 className="w-3.5 h-3.5 text-purple-400" />
+                                            <ArgonVolumeIcon className="w-3.5 h-3.5" />
                                             AI Volume
                                         </span>
                                         <span className="font-mono text-slate-300 font-bold">{Math.round((storeSpeechVolume ?? 1.0) * 100)}%</span>
@@ -24557,125 +24428,127 @@ export default function Whiteboard({
                                 </div>
                             </div>
                         )}
-                    </div>
 
-                    {/* Divider */}
-                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
-
-                    {/* Undo/Redo */}
-                    <div className={`flex ${isVertical ? 'flex-col gap-0.5' : 'items-center gap-0.5'}`}>
-                        <button
-                            onClick={handleUndo}
-                            className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Undo"
-                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) <= 0}
-                        >
-                            <Undo2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={handleRedo}
-                            className="p-1 hover:bg-slate-800 rounded-full transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-                            title="Redo"
-                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) >= ((pageHistories[currentPage] || []).length - 1)}
-                        >
-                            <Redo2 className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-
-                    {/* Clear Whiteboard Action */}
+                    {/* Start New Problem / AI Chat Icon Button (No Text Label) */}
                     <button
-                        onClick={() => setShowClearBoardConfirm(true)}
-                        className="p-1 hover:bg-amber-500/20 text-amber-400 rounded-full transition"
-                        title="Clear Whiteboard"
+                        type="button"
+                        onClick={() => {
+                            setAiSolutionData(null);
+                            setAiSpeakingText('');
+                            setVoiceTranscript('');
+                            setInterimVoiceTranscript('');
+                            setVoiceFeedback('');
+                            if (stopAiSpeech) stopAiSpeech();
+                            setShowClosedCaptions(true);
+                            setShowAiAssistantModal(true);
+                        }}
+                        className={`${toolBtnSizeClass} rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-md hover:shadow-indigo-500/30 border border-indigo-400/40 cursor-pointer`}
+                        title="Start New AI Problem Chat"
+                        aria-label="Start New AI Chat"
                     >
-                        <BroomIcon className="w-3.5 h-3.5" />
+                        <ArgonSparkleIcon className="w-4 h-4" aria-hidden="true" />
                     </button>
 
-                    {clipboardHistory.length > 0 && (
+                    {/* Divider */}
+                    <div role="separator" aria-orientation={isVertical ? 'horizontal' : 'vertical'} className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-0.5'} bg-slate-700/60 shrink-0`} />
+
+                    {/* Undo / Redo / Clipboard */}
+                    <div role="group" aria-label="History" className={`flex ${isVertical ? 'flex-col gap-0.5' : 'items-center gap-0.5'}`}>
                         <button
-                            onClick={() => setShowClipboard(!showClipboard)}
-                            className={`p-1 rounded-full transition ${showClipboard ? 'bg-green-500/20 text-green-400' : 'hover:bg-green-500/20 text-slate-300 hover:text-green-400'}`}
-                            title="Clipboard"
+                            type="button"
+                            onClick={handleUndo}
+                            className="p-1.5 hover:bg-slate-800 rounded-xl transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Undo (Cmd/Ctrl+Z)"
+                            aria-label="Undo"
+                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) <= 0}
                         >
-                            <Files className="w-4 h-4" />
+                            <ArgonUndoIcon className="w-4 h-4" aria-hidden="true" />
                         </button>
-                    )}
+                        <button
+                            type="button"
+                            onClick={handleRedo}
+                            className="p-1.5 hover:bg-slate-800 rounded-xl transition text-slate-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Redo (Cmd/Ctrl+Y)"
+                            aria-label="Redo"
+                            disabled={(pageHistoryIndices[currentPage] !== undefined ? pageHistoryIndices[currentPage] : -1) >= ((pageHistories[currentPage] || []).length - 1)}
+                        >
+                            <ArgonRedoIcon className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                        {clipboardHistory.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => setShowClipboard(!showClipboard)}
+                                className={`p-1.5 rounded-xl transition ${showClipboard ? 'bg-green-500/20 text-green-400' : 'hover:bg-green-500/20 text-slate-300 hover:text-green-400'}`}
+                                title="Clipboard History"
+                                aria-label="Clipboard History"
+                            >
+                                <Files className="w-4 h-4" aria-hidden="true" />
+                            </button>
+                        )}
+                    </div>
 
                     {/* Divider */}
-                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
+                    <div role="separator" aria-orientation={isVertical ? 'horizontal' : 'vertical'} className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-0.5'} bg-slate-700/60 shrink-0`} />
 
-                    {/* Page Navigation & Interactive Switcher Popover */}
-                    <div className="relative">
+                    {/* Compact Page Navigation Pill (< 1/N ▾ >) */}
+                    <div role="group" aria-label="Pages" className="relative">
                         <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-900 border border-slate-700 shadow-md`}>
                             <button
+                                type="button"
                                 onClick={goToPrevPage}
                                 disabled={currentPage === 0}
                                 className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
                                 title="Previous Page"
+                                aria-label="Previous Page"
                             >
-                                <ChevronLeft className="w-3.5 h-3.5" />
+                                <ChevronLeft className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                             <button
                                 type="button"
-                                onClick={() => setShowPageNavMenu(prev => !prev)}
+                                onClick={() => {
+                                    const next = !showPageNavMenu;
+                                    closeAllToolContextOverlays();
+                                    setShowDisplayAudioControls(false);
+                                    setShowPageNavMenu(next);
+                                }}
                                 className={`px-2 py-0.5 text-[10.5px] font-mono font-semibold rounded-md transition flex items-center gap-1 ${
                                     showPageNavMenu ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:text-white hover:bg-slate-700/80'
                                 }`}
-                                title="Click to view all pages, jump, duplicate, or manage pages"
+                                title="Page Manager (Jump, Add, Duplicate, Delete)"
+                                aria-label={`Page ${currentPage + 1} of ${totalPages}`}
                             >
-                                <BookOpen className="w-3 h-3 text-slate-400 group-hover:text-white" />
                                 <span>{currentPage + 1}/{totalPages}</span>
-                                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showPageNavMenu ? 'rotate-180 text-white' : ''}`} />
+                                <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${showPageNavMenu ? 'rotate-180 text-white' : ''}`} aria-hidden="true" />
                             </button>
                             <button
+                                type="button"
                                 onClick={goToNextPage}
                                 disabled={currentPage === totalPages - 1}
                                 className="p-1 hover:bg-slate-700 rounded-full transition disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 hover:text-white"
                                 title="Next Page"
+                                aria-label="Next Page"
                             >
-                                <ChevronRight className="w-3.5 h-3.5" />
+                                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
-                            <button
-                                onClick={addNewPage}
-                                className="p-1 hover:bg-green-500/20 text-green-400 rounded-full transition"
-                                title="Add New Blank Page"
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                                onClick={duplicateCurrentPage}
-                                className="p-1 hover:bg-indigo-500/20 text-indigo-400 rounded-full transition"
-                                title="Duplicate Current Page"
-                            >
-                                <Copy className="w-3.5 h-3.5" />
-                            </button>
-                            {totalPages > 1 && (
-                                <button
-                                    onClick={() => setPageToDeleteConfirm(currentPage)}
-                                    className="p-1 hover:bg-rose-500/20 text-rose-400 rounded-full transition"
-                                    title={`Delete Page ${currentPage + 1}`}
-                                >
-                                    <Trash2 className="w-3 h-3" />
-                                </button>
-                            )}
                         </div>
 
                         {/* Interactive Page Switcher & Manager Dropdown Menu */}
                         {showPageNavMenu && (
-                            <div 
-                                className={`absolute z-60 w-64 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 ${popoverPos}`}
+                            <div
+                                className={`absolute z-60 w-[min(264px,92vw)] bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl p-3 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150 ${rightAnchoredPopoverPos}`}
                                 onClick={(e) => e.stopPropagation()}
                             >
                                 <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/80">
                                     <div className="flex items-center gap-1.5 font-bold text-slate-100">
-                                        <Layers className="w-4 h-4 text-indigo-400" />
-                                        <span>Whiteboard Pages ({totalPages})</span>
+                                        <ArgonLayersIcon className="w-4 h-4 text-indigo-400" />
+                                        <span>Pages ({totalPages})</span>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setShowPageNavMenu(false)}
                                         className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
                                         title="Close page manager"
+                                        aria-label="Close Page Manager"
                                     >
                                         <X className="w-3.5 h-3.5" />
                                     </button>
@@ -24715,7 +24588,7 @@ export default function Whiteboard({
                                 </form>
 
                                 {/* Page List */}
-                                <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                <div className="max-h-44 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                                     {Array.from({ length: totalPages }, (_, idx) => {
                                         const isCur = idx === currentPage;
                                         return (
@@ -24763,129 +24636,160 @@ export default function Whiteboard({
                                     })}
                                 </div>
 
-                                {/* Actions Footer */}
+                                {/* Actions Footer: Add, Duplicate, Delete Current Page */}
                                 <div className="mt-2.5 pt-2 border-t border-slate-800 flex items-center gap-1.5">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            addNewPage();
-                                            setShowPageNavMenu(false);
-                                        }}
+                                        onClick={() => { addNewPage(); setShowPageNavMenu(false); }}
                                         className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-green-400 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
+                                        title="Add New Blank Page"
                                     >
                                         <Plus className="w-3.5 h-3.5" />
-                                        <span>Add Page</span>
+                                        <span>Add</span>
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            duplicateCurrentPage();
-                                            setShowPageNavMenu(false);
-                                        }}
+                                        onClick={() => { duplicateCurrentPage(); setShowPageNavMenu(false); }}
                                         className="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1 transition"
+                                        title="Duplicate Current Page"
                                     >
                                         <Copy className="w-3.5 h-3.5" />
                                         <span>Duplicate</span>
                                     </button>
+                                    {totalPages > 1 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowPageNavMenu(false); setPageToDeleteConfirm(currentPage); }}
+                                            className="p-1.5 bg-slate-800 hover:bg-rose-500/20 text-rose-400 rounded-xl flex items-center justify-center transition"
+                                            title={`Delete Page ${currentPage + 1}`}
+                                            aria-label={`Delete Page ${currentPage + 1}`}
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         )}
                     </div>
 
-                    {/* Quick Canvas Zoom Controls */}
-                    <div className={`flex ${isVertical ? 'flex-col gap-0.5 p-1 rounded-xl' : 'items-center gap-0.5 px-1 py-0.5 rounded-full'} bg-slate-800/80`}>
-                        <button
-                            type="button"
-                            onClick={() => setZoomLevel(prev => Math.max(0.1, Number((prev - 0.1).toFixed(1))))}
-                            className="p-1 hover:bg-slate-700 rounded-full transition text-slate-300 hover:text-white"
-                            title="Zoom Out (-10%)"
-                        >
-                            <ZoomOut className="w-3.5 h-3.5" />
-                        </button>
+                    {/* Combined Share, Export, Screenshot & Dock Cycle Drop-Up (Zoom stays in Minimap; Fullscreen stays single Top-Right button) */}
+                    <div role="group" aria-label="Share, Export and Dock" className="relative">
                         <button
                             type="button"
                             onClick={() => {
-                                setZoomLevel(1);
-                                setPanOffset({ x: 0, y: 0 });
-                                toast('Zoom reset to 100%', { icon: '🔍' });
+                                const next = !showShareFlyout;
+                                closeAllToolContextOverlays();
+                                setShowPageNavMenu(false);
+                                setShowDisplayAudioControls(false);
+                                setShowShareFlyout(next);
                             }}
-                            className="px-1 text-[10px] font-mono font-medium text-slate-300 hover:text-white hover:underline transition"
-                            title="Reset Zoom to 100% and Center Canvas"
-                        >
-                            {Math.round(zoomLevel * 100)}%
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setZoomLevel(prev => Math.min(5, Number((prev + 0.1).toFixed(1))))}
-                            className="p-1 hover:bg-slate-700 rounded-full transition text-slate-300 hover:text-white"
-                            title="Zoom In (+10%)"
-                        >
-                            <ZoomIn className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-
-                    {/* Divider */}
-                    <div className={`${isVertical ? 'w-6 h-px my-0.5' : 'w-px h-4 mx-1'} bg-slate-700/60 shrink-0`} />
-
-                    {/* Sharing, Download & Save (Tight grouped) */}
-                    <div className={`flex ${isVertical ? 'flex-col gap-1' : 'items-center gap-0.5'}`}>
-                        {isInstructor && !isMeetingMode && (
-                            <button
-                                onClick={onShare}
-                                className={`p-1 rounded-full transition flex items-center justify-center ${isSharing
+                            className={`${toolBtnSizeClass} ${
+                                isSharing
                                     ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm ring-2 ring-red-400/40 animate-pulse'
-                                    : 'text-amber-400 hover:bg-amber-500/20'
-                                    }`}
-                                title={isSharing ? 'Sharing Active - View / Manage Permissions & Targets' : 'Share Whiteboard with Students'}
-                            >
-                                <Share2 className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-
-                        {(!isStudent || localPermissions?.canExport) && (
-                            <button
-                                onClick={() => setShowExportModal(true)}
-                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                                title="Export & Share Whiteboard (WBF, IWB, PDF, Images, QR Code)"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-
-                        {(!isStudent || localPermissions?.canExport) && (
-                            <button
-                                onClick={handleScreenshot}
-                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                                title="Take Screenshot (Selection or Full Page)"
-                            >
-                                <Camera className="w-3.5 h-3.5" />
-                            </button>
-                        )}
-                        {onToggleFullscreen && (
-                            <button
-                                onClick={onToggleFullscreen}
-                                className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition flex items-center justify-center"
-                                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-                            >
-                                {isFullscreen ? (
-                                    <Minimize2 className="w-3.5 h-3.5" />
-                                ) : (
-                                    <Maximize2 className="w-3.5 h-3.5" />
-                                )}
-                            </button>
-                        )}
-                        <button
-                            onClick={() => {
-                                const next = { bottom: 'float', float: 'top', top: 'right', right: 'left', left: 'bottom' };
-                                const newDock = next[toolbarDock] || 'bottom';
-                                setToolbarDock(newDock);
-                                toast(`Whiteboard toolbar: ${newDock.toUpperCase()}`, { duration: 1500 });
-                            }}
-                            className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition flex items-center justify-center shrink-0"
-                            title={`Dock Mode: ${toolbarDock.toUpperCase()} (Click to cycle Bottom/Float/Top/Right/Left)`}
+                                    : showShareFlyout
+                                    ? 'bg-indigo-600 text-white ring-2 ring-indigo-300'
+                                    : 'text-slate-200 hover:bg-slate-800'
+                            }`}
+                            title="Share Live, Export, Screenshot & Toolbar Dock Position"
+                            aria-label="Share, Export and Dock Options"
+                            aria-expanded={showShareFlyout}
                         >
-                            <Move className="w-3.5 h-3.5 text-primary-400" />
+                            <ArgonShareIcon className="w-[18px] h-[18px]" aria-hidden="true" />
                         </button>
+
+                        {showShareFlyout && (
+                            <div
+                                className={`absolute ${rightAnchoredPopoverPos} p-2 bg-slate-900 border-2 border-slate-700/80 rounded-2xl shadow-2xl z-60 flex flex-col gap-1 w-[min(236px,92vw)] max-h-[65dvh] overflow-y-auto text-slate-200 animate-in fade-in zoom-in-95 duration-100`}
+                                style={{ backgroundColor: '#0f172a' }}
+                            >
+                                <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800 mb-0.5 shrink-0">
+                                    <span className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <ArgonShareIcon className="w-3.5 h-3.5" />
+                                        Share &amp; Export
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowShareFlyout(false)}
+                                        className="p-0.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded"
+                                        aria-label="Close Share Menu"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+
+                                {isInstructor && !isMeetingMode && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowShareFlyout(false); onShare?.(); }}
+                                        className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold transition text-left ${
+                                            isSharing ? 'bg-red-500/20 text-red-300 border border-red-500/40' : 'text-slate-200 hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                            <ArgonShareIcon className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="font-semibold text-xs">{isSharing ? 'Sharing Active' : 'Share Live Board'}</span>
+                                            <span className="text-[10px] text-slate-400 font-normal truncate">Targets &amp; live permissions</span>
+                                        </div>
+                                    </button>
+                                )}
+
+                                {(!isStudent || localPermissions?.canExport) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowShareFlyout(false); setShowExportModal(true); }}
+                                        className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-slate-800 transition text-left"
+                                    >
+                                        <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                            <ArgonExportIcon className="w-4 h-4" />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="font-semibold text-xs">Export &amp; QR Share</span>
+                                            <span className="text-[10px] text-slate-400 font-normal truncate">WBF, IWB, PDF, PNG, QR Code</span>
+                                        </div>
+                                    </button>
+                                )}
+
+                                {(!isStudent || localPermissions?.canExport) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowShareFlyout(false); handleScreenshot(); }}
+                                        className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-slate-800 transition text-left"
+                                    >
+                                        <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                            <Camera className="w-3.5 h-3.5 text-sky-400" />
+                                        </div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="font-semibold text-xs">Take Screenshot</span>
+                                            <span className="text-[10px] text-slate-400 font-normal truncate">Capture region or full page</span>
+                                        </div>
+                                    </button>
+                                )}
+
+                                <div className="border-t border-slate-800 my-0.5" />
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const next = { bottom: 'float', float: 'top', top: 'right', right: 'left', left: 'bottom' };
+                                        const newDock = next[toolbarDock] || 'bottom';
+                                        setToolbarDock(newDock);
+                                        setShowShareFlyout(false);
+                                        toast(`Whiteboard toolbar: ${newDock.toUpperCase()}`, { duration: 1500 });
+                                    }}
+                                    className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-200 hover:bg-slate-800 transition text-left"
+                                >
+                                    <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
+                                        <Move className="w-3.5 h-3.5 text-primary-400" />
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                        <span className="font-semibold text-xs">Dock: {toolbarDock.toUpperCase()}</span>
+                                        <span className="text-[10px] text-slate-400 font-normal truncate">Cycle Bottom / Float / Top / Side</span>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
                 );
@@ -25212,7 +25116,7 @@ export default function Whiteboard({
                     {/* Image Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {imageObjects.map((imgObj) => {
                         const isSelected = selectedImageIds.includes(imgObj.id);
-                        const handleSize = 10;
+                        const handleSize = Math.max(11, Math.min(20, Math.round(12 * invZoom)));
                         const canInteract = tool === 'select' || isSelected || tool === 'pan';
 
                         // Calculate unrotated bounding box center and top for floating toolbar
@@ -25238,7 +25142,7 @@ export default function Whiteboard({
                             if (!canUserDraw) return;
                             e.stopPropagation();
                             if (e.target.dataset?.handle) return;
-                            
+
                             const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
                             let activeImageIds = selectedImageIds;
                             if (isMulti) {
@@ -25250,7 +25154,11 @@ export default function Whiteboard({
                                 setSelectedImageIds(activeImageIds);
                             } else {
                                 if (!selectedImageIds.includes(imgObj.id)) {
-                                    activeImageIds = [imgObj.id];
+                                    if (imgObj.groupId) {
+                                        activeImageIds = imageObjects.filter(i => i.groupId === imgObj.groupId).map(i => i.id);
+                                    } else {
+                                        activeImageIds = [imgObj.id];
+                                    }
                                     setSelectedImageIds(activeImageIds);
                                     setSelectedShapeIds([]);
                                     setSelectedTextIds([]);
@@ -25288,10 +25196,7 @@ export default function Whiteboard({
                                 startX: clientX,
                                 startY: clientY,
                                 startObj: { ...imgObj },
-                                startImageObjs: imageObjects.filter(img => activeImageIds.includes(img.id) && !img.isLocked),
-                                startShapeObjs: shapeObjects.filter(shp => selectedShapeIds.includes(shp.id) && !shp.isLocked),
-                                startTextObjs: textObjects.filter(txt => selectedTextIds.includes(txt.id) && !txt.isLocked),
-                                start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
+                                ...createDragSnapshot({ primaryImageIds: activeImageIds, seedGroupId: imgObj.groupId }),
                             });
                         };
 
@@ -25324,7 +25229,6 @@ export default function Whiteboard({
                                             setSelectedTextIds([]);
                                         }
                                     }}
-                                    onMouseDown={handleStartMove}
                                     onPointerDown={handleStartMove}
                                 >
                                     {/* Sharpness SVG convolution filter */}
@@ -25446,10 +25350,9 @@ export default function Whiteboard({
                                     {isSelected && (
                                         <>
                                             <div className="absolute inset-0 border-2 border-indigo-500 rounded-sm pointer-events-none shadow-sm" />
-                                            <div 
-                                                className="absolute inset-0" 
-                                                style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }} 
-                                                onMouseDown={handleStartMove}
+                                            <div
+                                                className="absolute inset-0"
+                                                style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }}
                                                 onPointerDown={handleStartMove}
                                             />
 
@@ -25461,7 +25364,6 @@ export default function Whiteboard({
                                                         e.stopPropagation();
                                                         setImageObjects(prev => prev.map(i => i.id === imgObj.id ? { ...i, isInfiniteCloner: !i.isInfiniteCloner } : i));
                                                     }}
-                                                    onMouseDown={e => e.stopPropagation()}
                                                     onPointerDown={e => e.stopPropagation()}
                                                     className={`absolute -top-7 -left-3.5 z-50 p-1 rounded shadow border transition-all pointer-events-auto cursor-pointer ${
                                                         imgObj.isInfiniteCloner
@@ -25496,7 +25398,6 @@ export default function Whiteboard({
                                             <div
                                                 className="absolute -right-7 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-auto opacity-35 hover:opacity-100 transition-all select-none"
                                                 onClick={e => e.stopPropagation()}
-                                                onMouseDown={e => e.stopPropagation()}
                                                 onPointerDown={e => e.stopPropagation()}
                                             >
                                                 <button
@@ -25576,7 +25477,7 @@ export default function Whiteboard({
                                                             <div
                                                                 key={corner}
                                                                 data-handle={corner}
-                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30 before:absolute before:-inset-2 before:content-['']"
                                                                 style={{
                                                                     width: handleSize + 2,
                                                                     height: handleSize + 2,
@@ -25584,9 +25485,7 @@ export default function Whiteboard({
                                                                     pointerEvents: 'auto',
                                                                     ...pos,
                                                                 }}
-                                                                onMouseDown={handleResizeStart}
                                                                 onPointerDown={handleResizeStart}
-                                                                onTouchStart={handleResizeStart}
                                                             />
                                                         );
                                                     })}
@@ -25618,7 +25517,7 @@ export default function Whiteboard({
                                                             <div
                                                                 key={edge}
                                                                 data-handle={edge}
-                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30"
+                                                                className="absolute bg-white border-2 border-indigo-600 rounded-sm shadow-md z-30 before:absolute before:-inset-2 before:content-['']"
                                                                 style={{
                                                                     width: handleSize,
                                                                     height: handleSize,
@@ -25626,9 +25525,7 @@ export default function Whiteboard({
                                                                     pointerEvents: 'auto',
                                                                     ...pos,
                                                                 }}
-                                                                onMouseDown={handleEdgeResizeStart}
                                                                 onPointerDown={handleEdgeResizeStart}
-                                                                onTouchStart={handleEdgeResizeStart}
                                                             />
                                                         );
                                                     })}
@@ -25641,20 +25538,8 @@ export default function Whiteboard({
                                                         <div className="w-px h-5 bg-indigo-500" />
                                                         <div
                                                             data-handle="rotate"
-                                                            className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center cursor-grab hover:bg-indigo-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+                                                            className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center cursor-grab hover:bg-indigo-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing before:absolute before:-inset-2 before:content-['']"
                                                             style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
-                                                            onMouseDown={(e) => {
-                                                                e.stopPropagation();
-                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                                setImageDragState({
-                                                                    id: imgObj.id,
-                                                                    action: 'rotate',
-                                                                    startX: clientX,
-                                                                    startY: clientY,
-                                                                    startObj: { ...imgObj }
-                                                                });
-                                                            }}
                                                             onPointerDown={(e) => {
                                                                 e.stopPropagation();
                                                                 const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
@@ -26042,7 +25927,7 @@ export default function Whiteboard({
                     {textObjects.map((txtObj) => {
                         const isSelected = selectedTextIds.includes(txtObj.id);
                         const isEditing = editingTextId === txtObj.id;
-                        const handleSize = 10;
+                        const handleSize = Math.max(11, Math.min(20, Math.round(12 * invZoom)));
 
                         // Calculate unrotated bounding box center and top for floating toolbar
                         const textW = txtObj.width || 120;
@@ -26093,13 +25978,11 @@ export default function Whiteboard({
                                         zIndex: txtObj.zIndex || (isSelected || isEditing ? 20 : 10),
                                         cursor: isEditing ? 'text' : isSelected ? 'move' : 'crosshair',
                                         pointerEvents: (tool === 'select' || isSelected || isEditing) ? 'auto' : 'none',
+                                        touchAction: isEditing ? 'auto' : 'none',
                                         backgroundColor: txtObj.bgColor || 'transparent',
                                         border: txtObj.borderWidth ? `${txtObj.borderWidth}px ${txtObj.borderStyle || 'solid'} ${txtObj.borderColor || '#3b82f6'}` : undefined,
                                         borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined,
                                         boxSizing: 'border-box',
-                                    }}
-                                    onPointerDown={(e) => {
-                                        e.stopPropagation();
                                     }}
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -26109,7 +25992,10 @@ export default function Whiteboard({
                                                 setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
                                             } else {
                                                 if (!selectedTextIds.includes(txtObj.id)) {
-                                                    setSelectedTextIds([txtObj.id]);
+                                                    const nextTextIds = txtObj.groupId
+                                                        ? textObjects.filter(t => t.groupId === txtObj.groupId).map(t => t.id)
+                                                        : [txtObj.id];
+                                                    setSelectedTextIds(nextTextIds);
                                                     setSelectedImageId(null);
                                                     setSelectedImageIds([]);
                                                     setSelectedShapeIds([]);
@@ -26129,18 +26015,23 @@ export default function Whiteboard({
                                         setSelected3DIds([]);
                                         setSelectedMediaId(null);
                                     }}
-                                    onMouseDown={(e) => {
+                                    onPointerDown={(e) => {
+                                        e.stopPropagation();
                                         if (!canUserDraw) return;
                                         if (e.target.tagName.toLowerCase() === 'textarea' || e.target.tagName.toLowerCase() === 'input' || e.target.tagName.toLowerCase() === 'select' || e.target.tagName.toLowerCase() === 'button') {
                                             return;
                                         }
+                                        let activeTextIds = selectedTextIds;
                                         if (!isSelected) {
-                                            e.stopPropagation();
                                             const isMulti = e.ctrlKey || e.metaKey || e.shiftKey || isShiftDown;
                                             if (tool === 'select' && isMulti) {
-                                                setSelectedTextIds(prev => prev.includes(txtObj.id) ? prev.filter(id => id !== txtObj.id) : [...prev, txtObj.id]);
+                                                activeTextIds = selectedTextIds.includes(txtObj.id) ? selectedTextIds.filter(id => id !== txtObj.id) : [...selectedTextIds, txtObj.id];
+                                                setSelectedTextIds(activeTextIds);
                                             } else {
-                                                setSelectedTextIds([txtObj.id]);
+                                                activeTextIds = txtObj.groupId
+                                                    ? textObjects.filter(t => t.groupId === txtObj.groupId).map(t => t.id)
+                                                    : [txtObj.id];
+                                                setSelectedTextIds(activeTextIds);
                                                 setSelectedImageId(null);
                                                 setSelectedImageIds([]);
                                                 setSelectedShapeIds([]);
@@ -26148,21 +26039,18 @@ export default function Whiteboard({
                                                 setSelected3DIds([]);
                                                 setSelectedMediaId(null);
                                             }
-                                            // allow drag state to be set
                                         }
-                                        if (e.target.dataset.handle) return;
-                                        e.stopPropagation();
-                                        e.preventDefault(); // Prevent text selection deselect when dragging wrapper
+                                        if (e.target.dataset?.handle || txtObj.isLocked) return;
+                                        if (e.cancelable) e.preventDefault(); // Prevent text selection deselect when dragging wrapper
+                                        const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                        const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
                                         setTextDragState({
                                             id: txtObj.id,
                                             action: 'move',
-                                            startX: e.clientX,
-                                            startY: e.clientY,
+                                            startX: clientX,
+                                            startY: clientY,
                                             startObj: { ...txtObj },
-                                            startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id) || t.id === txtObj.id),
-                                            startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)),
-                                            startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
-                                            start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
+                                            ...createDragSnapshot({ primaryTextIds: activeTextIds, seedGroupId: txtObj.groupId }),
                                         });
                                     }}
                                 >
@@ -26299,30 +26187,7 @@ export default function Whiteboard({
                                             <div className="absolute inset-0 border-2 border-green-500 pointer-events-none" style={{ borderRadius: txtObj.borderRadius ? `${txtObj.borderRadius}px` : undefined }} />
                                             <div
                                                 className="absolute inset-0"
-                                                style={{ pointerEvents: 'auto', cursor: 'move' }}
-                                                onMouseDown={(e) => {
-                                                    if (!canUserDraw) return;
-                                                    e.stopPropagation();
-                                                    e.preventDefault();
-                                                    if (txtObj.isLocked) return;
-                                                    if (txtObj.isInfiniteCloner) {
-                                                        setTextDragState({
-                                                            id: txtObj.id,
-                                                            isClonerCandidate: true,
-                                                            action: 'move',
-                                                            startX: e.clientX,
-                                                            startY: e.clientY,
-                                                            startObj: { ...txtObj },
-                                                            startObjs: [txtObj],
-                                                            startTextObjs: [txtObj],
-                                                            startShapeObjs: [],
-                                                            startImageObjs: [],
-                                                            start3DObjs: []
-                                                        });
-                                                        return;
-                                                    }
-                                                    setTextDragState({ id: txtObj.id, action: 'move', startX: e.clientX, startY: e.clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) });
-                                                }}
+                                                style={{ pointerEvents: 'auto', cursor: 'move', touchAction: 'none' }}
                                                 onPointerDown={(e) => {
                                                     if (!canUserDraw) return;
                                                     e.stopPropagation();
@@ -26346,7 +26211,14 @@ export default function Whiteboard({
                                                         });
                                                         return;
                                                     }
-                                                    setTextDragState({ id: txtObj.id, action: 'move', startX: clientX, startY: clientY, startObj: { ...txtObj }, startObjs: textObjects.filter(t => selectedTextIds.includes(t.id)), startShapeObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)) });
+                                                    setTextDragState({
+                                                        id: txtObj.id,
+                                                        action: 'move',
+                                                        startX: clientX,
+                                                        startY: clientY,
+                                                        startObj: { ...txtObj },
+                                                        ...createDragSnapshot({ primaryTextIds: selectedTextIds, seedGroupId: txtObj.groupId }),
+                                                    });
                                                 }}
                                             />
 
@@ -26366,22 +26238,12 @@ export default function Whiteboard({
                                                     <div
                                                         key={corner}
                                                         data-handle={corner}
-                                                        className="absolute bg-white border-2 border-green-500 z-30"
+                                                        className="absolute bg-white border-2 border-green-500 z-30 before:absolute before:-inset-2 before:content-['']"
                                                         style={{
                                                             width: handleSize,
                                                             height: handleSize,
+                                                            touchAction: 'none',
                                                             ...pos,
-                                                        }}
-                                                        onMouseDown={(e) => {
-                                                            e.stopPropagation();
-                                                            e.preventDefault();
-                                                            setTextDragState({
-                                                                id: txtObj.id,
-                                                                action: `resize-${corner}`,
-                                                                startX: e.clientX,
-                                                                startY: e.clientY,
-                                                                startObj: { ...txtObj }
-                                                            });
                                                         }}
                                                         onPointerDown={(e) => {
                                                             e.stopPropagation();
@@ -26399,8 +26261,6 @@ export default function Whiteboard({
                                                     />
                                                 );
                                             })}
-                                                </>
-                                            )}
                                             {/* Edge Resize Handles */}
                                             {['n', 'e', 's', 'w'].map(edge => {
                                                 const pos = {
@@ -26414,22 +26274,12 @@ export default function Whiteboard({
                                                     <div
                                                         key={edge}
                                                         data-handle={edge}
-                                                        className="absolute bg-white border-2 border-green-500 z-30"
+                                                        className="absolute bg-white border-2 border-green-500 z-30 before:absolute before:-inset-2 before:content-['']"
                                                         style={{
                                                             width: handleSize,
                                                             height: handleSize,
+                                                            touchAction: 'none',
                                                             ...pos,
-                                                        }}
-                                                        onMouseDown={(e) => {
-                                                            e.stopPropagation();
-                                                            e.preventDefault();
-                                                            setTextDragState({
-                                                                id: txtObj.id,
-                                                                action: `resize-${edge}`,
-                                                                startX: e.clientX,
-                                                                startY: e.clientY,
-                                                                startObj: { ...txtObj }
-                                                            });
                                                         }}
                                                         onPointerDown={(e) => {
                                                             e.stopPropagation();
@@ -26448,8 +26298,6 @@ export default function Whiteboard({
                                                 );
                                             })}
 
-                                            {!txtObj.isLocked && (
-                                                <>
                                                     {/* Rotate Handle */}
                                                     <div
                                                         className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center z-30"
@@ -26458,20 +26306,8 @@ export default function Whiteboard({
                                                         <div className="w-px h-5 bg-green-500" />
                                                         <div
                                                             data-handle="rotate"
-                                                            className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center cursor-grab hover:bg-green-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+                                                            className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center cursor-grab hover:bg-green-700 shadow-md transition-transform hover:scale-110 active:cursor-grabbing before:absolute before:-inset-2 before:content-['']"
                                                             style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'auto' }}
-                                                            onMouseDown={(e) => {
-                                                                e.stopPropagation();
-                                                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-                                                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-                                                                setTextDragState({
-                                                                    id: txtObj.id,
-                                                                    action: 'rotate',
-                                                                    startX: clientX,
-                                                                    startY: clientY,
-                                                                    startObj: { ...txtObj }
-                                                                });
-                                                            }}
                                                             onPointerDown={(e) => {
                                                                 e.stopPropagation();
                                                                 const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
@@ -27161,9 +26997,10 @@ export default function Whiteboard({
                     {/* Shape Objects Layer - Selectable, Movable, Resizable, Rotatable */}
                     {shapeObjects.filter(s => s.type !== 'connector').map((shpObj) => {
                         const isSelected = selectedShapeIds.includes(shpObj.id);
-                        const handleSize = 10;
+                        const handleSize = Math.max(11, Math.min(20, Math.round(12 * invZoom)));
                         const renderShapeSVG = () => {
-                            const fill = shpObj.fillColor || 'transparent';
+                            const hasVisibleFill = Boolean(shpObj.fillColor && shpObj.fillColor !== 'transparent' && shpObj.fillColor !== 'none');
+                            const fill = hasVisibleFill ? shpObj.fillColor : 'none';
                             const bStyle = shpObj.borderStyle || 'solid';
                             const dashArray = bStyle === 'dashed'
                                 ? `${Math.max(6, (shpObj.strokeWidth || 2) * 3)},${Math.max(4, (shpObj.strokeWidth || 2) * 2)}`
@@ -27614,9 +27451,9 @@ export default function Whiteboard({
                                 const ptsStr = shpObj.points.map(p => `${p.x - (shpObj.x || 0)},${p.y - (shpObj.y || 0)}`).join(' ');
                                 return (
                                     <polygon
-                                        style={{ pointerEvents: (tool === 'select' || isSelected || tool === 'fill') ? 'all' : 'none' }}
+                                        style={{ pointerEvents: (tool === 'select' || isSelected) ? 'visiblePainted' : 'none' }}
                                         points={ptsStr}
-                                        fill={fill === 'transparent' ? 'rgba(0,0,0,0.001)' : fill}
+                                        fill={fill}
                                         stroke={shpObj.color}
                                         strokeWidth={shpObj.strokeWidth}
                                         strokeLinejoin="round"
@@ -27701,7 +27538,7 @@ export default function Whiteboard({
                                 let scaleY = (shpObj.height > 0 && origH > 0) ? (shpObj.height / origH) : 1;
                                 if (isNaN(scaleX) || !isFinite(scaleX) || scaleX <= 0) scaleX = 1;
                                 if (isNaN(scaleY) || !isFinite(scaleY) || scaleY <= 0) scaleY = 1;
-                                const pathFill = shpObj.fillColor && shpObj.fillColor !== 'transparent' ? shpObj.fillColor : 'none';
+                                const pathFill = (shpObj.fillColor && shpObj.fillColor !== 'transparent' && shpObj.fillColor !== 'none') ? shpObj.fillColor : 'none';
                                 const isPathClosed = shpObj.isClosed || (pathFill !== 'none' && pathFill !== 'transparent');
                                 const renderedD = isPathClosed ? `${d} Z` : d;
                                 return (
@@ -27709,13 +27546,13 @@ export default function Whiteboard({
                                         {/* Invisible wide hit-test path for easier clicking */}
                                         <path 
                                             d={renderedD} 
-                                            fill={pathFill !== 'none' ? pathFill : 'transparent'} 
+                                            fill={pathFill !== 'none' ? pathFill : 'none'} 
                                             stroke="transparent" 
                                             strokeWidth={Math.max(shpObj.strokeWidth + 16, 20)} 
                                             strokeLinecap="round" 
                                             strokeLinejoin="round" 
                                             transform={`scale(${scaleX}, ${scaleY})`}
-                                            style={{ pointerEvents: (tool === 'select' || tool === 'fill') ? 'all' : 'none' }}
+                                            style={{ pointerEvents: (tool === 'select' || isSelected) ? (pathFill !== 'none' ? 'all' : 'stroke') : 'none' }}
                                         />
                                         <path 
                                             d={renderedD} 
@@ -29169,7 +29006,8 @@ export default function Whiteboard({
                                     transformOrigin: 'center center',
                                     cursor: isSelected ? 'move' : ((tool === 'fill' || tool === 'pen') ? getCursor() : (tool === 'select' ? 'pointer' : 'crosshair')),
                                     zIndex: shpObj.zIndex || ((shpObj.type === 'ruler' || shpObj.type === 'protractor') ? 60 : (isSelected ? 20 : 10)),
-                                    pointerEvents: (tool === 'fill') ? 'none' : ((tool === 'select' || tool === 'line' || isSelected) ? 'auto' : 'none'),
+                                    pointerEvents: (tool === 'fill') ? 'none' : (isSelected ? 'auto' : 'none'),
+                                    touchAction: 'none',
                                 }}
                                 onMouseEnter={() => {
                                     if (tool === 'select') setHoveredShapeId(shpObj.id);
@@ -29267,6 +29105,7 @@ export default function Whiteboard({
                                             startY: clientY,
                                             startObj: { ...shpObj },
                                             startObjs: [shpObj],
+                                            startShapeObjs: [shpObj],
                                             startTextObjs: [],
                                             startImageObjs: [],
                                             start3DObjs: []
@@ -29280,10 +29119,7 @@ export default function Whiteboard({
                                         startX: clientX,
                                         startY: clientY,
                                         startObj: { ...shpObj },
-                                        startObjs: shapeObjects.filter(s => activeSelectionIds.includes(s.id) && !s.isLocked),
-                                        startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)),
-                                        startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
-                                        start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
+                                        ...createDragSnapshot({ primaryShapeIds: activeSelectionIds, seedGroupId: shpObj.groupId }),
                                     });
                                 }}
                             >
@@ -29712,6 +29548,7 @@ export default function Whiteboard({
                                                         startY: clientY,
                                                         startObj: { ...shpObj },
                                                         startObjs: [shpObj],
+                                                        startShapeObjs: [shpObj],
                                                         startTextObjs: [],
                                                         startImageObjs: [],
                                                         start3DObjs: []
@@ -29719,18 +29556,15 @@ export default function Whiteboard({
                                                     return;
                                                 }
 
-                                                setShapeDragState({ 
-                                                    id: shpObj.id, 
-                                                    action: 'move', 
-                                                    startX: clientX, 
-                                                    startY: clientY, 
-                                                    startObj: { ...shpObj }, 
-                                                    startObjs: shapeObjects.filter(s => selectedShapeIds.includes(s.id)), 
-                                                    startTextObjs: textObjects.filter(t => selectedTextIds.includes(t.id)),
-                                                    startImageObjs: imageObjects.filter(i => selectedImageIds.includes(i.id)),
-                                                    start3DObjs: threeDObjects.filter(o => selected3DIds.includes(o.id) && !o.isLocked)
-                                                }); 
-                                            }} 
+                                                setShapeDragState({
+                                                    id: shpObj.id,
+                                                    action: 'move',
+                                                    startX: clientX,
+                                                    startY: clientY,
+                                                    startObj: { ...shpObj },
+                                                    ...createDragSnapshot({ primaryShapeIds: selectedShapeIds, seedGroupId: shpObj.groupId }),
+                                                });
+                                            }}
                                         />
                                         
 
@@ -29754,20 +29588,9 @@ export default function Whiteboard({
                                                             {/* Start Endpoint Handle */}
                                                             <div
                                                                 data-handle="line-endpoint-start"
-                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move"
-                                                                style={{ left: localStartX, top: localStartY, pointerEvents: 'auto' }}
+                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move before:absolute before:-inset-2 before:content-['']"
+                                                                style={{ left: localStartX, top: localStartY, pointerEvents: 'auto', touchAction: 'none' }}
                                                                 title="Drag to reposition Start point"
-                                                                onMouseDown={(e) => {
-                                                                    e.stopPropagation();
-                                                                    e.preventDefault();
-                                                                    setShapeDragState({
-                                                                        id: shpObj.id,
-                                                                        action: 'line-endpoint-start',
-                                                                        startX: e.clientX,
-                                                                        startY: e.clientY,
-                                                                        startObj: { ...shpObj }
-                                                                    });
-                                                                }}
                                                                 onPointerDown={(e) => {
                                                                     e.stopPropagation();
                                                                     if (e.cancelable) e.preventDefault();
@@ -29788,20 +29611,9 @@ export default function Whiteboard({
                                                             {/* End Endpoint Handle */}
                                                             <div
                                                                 data-handle="line-endpoint-end"
-                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move"
-                                                                style={{ left: localEndX, top: localEndY, pointerEvents: 'auto' }}
+                                                                className="absolute w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-purple-600 shadow-lg hover:scale-125 transition-transform z-35 flex items-center justify-center cursor-move before:absolute before:-inset-2 before:content-['']"
+                                                                style={{ left: localEndX, top: localEndY, pointerEvents: 'auto', touchAction: 'none' }}
                                                                 title="Drag to reposition End point"
-                                                                onMouseDown={(e) => {
-                                                                    e.stopPropagation();
-                                                                    e.preventDefault();
-                                                                    setShapeDragState({
-                                                                        id: shpObj.id,
-                                                                        action: 'line-endpoint-end',
-                                                                        startX: e.clientX,
-                                                                        startY: e.clientY,
-                                                                        startObj: { ...shpObj }
-                                                                    });
-                                                                }}
                                                                 onPointerDown={(e) => {
                                                                     e.stopPropagation();
                                                                     if (e.cancelable) e.preventDefault();
@@ -29825,20 +29637,9 @@ export default function Whiteboard({
                                                             </svg>
                                                             <div
                                                                 data-handle="rotate"
-                                                                className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-600 flex items-center justify-center cursor-grab shadow-md z-35 transition-transform hover:scale-110"
-                                                                style={{ left: rotX, top: rotY, pointerEvents: 'auto' }}
+                                                                className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-500 hover:bg-purple-600 flex items-center justify-center cursor-grab shadow-md z-35 transition-transform hover:scale-110 before:absolute before:-inset-2 before:content-['']"
+                                                                style={{ left: rotX, top: rotY, pointerEvents: 'auto', touchAction: 'none' }}
                                                                 title="Rotate Line"
-                                                                onMouseDown={(e) => {
-                                                                    e.stopPropagation();
-                                                                    e.preventDefault();
-                                                                    setShapeDragState({
-                                                                        id: shpObj.id,
-                                                                        action: 'rotate',
-                                                                        startX: e.clientX,
-                                                                        startY: e.clientY,
-                                                                        startObj: { ...shpObj }
-                                                                    });
-                                                                }}
                                                                 onPointerDown={(e) => {
                                                                     e.stopPropagation();
                                                                     if (e.cancelable) e.preventDefault();
@@ -29872,19 +29673,8 @@ export default function Whiteboard({
                                                             <div
                                                                 key={corner}
                                                                 data-handle={corner}
-                                                                className="absolute bg-white border-2 border-purple-500 z-30"
-                                                                style={{ width: handleSize, height: handleSize, ...pos }}
-                                                                onMouseDown={(e) => {
-                                                                    e.stopPropagation();
-                                                                    e.preventDefault();
-                                                                    setShapeDragState({
-                                                                        id: shpObj.id,
-                                                                        action: `resize-${corner}`,
-                                                                        startX: e.clientX,
-                                                                        startY: e.clientY,
-                                                                        startObj: { ...shpObj }
-                                                                    });
-                                                                }}
+                                                                className="absolute bg-white border-2 border-purple-500 z-30 before:absolute before:-inset-2 before:content-['']"
+                                                                style={{ width: handleSize, height: handleSize, touchAction: 'none', ...pos }}
                                                                 onPointerDown={(e) => {
                                                                     e.stopPropagation();
                                                                     if (e.cancelable) e.preventDefault();
@@ -29913,19 +29703,8 @@ export default function Whiteboard({
                                                             <div
                                                                 key={edge}
                                                                 data-handle={edge}
-                                                                className="absolute bg-white border-2 border-purple-500 z-30"
-                                                                style={{ width: handleSize, height: handleSize, ...pos }}
-                                                                onMouseDown={(e) => {
-                                                                    e.stopPropagation();
-                                                                    e.preventDefault();
-                                                                    setShapeDragState({
-                                                                        id: shpObj.id,
-                                                                        action: `resize-${edge}`,
-                                                                        startX: e.clientX,
-                                                                        startY: e.clientY,
-                                                                        startObj: { ...shpObj }
-                                                                    });
-                                                                }}
+                                                                className="absolute bg-white border-2 border-purple-500 z-30 before:absolute before:-inset-2 before:content-['']"
+                                                                style={{ width: handleSize, height: handleSize, touchAction: 'none', ...pos }}
                                                                 onPointerDown={(e) => {
                                                                     e.stopPropagation();
                                                                     if (e.cancelable) e.preventDefault();
@@ -29947,18 +29726,7 @@ export default function Whiteboard({
                                                         <div className="w-px h-5 bg-purple-500" />
                                                         <div
                                                             data-handle="rotate"
-                                                            className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600 shadow-md" style={{ cursor: 'grab' }}
-                                                            onMouseDown={(e) => {
-                                                                e.stopPropagation();
-                                                                e.preventDefault();
-                                                                setShapeDragState({
-                                                                    id: shpObj.id,
-                                                                    action: 'rotate',
-                                                                    startX: e.clientX,
-                                                                    startY: e.clientY,
-                                                                    startObj: { ...shpObj }
-                                                                });
-                                                            }}
+                                                            className="w-5 h-5 rounded-full bg-purple-500 flex items-center justify-center cursor-grab hover:bg-purple-600 shadow-md before:absolute before:-inset-2 before:content-['']" style={{ cursor: 'grab', touchAction: 'none' }}
                                                             onPointerDown={(e) => {
                                                                 e.stopPropagation();
                                                                 if (e.cancelable) e.preventDefault();
@@ -29996,21 +29764,11 @@ export default function Whiteboard({
                                                                 <div
                                                                     data-handle="skew"
                                                                     title="Adjust Parallelogram Slant Angle (Drag horizontally)"
-                                                                    className="absolute w-4 h-4 bg-amber-500 border-2 border-white shadow-lg cursor-ew-resize z-40 hover:scale-125 transition-transform flex items-center justify-center -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-xs"
+                                                                    className="absolute w-4 h-4 bg-amber-500 border-2 border-white shadow-lg cursor-ew-resize z-40 hover:scale-125 transition-transform flex items-center justify-center -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-xs before:absolute before:-inset-2 before:content-['']"
                                                                     style={{
                                                                         left: `${sk}px`,
-                                                                        top: '-22px'
-                                                                    }}
-                                                                    onMouseDown={(e) => {
-                                                                        e.stopPropagation();
-                                                                        e.preventDefault();
-                                                                        setShapeDragState({
-                                                                            id: shpObj.id,
-                                                                            action: 'skew',
-                                                                            startX: e.clientX,
-                                                                            startY: e.clientY,
-                                                                            startObj: { ...shpObj }
-                                                                        });
+                                                                        top: '-22px',
+                                                                        touchAction: 'none'
                                                                     }}
                                                                     onPointerDown={(e) => {
                                                                         e.stopPropagation();
@@ -30296,7 +30054,7 @@ export default function Whiteboard({
 
                                         <div className="w-px h-4 bg-slate-700 mx-0.5" />
 
-                                        {/* If equation shape, show equation editor button and math virtual keyboard button */}
+                                        {/* If equation shape, show icon-only equation editor, virtual keyboard, and handwriting buttons */}
                                         {shpObj.type === 'equation' && (
                                             <>
                                                 <button
@@ -30306,11 +30064,11 @@ export default function Whiteboard({
                                                         setEquationInitialLatex(shpObj.latex || '');
                                                         setShowEquationModal(true);
                                                     }}
-                                                    className="px-2 py-0.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 transition shadow-sm h-6"
-                                                    title="Open Full Equation Editor"
+                                                    className="w-6 h-6 p-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center transition shadow-sm"
+                                                    title="Open Full LaTeX Equation Editor"
+                                                    aria-label="Open Full LaTeX Equation Editor"
                                                 >
-                                                    <Calculator size={12} />
-                                                    <span>Edit LaTeX</span>
+                                                    <ArgonMathIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                                 </button>
                                                 <button
                                                     type="button"
@@ -30322,23 +30080,24 @@ export default function Whiteboard({
                                                         });
                                                         setShowMathKeyboard(prev => !prev);
                                                     }}
-                                                    className={`p-1 rounded-full flex items-center justify-center text-xs font-serif font-bold transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                                                    className={`w-6 h-6 p-1 rounded-lg flex items-center justify-center transition ${showMathKeyboard ? 'bg-indigo-600 text-white shadow' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
                                                     title="Math Virtual Keyboard"
+                                                    aria-label="Math Virtual Keyboard"
                                                 >
-                                                    <span className="w-3.5 h-3.5 flex items-center justify-center leading-none">Σ</span>
+                                                    <ArgonKeyboardIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => setShowMathTablet(true)}
-                                                    className={`px-2 py-0.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition shadow-sm h-6 ${
+                                                    className={`w-6 h-6 p-1 rounded-lg flex items-center justify-center transition shadow-sm ${
                                                         showMathTablet 
                                                             ? 'bg-amber-600 text-white ring-1 ring-amber-400' 
                                                             : 'bg-amber-600/80 hover:bg-amber-600 text-white'
                                                     }`}
                                                     title="Handwrite Math using Math Input Tablet"
+                                                    aria-label="Handwrite Math using Math Input Tablet"
                                                 >
-                                                    <Pencil size={12} />
-                                                    <span>Handwrite</span>
+                                                    <ArgonPenIcon className="w-3.5 h-3.5" aria-hidden="true" />
                                                 </button>
                                             </>
                                         )}
@@ -30349,15 +30108,15 @@ export default function Whiteboard({
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText([shpObj.id])}
                                                 disabled={isConvertingInk}
-                                                className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
-                                                title="OCR: Convert handwritten math or text into KaTeX font"
+                                                className="w-6 h-6 p-1 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center justify-center transition shadow-sm"
+                                                title={isConvertingInk ? 'Recognizing handwritten math or text...' : 'OCR: Convert handwritten math or text into KaTeX font'}
+                                                aria-label={isConvertingInk ? 'Recognizing ink' : 'OCR ink to font'}
                                             >
                                                 {isConvertingInk ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                                                 ) : (
-                                                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                                    <ArgonOCRIcon className="w-3.5 h-3.5 text-amber-200" aria-hidden="true" />
                                                 )}
-                                                <span>{isConvertingInk ? 'Recognizing...' : 'OCR to Font'}</span>
                                             </button>
                                         )}
 
@@ -30661,15 +30420,15 @@ export default function Whiteboard({
                                                 type="button"
                                                 onClick={() => handleConvertSelectedInkToText()}
                                                 disabled={isConvertingInk}
-                                                className="px-2.5 py-0.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center gap-1.5 transition shadow-sm h-6"
-                                                title="OCR: Convert all selected handwritten ink strokes into KaTeX font"
+                                                className="w-6 h-6 p-1 rounded-lg bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center justify-center transition shadow-sm"
+                                                title={isConvertingInk ? 'Recognizing selected handwritten strokes...' : 'OCR: Convert all selected handwritten ink strokes into KaTeX font'}
+                                                aria-label={isConvertingInk ? 'Recognizing selected strokes' : 'OCR selected strokes to font'}
                                             >
                                                 {isConvertingInk ? (
-                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                                                 ) : (
-                                                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                                    <ArgonOCRIcon className="w-3.5 h-3.5 text-amber-200" aria-hidden="true" />
                                                 )}
-                                                <span>{isConvertingInk ? 'Recognizing...' : 'OCR to Font'}</span>
                                             </button>
                                         </>
                                     )}
@@ -31068,6 +30827,7 @@ export default function Whiteboard({
                             isSelected={selectedShapeIds.includes(note.id)}
                             isEditing={editingShapeTextId === note.id}
                             canEdit={canUserDraw}
+                            scale={currentZoom}
                             onSelect={(id) => {
                                 setSelectedShapeIds([id]);
                                 setSelectedImageId(null);
@@ -31087,20 +30847,28 @@ export default function Whiteboard({
                                 setSelectedShapeIds([]);
                             }}
                             onStartDrag={(e, id) => {
+                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
                                 setShapeDragState({
                                     id,
                                     action: 'move',
-                                    startX: e.clientX,
-                                    startY: e.clientY,
-                                    startObj: { ...note }
+                                    startX: clientX,
+                                    startY: clientY,
+                                    startObj: { ...note },
+                                    ...createDragSnapshot({
+                                        primaryShapeIds: selectedShapeIds.includes(id) ? selectedShapeIds : [id],
+                                        seedGroupId: note.groupId,
+                                    }),
                                 });
                             }}
                             onStartResize={(e, id, corner) => {
+                                const clientX = e.clientX !== undefined ? e.clientX : (e.touches?.[0]?.clientX ?? 0);
+                                const clientY = e.clientY !== undefined ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
                                 setShapeDragState({
                                     id,
                                     action: `resize-${corner}`,
-                                    startX: e.clientX,
-                                    startY: e.clientY,
+                                    startX: clientX,
+                                    startY: clientY,
                                     startObj: { ...note }
                                 });
                             }}
@@ -31293,16 +31061,11 @@ export default function Whiteboard({
                                     }));
                                     if (selectedShapeIds.length > 0) {
                                         setShapeObjects(prev => prev.map(s => {
-                                            if (selectedShapeIds.includes(s.id)) {
+                                            if (selectedShapeIds.includes(s.id) && !s.isLocked) {
                                                 return {
                                                     ...s,
                                                     x: (s.x || 0) + stepDx,
                                                     y: (s.y || 0) + stepDy,
-                                                    startX: s.startX !== undefined ? s.startX + stepDx : s.startX,
-                                                    startY: s.startY !== undefined ? s.startY + stepDy : s.startY,
-                                                    endX: s.endX !== undefined ? s.endX + stepDx : s.endX,
-                                                    endY: s.endY !== undefined ? s.endY + stepDy : s.endY,
-                                                    points: s.points ? s.points.map(p => ({ x: p.x + stepDx, y: p.y + stepDy })) : s.points
                                                 };
                                             }
                                             return s;
@@ -31662,14 +31425,16 @@ export default function Whiteboard({
                             };
                             setIsDraggingBall(true);
 
+                            hasDraggedBallRef.current = false;
                             const onMove = (me) => {
                                 if (!ballDragStartRef.current) return;
-                                const cx = me.clientX !== undefined ? me.clientX : (me.touches?.[0]?.clientX ?? 0);
-                                const cy = me.clientY !== undefined ? me.clientY : (me.touches?.[0]?.clientY ?? 0);
+                                const cx = me.clientX ?? 0;
+                                const cy = me.clientY ?? 0;
                                 const dx = cx - ballDragStartRef.current.startX;
                                 const dy = cy - ballDragStartRef.current.startY;
                                 if (Math.hypot(dx, dy) > 4) {
                                     ballDragStartRef.current.moved = true;
+                                    hasDraggedBallRef.current = true;
                                 }
                                 const maxX = window.innerWidth - 60;
                                 const maxY = window.innerHeight - 60;
@@ -31681,8 +31446,7 @@ export default function Whiteboard({
                             const onUp = () => {
                                 window.removeEventListener('pointermove', onMove);
                                 window.removeEventListener('pointerup', onUp);
-                                window.removeEventListener('touchmove', onMove);
-                                window.removeEventListener('touchend', onUp);
+                                window.removeEventListener('pointercancel', onUp);
                                 setIsDraggingBall(false);
                                 if (ballDragStartRef.current && !ballDragStartRef.current.moved) {
                                     setRadialMenuPos({ x: floatingBallPos.x + 22, y: floatingBallPos.y + 22 });
@@ -31693,15 +31457,15 @@ export default function Whiteboard({
 
                             window.addEventListener('pointermove', onMove);
                             window.addEventListener('pointerup', onUp);
-                            window.addEventListener('touchmove', onMove, { passive: false });
-                            window.addEventListener('touchend', onUp);
+                            window.addEventListener('pointercancel', onUp);
                         }}
                         className={`radial-fab-button w-11 h-11 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 shadow-xl shadow-indigo-500/40 border-2 border-white/30 flex items-center justify-center text-white transition-transform duration-150 cursor-grab active:cursor-grabbing hover:scale-105 active:scale-95 ${
                             isDraggingBall ? 'opacity-80 scale-105' : ''
                         }`}
                         title="Quick Radial Toolbar (Drag ball anywhere, tap to open)"
+                        aria-label="Quick Radial Toolbar"
                     >
-                        <Plus className={`w-5 h-5 transition-transform duration-200 ${showRadialMenu ? 'rotate-45' : ''}`} />
+                        <Plus className={`w-5 h-5 transition-transform duration-200 ${showRadialMenu ? 'rotate-45' : ''}`} aria-hidden="true" />
                     </button>
                 </div>
 
@@ -32251,15 +32015,16 @@ export default function Whiteboard({
                 />
             )}
 
-            {/* Re-open Meeting Panel Pill when closed during sharing */}
+            {/* Re-open Meeting Panel Pill when closed during sharing (icon-only) */}
             {isSharing && !isChatOpen && !isMeetingMode && (
                 <button
+                    type="button"
                     onClick={() => setIsChatOpen(true)}
-                    className="fixed right-4 top-14 z-[60] flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900/90 text-white shadow-xl border border-slate-700 hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all text-xs font-semibold backdrop-blur-md"
+                    className="fixed right-4 top-14 z-[60] w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900/90 text-white shadow-xl border border-slate-700 hover:bg-slate-800 hover:scale-105 active:scale-95 transition-all backdrop-blur-md"
                     title="Open Meeting Panel"
+                    aria-label="Open Meeting Panel"
                 >
-                    <MessageSquare className="w-4 h-4 text-amber-400" />
-                    <span>Meeting Panel</span>
+                    <MessageSquare className="w-4 h-4 text-amber-400" aria-hidden="true" />
                 </button>
             )}
 
@@ -33141,205 +32906,220 @@ export default function Whiteboard({
                 </div>
             )}
 
-            {/* Whiteboard Tasks & Action Items Panel */}
+            {/* Whiteboard Tasks & Action Items Right Shutter Drawer (Overlay - Never squeezes canvas) */}
             {showTasksPanel && (
-                <div 
-                    className="fixed top-16 right-6 z-50 w-80 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl p-4 text-white flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-150 select-none pointer-events-auto"
-                >
-                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                        <div className="flex items-center gap-2">
-                            <ListTodo className="w-4 h-4 text-emerald-400" />
-                            <h3 className="text-xs font-bold text-slate-100">Whiteboard Tasks</h3>
-                            <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded-full font-mono">
-                                {whiteboardTasks.filter(t => t.completed).length}/{whiteboardTasks.length}
-                            </span>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setShowTasksPanel(false)}
-                            className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-                        >
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-
-                    {/* AI Lesson / Task Auto-Generator */}
-                    <div className="bg-slate-800/80 border border-indigo-500/30 rounded-xl p-2.5 flex flex-col gap-2">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
-                                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                                <span>AI Lesson Task Generator</span>
+                <>
+                    <div
+                        className="absolute inset-0 z-[74] bg-slate-950/35"
+                        onClick={() => setShowTasksPanel(false)}
+                        aria-hidden="true"
+                    />
+                    <aside
+                        role="dialog"
+                        aria-label="Whiteboard Tasks Drawer"
+                        className="absolute inset-y-0 right-0 z-[75] w-[min(380px,92vw)] bg-slate-900/95 backdrop-blur-xl border-l border-slate-700/80 shadow-2xl p-4 text-white flex flex-col gap-3 animate-in fade-in slide-in-from-right duration-150 select-none pointer-events-auto"
+                        onPointerDown={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <ArgonTasksIcon className="w-4 h-4" aria-hidden="true" />
+                                <h3 className="text-xs font-bold text-slate-100">Whiteboard Tasks</h3>
+                                <span className="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded-full font-mono">
+                                    {whiteboardTasks.filter(t => t.completed).length}/{whiteboardTasks.length}
+                                </span>
                             </div>
-                            <span className="text-[9px] uppercase tracking-wider text-indigo-400/80 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-500/20 font-bold">Smart</span>
-                        </div>
-
-                        <div className="flex gap-1.5">
-                            <input
-                                type="text"
-                                value={aiTaskPrompt}
-                                onChange={(e) => setAiTaskPrompt(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleGenerateAITasks();
-                                    }
-                                }}
-                                placeholder="Topic (e.g. Binary Search Trees, Cell Biology)..."
-                                className="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
-                                disabled={isGeneratingTasks}
-                            />
                             <button
                                 type="button"
-                                onClick={() => handleGenerateAITasks()}
-                                disabled={isGeneratingTasks || !aiTaskPrompt.trim()}
-                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow"
-                                title="Generate structured lesson tasks"
+                                onClick={() => setShowTasksPanel(false)}
+                                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                                title="Close Whiteboard Tasks"
+                                aria-label="Close Whiteboard Tasks"
                             >
-                                {isGeneratingTasks ? (
-                                    <>
-                                        <Loader2 className="w-3 h-3 animate-spin" />
-                                        <span>AI...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Sparkles className="w-3 h-3" />
-                                        <span>Gen</span>
-                                    </>
-                                )}
+                                <X className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
                         </div>
 
-                        {/* Quick suggestions pills */}
-                        {!generatedAITasks.length && (
-                            <div className="flex items-center gap-1 overflow-x-auto py-0.5 custom-scrollbar">
-                                {['Binary Trees', 'Newton Laws', 'Photosynthesis', 'SQL Joins'].map(topic => (
-                                    <button
-                                        key={topic}
-                                        type="button"
-                                        onClick={() => {
-                                            setAiTaskPrompt(topic);
-                                            handleGenerateAITasks(topic);
-                                        }}
-                                        className="text-[10px] text-slate-400 hover:text-indigo-300 hover:bg-indigo-950/50 border border-slate-700/60 hover:border-indigo-500/40 px-1.5 py-0.5 rounded-md whitespace-nowrap transition"
-                                    >
-                                        + {topic}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-
-                        {/* Generated AI Tasks Review & Choice Buttons */}
-                        {generatedAITasks && generatedAITasks.length > 0 && (
-                            <div className="bg-slate-900/90 border border-indigo-500/40 rounded-lg p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150">
-                                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
-                                    <span>{generatedAITasks.length} Suggested Tasks:</span>
-                                    <button
-                                        type="button"
-                                        onClick={() => setGeneratedAITasks([])}
-                                        className="text-[10px] text-slate-400 hover:text-white"
-                                    >
-                                        Clear
-                                    </button>
+                        {/* AI Lesson / Task Auto-Generator */}
+                        <div className="bg-slate-800/80 border border-indigo-500/30 rounded-xl p-2.5 flex flex-col gap-2 shrink-0">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-300">
+                                    <ArgonSparkleIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                                    <span>AI Lesson Task Generator</span>
                                 </div>
-                                <div className="flex flex-col gap-1 max-h-28 overflow-y-auto custom-scrollbar pr-0.5">
-                                    {generatedAITasks.map((t, idx) => (
-                                        <div key={idx} className="text-[11px] text-slate-300 bg-slate-800/80 px-2 py-1 rounded border border-slate-700/60 flex items-center justify-between gap-1">
-                                            <span className="truncate">• {t.text || t.title || String(t)}</span>
-                                            {t.duration && <span className="text-[9px] text-indigo-400 shrink-0">{t.duration}m</span>}
-                                        </div>
+                                <span className="text-[9px] uppercase tracking-wider text-indigo-400/80 bg-indigo-950/60 px-1.5 py-0.5 rounded border border-indigo-500/20 font-bold">Smart</span>
+                            </div>
+
+                            <div className="flex gap-1.5">
+                                <input
+                                    type="text"
+                                    value={aiTaskPrompt}
+                                    onChange={(e) => setAiTaskPrompt(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleGenerateAITasks();
+                                        }
+                                    }}
+                                    placeholder="Topic (e.g. Binary Search Trees, Cell Biology)..."
+                                    className="flex-1 bg-slate-900/90 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+                                    disabled={isGeneratingTasks}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => handleGenerateAITasks()}
+                                    disabled={isGeneratingTasks || !aiTaskPrompt.trim()}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition flex items-center gap-1 shrink-0 shadow"
+                                    title="Generate structured lesson tasks"
+                                >
+                                    {isGeneratingTasks ? (
+                                        <>
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            <span>AI...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <ArgonSparkleIcon className="w-3 h-3" aria-hidden="true" />
+                                            <span>Gen</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Quick suggestions pills */}
+                            {!generatedAITasks.length && (
+                                <div className="flex items-center gap-1 overflow-x-auto py-0.5 custom-scrollbar">
+                                    {['Binary Trees', 'Newton Laws', 'Photosynthesis', 'SQL Joins'].map(topic => (
+                                        <button
+                                            key={topic}
+                                            type="button"
+                                            onClick={() => {
+                                                setAiTaskPrompt(topic);
+                                                handleGenerateAITasks(topic);
+                                            }}
+                                            className="text-[10px] text-slate-400 hover:text-indigo-300 hover:bg-indigo-950/50 border border-slate-700/60 hover:border-indigo-500/40 px-1.5 py-0.5 rounded-md whitespace-nowrap transition"
+                                        >
+                                            + {topic}
+                                        </button>
                                     ))}
                                 </div>
-                                <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800">
-                                    <button
-                                        type="button"
-                                        onClick={handleAddAITasksToChecklist}
-                                        className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
-                                        title="Add all generated items to checklist"
-                                    >
-                                        <ListTodo className="w-3 h-3" />
-                                        <span>To Checklist</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleInsertAITasksAsStickyNotes}
-                                        className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
-                                        title="Insert as sticky note cards on whiteboard canvas"
-                                    >
-                                        <StickyNoteIcon className="w-3 h-3" />
-                                        <span>As Sticky Notes</span>
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                            )}
 
-                    {/* Add new task input */}
-                    <form 
-                        onSubmit={(e) => {
-                            e.preventDefault();
-                            if (!newTaskText.trim()) return;
-                            const newTask = {
-                                id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-                                text: newTaskText.trim(),
-                                completed: false,
-                                createdAt: new Date().toISOString()
-                            };
-                            setWhiteboardTasks(prev => [...prev, newTask]);
-                            setNewTaskText('');
-                        }}
-                        className="flex gap-1.5"
-                    >
-                        <input
-                            type="text"
-                            value={newTaskText}
-                            onChange={(e) => setNewTaskText(e.target.value)}
-                            placeholder="Add action item or task..."
-                            className="flex-1 bg-slate-800/90 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500"
-                        />
-                        <button
-                            type="submit"
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center shrink-0"
+                            {/* Generated AI Tasks Review & Choice Buttons */}
+                            {generatedAITasks && generatedAITasks.length > 0 && (
+                                <div className="bg-slate-900/90 border border-indigo-500/40 rounded-lg p-2 flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-150">
+                                    <div className="flex items-center justify-between text-[11px] font-semibold text-slate-300">
+                                        <span>{generatedAITasks.length} Suggested Tasks:</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setGeneratedAITasks([])}
+                                            className="text-[10px] text-slate-400 hover:text-white"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar pr-0.5">
+                                        {generatedAITasks.map((t, idx) => (
+                                            <div key={idx} className="text-[11px] text-slate-300 bg-slate-800/80 px-2 py-1 rounded border border-slate-700/60 flex items-center justify-between gap-1">
+                                                <span className="truncate">• {t.text || t.title || String(t)}</span>
+                                                {t.duration && <span className="text-[9px] text-indigo-400 shrink-0">{t.duration}m</span>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={handleAddAITasksToChecklist}
+                                            className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
+                                            title="Add all generated items to checklist"
+                                        >
+                                            <ArgonTasksIcon className="w-3 h-3" aria-hidden="true" />
+                                            <span>To Checklist</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleInsertAITasksAsStickyNotes}
+                                            className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-[11px] font-bold transition flex items-center justify-center gap-1 shadow"
+                                            title="Insert as sticky note cards on whiteboard canvas"
+                                        >
+                                            <ArgonStickyNoteIcon className="w-3 h-3" aria-hidden="true" />
+                                            <span>As Sticky Notes</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Add new task input */}
+                        <form 
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                if (!newTaskText.trim()) return;
+                                const newTask = {
+                                    id: `task_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                    text: newTaskText.trim(),
+                                    completed: false,
+                                    createdAt: new Date().toISOString()
+                                };
+                                setWhiteboardTasks(prev => [...prev, newTask]);
+                                setNewTaskText('');
+                            }}
+                            className="flex gap-1.5 shrink-0"
                         >
-                            <Plus className="w-3.5 h-3.5" />
-                        </button>
-                    </form>
+                            <input
+                                type="text"
+                                value={newTaskText}
+                                onChange={(e) => setNewTaskText(e.target.value)}
+                                placeholder="Add action item or task..."
+                                className="flex-1 bg-slate-800/90 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 placeholder-slate-500"
+                            />
+                            <button
+                                type="submit"
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center shrink-0"
+                                title="Add task"
+                                aria-label="Add task"
+                            >
+                                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                            </button>
+                        </form>
 
-                    {/* Task items list */}
-                    <div className="flex flex-col gap-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
-                        {whiteboardTasks.length === 0 ? (
-                            <p className="text-[11px] text-slate-500 italic text-center py-4">No tasks yet. Add one above to track goals!</p>
-                        ) : (
-                            whiteboardTasks.map((t) => (
-                                <div
-                                    key={t.id}
-                                    className={`flex items-center justify-between p-2 rounded-xl border transition ${
-                                        t.completed ? 'bg-slate-800/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-800/80 border-slate-700/60 text-slate-200'
-                                    }`}
-                                >
-                                    <label className="flex items-center gap-2 flex-1 cursor-pointer select-none">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!t.completed}
-                                            onChange={() => {
-                                                setWhiteboardTasks(prev => prev.map(item => item.id === t.id ? { ...item, completed: !item.completed } : item));
-                                            }}
-                                            className="accent-emerald-500 rounded cursor-pointer w-3.5 h-3.5"
-                                        />
-                                        <span className="text-xs break-all leading-tight">{t.text}</span>
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setWhiteboardTasks(prev => prev.filter(item => item.id !== t.id))}
-                                        className="p-1 text-slate-500 hover:text-red-400 rounded transition ml-1"
-                                        title="Delete Task"
+                        {/* Task items list */}
+                        <div className="flex flex-col gap-1.5 flex-1 min-h-0 overflow-y-auto pr-1 custom-scrollbar">
+                            {whiteboardTasks.length === 0 ? (
+                                <p className="text-[11px] text-slate-500 italic text-center py-6">No tasks yet. Add one above to track goals!</p>
+                            ) : (
+                                whiteboardTasks.map((t) => (
+                                    <div
+                                        key={t.id}
+                                        className={`flex items-center justify-between p-2 rounded-xl border transition ${
+                                            t.completed ? 'bg-slate-800/40 border-slate-800 text-slate-500 line-through' : 'bg-slate-800/80 border-slate-700/60 text-slate-200'
+                                        }`}
                                     >
-                                        <Trash2 className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+                                        <label className="flex items-center gap-2 flex-1 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!t.completed}
+                                                onChange={() => {
+                                                    setWhiteboardTasks(prev => prev.map(item => item.id === t.id ? { ...item, completed: !item.completed } : item));
+                                                }}
+                                                className="accent-emerald-500 rounded cursor-pointer w-3.5 h-3.5"
+                                            />
+                                            <span className="text-xs break-all leading-tight">{t.text}</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setWhiteboardTasks(prev => prev.filter(item => item.id !== t.id))}
+                                            className="p-1 text-slate-500 hover:text-red-400 rounded transition ml-1"
+                                            title="Delete Task"
+                                            aria-label="Delete Task"
+                                        >
+                                            <Trash2 className="w-3 h-3" aria-hidden="true" />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </aside>
+                </>
             )}
 
 
@@ -33372,81 +33152,80 @@ export default function Whiteboard({
 
             </div>
 
-            {/* Floating Selection Action Bar for Select Tool */}
+            {/* Floating Selection Action Bar for Select Tool (Icon-only to maximize space) */}
             {tool === 'select' && hasSelection && !contextMenuPos && (
                 <div
-                    className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-3 py-1.5 text-slate-200 animate-in fade-in slide-in-from-top-2 duration-150 select-none"
+                    className={`fixed ${toolbarDock === 'top' ? 'top-20' : 'top-14'} left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl px-2 py-1 text-slate-200 animate-in fade-in slide-in-from-top-2 duration-150 select-none`}
                     onClick={e => e.stopPropagation()}
                     onMouseDown={e => { e.preventDefault(); e.stopPropagation(); }}
                 >
-                    <span className="text-[11px] font-semibold text-slate-400 px-1 border-r border-slate-700 mr-0.5">Select</span>
                     <button
                         type="button"
                         onClick={handleCut}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
                         title="Cut (Ctrl+X)"
+                        aria-label="Cut (Ctrl+X)"
                     >
-                        <Scissors className="w-3.5 h-3.5" />
-                        <span>Cut</span>
+                        <Scissors className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
                         type="button"
                         onClick={handleCopy}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
                         title="Copy (Ctrl+C)"
+                        aria-label="Copy (Ctrl+C)"
                     >
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
+                        <Copy className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
                         type="button"
                         onClick={handlePaste}
                         disabled={!hasClipboard}
-                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition ${
+                        className={`w-7 h-7 flex items-center justify-center rounded-xl transition ${
                             hasClipboard ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-600 cursor-not-allowed'
                         }`}
                         title="Paste (Ctrl+V)"
+                        aria-label="Paste (Ctrl+V)"
                     >
-                        <ClipboardPaste className="w-3.5 h-3.5" />
-                        <span>Paste</span>
+                        <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
                         type="button"
                         onClick={handleDuplicate}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
                         title="Duplicate (Ctrl+D)"
+                        aria-label="Duplicate (Ctrl+D)"
                     >
-                        <Files className="w-3.5 h-3.5" />
-                        <span>Duplicate</span>
+                        <Files className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <div className="w-px h-4 bg-slate-700 mx-0.5" />
                     <button
                         type="button"
                         onClick={() => handleBringToFront()}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
                         title="Bring to Front"
+                        aria-label="Bring to Front"
                     >
-                        <BringToFront className="w-3.5 h-3.5" />
-                        <span>Front</span>
+                        <BringToFront className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
                         type="button"
                         onClick={() => handleSendToBack()}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-slate-300 hover:text-white hover:bg-slate-800 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition"
                         title="Send to Back"
+                        aria-label="Send to Back"
                     >
-                        <SendToBack className="w-3.5 h-3.5" />
-                        <span>Back</span>
+                        <SendToBack className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <div className="w-px h-4 bg-slate-700 mx-0.5" />
                     <button
                         type="button"
                         onClick={handleDelete}
-                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
+                        className="w-7 h-7 flex items-center justify-center rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/20 transition"
                         title="Delete (Del / Backspace)"
+                        aria-label="Delete (Del / Backspace)"
                     >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete</span>
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                 </div>
             )}

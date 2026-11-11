@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { browserAPI } from '@/lib/api';
+import { ArgonBrowserIcon, ArgonFullscreenIcon, ArgonFullscreenExitIcon } from './geometryTools/CustomToolbarIcons';
 
 const BROWSER_BOOKMARKS = [
     { label: 'Google Search', icon: '🔍', url: 'https://www.google.com' },
@@ -323,46 +324,58 @@ export default function WhiteboardBrowserSideroll({
 
     const panelWidthStyle = mode === 'full' 
         ? 'w-full max-w-full' 
-        : 'w-[580px] max-w-[640px] min-w-[420px]';
+        : 'w-[min(540px,92vw)] max-w-full';
 
     return (
+        <>
+        <div
+            className="absolute inset-0 z-[74] bg-slate-950/35 backdrop-blur-[1px]"
+            onClick={() => onModeChange('closed')}
+            aria-hidden="true"
+        />
         <aside
-            className={`${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 text-slate-100 flex flex-col z-40 transition-all duration-300 shadow-2xl relative select-none`}
+            className={`absolute inset-y-0 right-0 ${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-l border-slate-800 text-slate-100 flex flex-col z-[75] transition-all duration-300 shadow-2xl select-none animate-in slide-in-from-right duration-200`}
+            aria-label="Web and Media Research Hub"
         >
             {/* Top Hub Navigation Bar */}
             <div className="p-3 border-b border-slate-800 flex items-center justify-between gap-2 flex-shrink-0 bg-slate-950/70">
                 <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md flex-shrink-0">
-                        <Globe className="w-4 h-4" />
+                    <div className="w-7 h-7 rounded-lg bg-slate-800/80 border border-slate-700/70 flex items-center justify-center shadow-md flex-shrink-0">
+                        <ArgonBrowserIcon className="w-4 h-4" />
                     </div>
                     <span className="font-bold text-xs text-white tracking-wide">
                         Web & Media Hub
                     </span>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                    {/* Quick external launcher for current tab */}
+                <div className="flex items-center gap-1">
+                    {/* Quick external launcher for current tab (icon-only) */}
                     <button
+                        type="button"
                         onClick={() => handleOpenExternal(activeTab)}
-                        className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition flex items-center gap-1 text-[11px] font-semibold"
+                        className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition flex items-center justify-center"
                         title={activeTab === 'browser' ? 'Open URL in new tab' : activeTab === 'images' ? 'Search Google Images externally' : 'Search YouTube externally'}
+                        aria-label="Open external link"
                     >
-                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="hidden sm:inline text-[10px]">Open External</span>
+                        <ExternalLink className="w-4 h-4 text-slate-400" />
                     </button>
 
                     {/* Sideroll Size Toggle & Close */}
                     <button
+                        type="button"
                         onClick={() => onModeChange(mode === 'full' ? 'partial' : 'full')}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
                         title={mode === 'full' ? 'Split View' : 'Full Screen'}
+                        aria-label={mode === 'full' ? 'Split View' : 'Full Screen'}
                     >
-                        {mode === 'full' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                        {mode === 'full' ? <ArgonFullscreenExitIcon className="w-4 h-4" /> : <ArgonFullscreenIcon className="w-4 h-4" />}
                     </button>
                     <button
+                        type="button"
                         onClick={() => onModeChange('closed')}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded-lg transition"
-                        title="Close Hub"
+                        title="Close Research Hub"
+                        aria-label="Close Research Hub"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -1009,5 +1022,6 @@ export default function WhiteboardBrowserSideroll({
                 </div>
             )}
         </aside>
+        </>
     );
 }

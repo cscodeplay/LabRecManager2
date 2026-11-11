@@ -436,52 +436,52 @@ export default function WhiteboardPage() {
 
         return (
             <div className="h-[100dvh] w-screen bg-slate-100 flex flex-col overflow-hidden relative touch-none select-none overscroll-none whiteboard-workspace-root">
-                {/* Top Navigation & Action Controls Bar */}
-                <div className="absolute top-3 left-4 z-30 flex items-center gap-3">
+                {/* Top-Left Icon-Only Navigation, Camera & Live Status Cluster */}
+                <div className="absolute top-2.5 left-3 z-30 flex items-center gap-2">
                     <button 
+                        type="button"
                         onClick={() => {
                             setActiveFileId(null);
                             sessionStorage.removeItem('active_whiteboard_file');
                             fetchFiles();
                         }}
-                        className="p-2 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-md transition" 
+                        className="w-9 h-9 bg-white/95 hover:bg-white text-slate-700 rounded-xl shadow-md border border-slate-200/80 transition flex items-center justify-center" 
                         title="Back to Whiteboards"
+                        aria-label="Back to Whiteboards"
                     >
-                        <ArrowLeft className="w-5 h-5" />
+                        <ArrowLeft className="w-4 h-4" />
                     </button>
-                    {isCurrentBoardShared ? (
-                        <span className="flex items-center gap-1.5 text-xs bg-red-500 text-white font-bold px-2.5 py-1 rounded-full shadow-md animate-pulse">
-                            <span className="w-2 h-2 bg-white rounded-full" />
-                            LIVE SHARING
-                        </span>
-                    ) : isSharing ? (
-                        <div className="flex items-center gap-2 bg-slate-900/90 text-white text-xs px-3 py-1 rounded-full shadow-md border border-slate-700">
-                            <span className="w-2 h-2 rounded-full bg-amber-400" />
-                            <span className="font-medium">Private Board (Unshared)</span>
-                            {sharedFileId && (
-                                <button
-                                    onClick={() => setActiveFileId(sharedFileId)}
-                                    className="text-amber-300 font-bold hover:underline ml-1"
-                                >
-                                    Return to Shared Board &rarr;
-                                </button>
-                            )}
-                        </div>
-                    ) : null}
-                </div>
-
-                {/* Camera toggle button placed at bottom-left of the board */}
-                <div className="fixed bottom-6 left-6 z-40">
                     <button
+                        type="button"
                         onClick={() => setShowCamera(!showCamera)}
-                        className={`p-3.5 rounded-full font-medium transition flex items-center justify-center shadow-2xl border ${showCamera
+                        className={`w-9 h-9 rounded-xl font-medium transition flex items-center justify-center shadow-md border ${showCamera
                             ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
-                            : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                            : 'bg-white/95 hover:bg-white text-slate-700 border-slate-200/80'
                             }`}
                         title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                        aria-label={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
                     >
-                        {showCamera ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                        {showCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
                     </button>
+                    {isCurrentBoardShared ? (
+                        <span
+                            className="w-9 h-9 flex items-center justify-center bg-red-600 text-white rounded-xl shadow-md border border-red-400/50 animate-pulse"
+                            title="LIVE SHARING Active"
+                            aria-label="Live sharing active"
+                        >
+                            <Share2 className="w-4 h-4" />
+                        </span>
+                    ) : isSharing && sharedFileId ? (
+                        <button
+                            type="button"
+                            onClick={() => setActiveFileId(sharedFileId)}
+                            className="w-9 h-9 flex items-center justify-center bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl shadow-md border border-amber-300 transition"
+                            title="Private Board — Click to return to Shared Live Board"
+                            aria-label="Return to Shared Board"
+                        >
+                            <Share2 className="w-4 h-4" />
+                        </button>
+                    ) : null}
                 </div>
 
                 {/* Whiteboard Area */}

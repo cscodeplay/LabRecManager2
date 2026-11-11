@@ -12,6 +12,8 @@ import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
 import { quizAPI } from '@/lib/api';
 import MathRenderer from '@/components/MathRenderer';
+import { FluentQuizIcon } from './FluentNavIcons';
+import { ArgonFullscreenIcon, ArgonFullscreenExitIcon } from './geometryTools/CustomToolbarIcons';
 
 const DEFAULT_OPTIONS = [
     { key: 'A', text: '' },
@@ -495,17 +497,24 @@ export default function WhiteboardQuizSideroll({
 
     const panelWidthStyle = mode === 'full' 
         ? 'w-full max-w-full' 
-        : 'w-[440px] max-w-[460px] min-w-[380px]';
+        : 'w-[min(440px,92vw)] max-w-full';
 
     return (
+        <>
+        <div
+            className="absolute inset-0 z-[74] bg-slate-950/35 backdrop-blur-[1px]"
+            onClick={() => onModeChange('closed')}
+            aria-hidden="true"
+        />
         <aside
-            className={`${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 text-slate-100 flex flex-col z-50 transition-all duration-300 shadow-2xl relative select-none`}
+            className={`absolute inset-y-0 left-0 ${panelWidthStyle} h-full bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 text-slate-100 flex flex-col z-[75] transition-all duration-300 shadow-2xl select-none animate-in slide-in-from-left duration-200`}
+            aria-label="AI Quiz Hub"
         >
             {/* Top Bar Header */}
             <div className="p-3.5 border-b border-slate-800 flex items-center justify-between gap-2 flex-shrink-0 bg-slate-950/60">
                 <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg flex-shrink-0">
-                        <Sparkles className="w-4 h-4" />
+                    <div className="w-8 h-8 rounded-xl bg-slate-800/80 border border-slate-700/70 flex items-center justify-center shadow-lg flex-shrink-0">
+                        <FluentQuizIcon className="w-5 h-5" />
                     </div>
                     <div className="truncate">
                         <h3 className="font-bold text-sm text-white flex items-center gap-1.5">
@@ -523,16 +532,20 @@ export default function WhiteboardQuizSideroll({
                 {/* Sideroll Controls: Partial, Full, Close */}
                 <div className="flex items-center gap-1">
                     <button
+                        type="button"
                         onClick={() => onModeChange(mode === 'full' ? 'partial' : 'full')}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition"
                         title={mode === 'full' ? 'Split View' : 'Full Screen'}
+                        aria-label={mode === 'full' ? 'Split View' : 'Full Screen'}
                     >
-                        {mode === 'full' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                        {mode === 'full' ? <ArgonFullscreenExitIcon className="w-4 h-4" /> : <ArgonFullscreenIcon className="w-4 h-4" />}
                     </button>
                     <button
+                        type="button"
                         onClick={() => onModeChange('closed')}
                         className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-rose-400 rounded-lg transition"
-                        title="Close Sideroll"
+                        title="Close AI Quiz Hub"
+                        aria-label="Close AI Quiz Hub"
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -1486,5 +1499,6 @@ export default function WhiteboardQuizSideroll({
                 </div>
             )}
         </aside>
+        </>
     );
 }

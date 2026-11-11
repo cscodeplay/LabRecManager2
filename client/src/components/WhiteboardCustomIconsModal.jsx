@@ -131,7 +131,7 @@ export default function WhiteboardCustomIconsModal({ isOpen, onClose }) {
     const [activeTab, setActiveTab] = useState('presets'); // presets, upload, paste
     const [svgCodeInput, setSvgCodeInput] = useState('');
     const [imageUrlInput, setImageUrlInput] = useState('');
-    const [activePack, setActivePackState] = useState('argon');
+    const [activePack, setActivePackState] = useState('fluent');
     const [customIconsMap, setCustomIconsMap] = useState({});
     const [previewRefresh, setPreviewRefresh] = useState(0);
     const fileInputId = useId();
@@ -328,7 +328,7 @@ export default function WhiteboardCustomIconsModal({ isOpen, onClose }) {
                             <h2 className="text-base font-bold text-white flex items-center gap-2">
                                 <span>Toolbar Icon Customizer</span>
                                 <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 px-2 py-0.5 rounded-full font-mono uppercase">
-                                    Argon 2.0
+                                    Fluent 2
                                 </span>
                             </h2>
                             <p className="text-xs text-slate-400">
