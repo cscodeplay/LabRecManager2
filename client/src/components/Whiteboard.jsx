@@ -5284,61 +5284,6 @@ export default function Whiteboard({
         saveToHistory();
     }, [selectedShapeIds, selectedTextIds, selectedImageId, saveToHistory]);
 
-    // ─── Educational Game Launcher & Board Stamping ─────────────────────
-    const handleLaunchGame = useCallback((gameType) => {
-        setActiveGame(gameType);
-        setShowGameSelector(false);
-    }, []);
-
-    const handleStampGamePuzzleToBoard = useCallback((payload) => {
-        if (!payload) return;
-        if (payload.type === 'sudoku' && Array.isArray(payload.grid)) {
-            const headers = Array.from({ length: payload.size }, (_, idx) => `C${idx + 1}`);
-            const rows = payload.grid.map(r => r.map(v => (v ? String(v) : '')));
-            handleInsertTableToCanvas({ headers, rows }, { title: payload.title || 'Sudoku Puzzle' });
-            setActiveGame(null);
-            toast.success('Sudoku grid stamped to whiteboard!', { icon: '🔢' });
-            return;
-        }
-        if (payload.type === 'crossword' && payload.puzzle) {
-            const { solutionGrid, numberStarts, across = [], down = [], topic: cTopic } = payload.puzzle;
-            const numCols = solutionGrid?.[0]?.length || 0;
-            if (numCols > 0) {
-                const headers = Array.from({ length: numCols }, (_, i) => String(i + 1));
-                const rows = solutionGrid.map((row, r) =>
-                    row.map((cell, c) => {
-                        if (!cell) return '■';
-                        const num = numberStarts?.get(`${r},${c}`);
-                        return num ? `${num}` : ' ';
-                    })
-                );
-                handleInsertTableToCanvas({ headers, rows }, { title: `Crossword: ${cTopic || 'STEM'}` });
-            }
-            const cluesText = [
-                `CROSSWORD CLUES — ${cTopic || 'STEM'}`,
-                '',
-                'ACROSS:',
-                ...across.map(a => `${a.number}. ${a.clue} (${a.word.length})`),
-                '',
-                'DOWN:',
-                ...down.map(d => `${d.number}. ${d.clue} (${d.word.length})`)
-            ].join('\n');
-            const wrapper = canvasWrapperRef.current;
-            const cx = wrapper ? Math.round(wrapper.clientWidth * 0.65) : 760;
-            const cy = wrapper ? 120 : 120;
-            const clueNote = createStickyNoteObject(cx, cy, 'blue');
-            clueNote.text = cluesText;
-            clueNote.width = 320;
-            clueNote.height = 360;
-            setPageShapeObjects(prev => ({
-                ...prev,
-                [currentPage]: [...(prev[currentPage] || []), clueNote]
-            }));
-            setActiveGame(null);
-            toast.success('Crossword grid & clues stamped to board!', { icon: '✨' });
-        }
-    }, [currentPage, handleInsertTableToCanvas]);
-
     const handleApplyTemplate = useCallback((templateData) => {
         if (!templateData) return;
         const { shapes = [], texts = [], background, title = 'Diagram', connectors = [] } = templateData;
@@ -6440,6 +6385,61 @@ export default function Whiteboard({
         saveToHistory();
         toast.success(`Inserted ${numRows}×${numCols} Dry-Run Trace Table to Whiteboard (12px font)!`, { icon: '📊' });
     }, [canvasWrapperRef, panOffset, zoomLevel, setTableObjects, setSelectedTableId, setTool, saveToHistory]);
+
+    // ─── Educational Game Launcher & Board Stamping ─────────────────────
+    const handleLaunchGame = useCallback((gameType) => {
+        setActiveGame(gameType);
+        setShowGameSelector(false);
+    }, []);
+
+    const handleStampGamePuzzleToBoard = useCallback((payload) => {
+        if (!payload) return;
+        if (payload.type === 'sudoku' && Array.isArray(payload.grid)) {
+            const headers = Array.from({ length: payload.size }, (_, idx) => `C${idx + 1}`);
+            const rows = payload.grid.map(r => r.map(v => (v ? String(v) : '')));
+            handleInsertTableToCanvas({ headers, rows }, { title: payload.title || 'Sudoku Puzzle' });
+            setActiveGame(null);
+            toast.success('Sudoku grid stamped to whiteboard!', { icon: '🔢' });
+            return;
+        }
+        if (payload.type === 'crossword' && payload.puzzle) {
+            const { solutionGrid, numberStarts, across = [], down = [], topic: cTopic } = payload.puzzle;
+            const numCols = solutionGrid?.[0]?.length || 0;
+            if (numCols > 0) {
+                const headers = Array.from({ length: numCols }, (_, i) => String(i + 1));
+                const rows = solutionGrid.map((row, r) =>
+                    row.map((cell, c) => {
+                        if (!cell) return '■';
+                        const num = numberStarts?.get(`${r},${c}`);
+                        return num ? `${num}` : ' ';
+                    })
+                );
+                handleInsertTableToCanvas({ headers, rows }, { title: `Crossword: ${cTopic || 'STEM'}` });
+            }
+            const cluesText = [
+                `CROSSWORD CLUES — ${cTopic || 'STEM'}`,
+                '',
+                'ACROSS:',
+                ...across.map(a => `${a.number}. ${a.clue} (${a.word.length})`),
+                '',
+                'DOWN:',
+                ...down.map(d => `${d.number}. ${d.clue} (${d.word.length})`)
+            ].join('\n');
+            const wrapper = canvasWrapperRef.current;
+            const cx = wrapper ? Math.round(wrapper.clientWidth * 0.65) : 760;
+            const cy = wrapper ? 120 : 120;
+            const clueNote = createStickyNoteObject(cx, cy, 'blue');
+            clueNote.text = cluesText;
+            clueNote.width = 320;
+            clueNote.height = 360;
+            setPageShapeObjects(prev => ({
+                ...prev,
+                [currentPage]: [...(prev[currentPage] || []), clueNote]
+            }));
+            setActiveGame(null);
+            toast.success('Crossword grid & clues stamped to board!', { icon: '✨' });
+        }
+    }, [currentPage, handleInsertTableToCanvas]);
 
     // Insert Parametric Geometry Shape
     const handleInsertParametricShape = useCallback((shapeData) => {
