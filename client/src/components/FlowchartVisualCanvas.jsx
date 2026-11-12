@@ -277,11 +277,13 @@ export default function FlowchartVisualCanvas({
     const containerRef = useRef(null);
     const isLocalUpdateRef = useRef(false);
 
-    // Fullscreen Overlay Mode & Collapsible Shapes Palette
+    // Fullscreen Overlay Mode & Collapsible Shapes/ER Mode Palettes
     const [isFullScreen, setIsFullScreen] = useState(false);
     const [showShapesDropdown, setShowShapesDropdown] = useState(false);
     const [isShapesExpanded, setIsShapesExpanded] = useState(false);
+    const [showErModeDropdown, setShowErModeDropdown] = useState(false);
     const shapesDropdownRef = useRef(null);
+    const erModeDropdownRef = useRef(null);
 
     // Escape key listener for exiting Fullscreen
     useEffect(() => {
@@ -294,11 +296,14 @@ export default function FlowchartVisualCanvas({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isFullScreen]);
 
-    // Outside click listener for closing Shapes Dropdown
+    // Outside click listener for closing Shapes & ER Mode Dropdowns
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (shapesDropdownRef.current && !shapesDropdownRef.current.contains(e.target)) {
                 setShowShapesDropdown(false);
+            }
+            if (erModeDropdownRef.current && !erModeDropdownRef.current.contains(e.target)) {
+                setShowErModeDropdown(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -1540,47 +1545,79 @@ export default function FlowchartVisualCanvas({
 
                     <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
 
-                    {/* ER SUB-VIEW SWITCHER: Database Designer (Tables with Columns) vs Conceptual ERD (Chen Notation) */}
+                    {/* ER SUB-VIEW DROPDOWN: Database Designer (Tables with Columns) vs Conceptual ERD (Chen Notation) */}
                     {isErMode && (
-                        <div className={`flex items-center rounded-lg p-0.5 border text-xs font-semibold ${
-                            isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-800 border-slate-700'
-                        }`}>
+                        <div className="relative" ref={erModeDropdownRef}>
                             <button
                                 type="button"
-                                onClick={() => setErSubView('relational')}
-                                title="Database Designer: Relational table cards with columns, types & PK/FK properties inside the card"
-                                className={`flex items-center gap-1 px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
-                                    erSubView === 'relational'
-                                        ? isLight
-                                            ? 'bg-white text-primary-700 shadow-xs'
-                                            : 'bg-slate-700 text-primary-300 shadow-xs'
-                                        : isLight
-                                        ? 'text-slate-600 hover:text-slate-900'
-                                        : 'text-slate-400 hover:text-slate-200'
+                                onClick={() => setShowErModeDropdown((prev) => !prev)}
+                                title="Switch between Database Designer & Conceptual ER Diagram"
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer shadow-xs ${
+                                    showErModeDropdown
+                                        ? isLight ? 'bg-slate-200 border-slate-400 text-slate-900' : 'bg-slate-800 border-slate-600 text-white'
+                                        : isLight ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
                                 }`}
                             >
-                                <Table className="w-3 h-3 text-primary-500" />
-                                <span className="hidden sm:inline">Database Designer</span>
-                                <span className="sm:hidden inline">Tables</span>
+                                {erSubView === 'relational' ? (
+                                    <Table className="w-3.5 h-3.5 text-primary-500" />
+                                ) : (
+                                    <Layers className="w-3.5 h-3.5 text-purple-500" />
+                                )}
+                                <span className="hidden sm:inline">
+                                    {erSubView === 'relational' ? 'Database Designer' : 'Conceptual ERD'}
+                                </span>
+                                <span className="sm:hidden inline">
+                                    {erSubView === 'relational' ? 'DB' : 'ERD'}
+                                </span>
+                                <ChevronDown className="w-3 h-3 text-slate-400" />
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => setErSubView('chen')}
-                                title="Conceptual ERD: Chen notation with Entities (rectangles), Attributes (ovals) & Relationships (diamonds)"
-                                className={`flex items-center gap-1 px-2 py-1 rounded-md transition cursor-pointer text-[11px] ${
-                                    erSubView === 'chen'
-                                        ? isLight
-                                            ? 'bg-white text-purple-700 shadow-xs'
-                                            : 'bg-slate-700 text-purple-300 shadow-xs'
-                                        : isLight
-                                        ? 'text-slate-600 hover:text-slate-900'
-                                        : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                            >
-                                <Layers className="w-3 h-3 text-purple-500" />
-                                <span className="hidden sm:inline">Conceptual ERD</span>
-                                <span className="sm:hidden inline">Chen ER</span>
-                            </button>
+
+                            {showErModeDropdown && (
+                                <div className={`absolute left-0 top-full mt-1.5 w-52 p-1.5 rounded-xl shadow-2xl border z-50 animate-in fade-in slide-in-from-top-1 text-xs select-none ${
+                                    isLight ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-700 text-slate-200'
+                                }`}>
+                                    {[
+                                        {
+                                            id: 'relational',
+                                            label: 'Database Designer',
+                                            sub: 'Tables, columns & PK/FK links',
+                                            icon: <Table className="w-3.5 h-3.5 text-primary-500 shrink-0" />
+                                        },
+                                        {
+                                            id: 'chen',
+                                            label: 'Conceptual ERD',
+                                            sub: 'Chen entities, ovals & diamonds',
+                                            icon: <Layers className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                                        }
+                                    ].map((opt) => {
+                                        const isOptActive = erSubView === opt.id;
+                                        return (
+                                            <button
+                                                key={opt.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setErSubView(opt.id);
+                                                    setShowErModeDropdown(false);
+                                                }}
+                                                className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-left transition cursor-pointer ${
+                                                    isOptActive
+                                                        ? isLight ? 'bg-indigo-50 text-indigo-800 font-bold' : 'bg-indigo-950/70 text-indigo-300 font-bold'
+                                                        : isLight ? 'hover:bg-slate-100 text-slate-700' : 'hover:bg-slate-800 text-slate-200'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-2 min-w-0">
+                                                    {opt.icon}
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="text-xs leading-tight">{opt.label}</span>
+                                                        <span className="text-[10px] font-normal text-slate-400 truncate">{opt.sub}</span>
+                                                    </div>
+                                                </div>
+                                                {isOptActive && <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1731,60 +1768,8 @@ export default function FlowchartVisualCanvas({
                     >
                         <Trash2 className="w-3.5 h-3.5" />
                     </button>
-
-                    <div className={`h-4 w-px mx-0.5 ${isLight ? 'bg-slate-300' : 'bg-slate-700'}`} />
-
-                    {/* FULLSCREEN OVERLAY TOGGLE BUTTON - Icon Only with Tooltip */}
-                    <button
-                        onClick={() => setIsFullScreen(!isFullScreen)}
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center border cursor-pointer shrink-0 ${
-                            isFullScreen
-                                ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-600 shadow-md ring-2 ring-indigo-400/40'
-                                : isLight
-                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-800'
-                                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200'
-                        }`}
-                        title={isFullScreen ? 'Exit Fullscreen Overlay (Esc)' : 'Expand Designer to Fullscreen Overlay'}
-                        aria-label="Toggle Fullscreen"
-                    >
-                        {isFullScreen ? (
-                            <Minimize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        ) : (
-                            <Maximize2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        )}
-                    </button>
                 </div>
             </div>
-
-            {/* Sub-Bar: Selected Connector Cardinality Quick-Tagger (ER Diagram Mode Only - Hidden in Flowchart Designer) */}
-            {selectedConnectorId && isErMode && (
-                <div
-                    className={`px-3 py-1.5 border-b flex flex-wrap items-center justify-between text-xs z-10 ${
-                        isLight ? 'bg-amber-50/90 border-amber-200 text-amber-900' : 'bg-amber-950/60 border-amber-800 text-amber-200'
-                    }`}
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="font-bold flex items-center gap-1">
-                            <ArrowRight className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Cardinality Tag:</span>
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1">
-                            {CARDINALITY_OPTIONS.map((opt) => (
-                                <button
-                                    key={opt}
-                                    onClick={() => handleSetConnectorCardinality(opt)}
-                                    className="px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 font-mono text-[11px] font-bold hover:bg-amber-100 transition cursor-pointer shadow-2xs"
-                                >
-                                    {opt}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    <span className="text-[11px] text-amber-700 dark:text-amber-300 italic hidden md:inline">
-                        Double-click connector pill to type custom label
-                    </span>
-                </div>
-            )}
 
             {/* Instruction Banner when Connector Mode or Dragging Hook is Active */}
             {(activeTool === 'connector' || Boolean(connectingSource)) && (
@@ -1875,6 +1860,50 @@ export default function FlowchartVisualCanvas({
                         {isFullScreen ? <Minimize2 className="w-3.5 h-3.5 text-indigo-500" /> : <Maximize2 className="w-3.5 h-3.5" />}
                     </button>
                 </div>
+
+                {/* Floating Right-Side Overlay: Selected Connector Cardinality Quick-Tagger (ER Diagram Mode Only) */}
+                {selectedConnectorId && isErMode && (
+                    <div
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className={`absolute top-14 right-3 z-20 w-44 p-2.5 rounded-xl border shadow-xl backdrop-blur-md text-xs select-none flex flex-col gap-1.5 animate-in fade-in slide-in-from-right-2 ${
+                            isLight
+                                ? 'bg-amber-50/95 border-amber-300 text-amber-950 shadow-amber-900/10'
+                                : 'bg-slate-900/95 border-amber-700/70 text-amber-100 shadow-slate-950/60'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between gap-1 pb-1 border-b border-amber-500/25">
+                            <span className="font-bold text-[11px] flex items-center gap-1">
+                                <ArrowRight className="w-3 h-3 text-amber-500" />
+                                <span>Cardinality Tag</span>
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedConnectorId(null)}
+                                className="p-0.5 rounded hover:bg-amber-500/20 text-amber-600 dark:text-amber-300 cursor-pointer"
+                                title="Close Cardinality Overlay"
+                                aria-label="Close Cardinality Overlay"
+                            >
+                                <X className="w-3 h-3" />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                            {CARDINALITY_OPTIONS.map((opt) => (
+                                <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={() => handleSetConnectorCardinality(opt)}
+                                    className="px-2 py-1 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 font-mono text-[11px] font-bold hover:bg-amber-100 dark:hover:bg-amber-900/50 transition cursor-pointer shadow-2xs text-center"
+                                >
+                                    {opt}
+                                </button>
+                            ))}
+                        </div>
+                        <span className="text-[10px] leading-tight text-amber-700 dark:text-amber-300/80 italic">
+                            Double-click connector pill to edit custom label
+                        </span>
+                    </div>
+                )}
 
                 {/* Floating Shape Placement Helper Pill */}
                 {pendingShapeType && (

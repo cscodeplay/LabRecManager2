@@ -2587,7 +2587,7 @@ Date:          ${dateStr}
                     }`}
                 >
                     <Layers className="w-3.5 h-3.5 text-purple-500" />
-                    <span>{isDatabaseLanguage(activeTab.language) ? 'ER / Designer' : 'Flowchart'}</span>
+                    <span>{isDatabaseLanguage(activeTab.language) ? 'Designer' : 'Flowchart'}</span>
                 </button>
             </div>
 
@@ -2835,7 +2835,7 @@ Date:          ${dateStr}
                                     }`}
                                 >
                                     <FileSpreadsheet className="w-3.5 h-3.5 text-sky-500" />
-                                    <span className="hidden sm:inline">Database Tables & Results</span>
+                                    <span>Tables</span>
                                     {activeTab.output?.tables && activeTab.output.tables.length > 0 ? (
                                         <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-sky-500/20 text-sky-600 dark:text-sky-300 font-mono">
                                             {activeTab.output.tables.length} rows
@@ -2864,7 +2864,7 @@ Date:          ${dateStr}
                                 {isDatabaseLanguage(activeTab.language) ? (
                                     <>
                                         <FluentSqlIcon className="w-4 h-4" />
-                                        <span>ER Diagram Designer</span>
+                                        <span>Designer</span>
                                     </>
                                 ) : (
                                     <>
@@ -2875,15 +2875,8 @@ Date:          ${dateStr}
                             </button>
                         </div>
 
-                        {/* Right: DB Tables indicator & Fast Console Actions */}
+                        {/* Right: Fast Console Actions */}
                         <div className="flex items-center gap-2">
-                            {isDatabaseLanguage(activeTab.language) && existingTables.length > 0 && (
-                                <div className="flex items-center gap-1 text-[11px] text-sky-500 font-medium">
-                                    <Database className="w-3.5 h-3.5" />
-                                    <span className="font-mono font-semibold">{existingTables.length} tables saved</span>
-                                </div>
-                            )}
-
                             {/* Fast Action: Clear Console Output */}
                             <button
                                 type="button"
