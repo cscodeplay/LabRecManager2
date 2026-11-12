@@ -2,11 +2,25 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
-    ZoomIn, ZoomOut, RotateCcw, Map, ChevronUp, ChevronDown,
-    Maximize, Minimize2, GripHorizontal
+    ZoomIn,
+    ZoomOut,
+    RotateCcw,
+    Map as MapIcon,
+    Maximize,
+    ChevronDown,
+    X
 } from 'lucide-react';
-import { getAnchorPoint } from './ConnectorLine';
+import {
+    ArgonFullscreenIcon,
+    ArgonFullscreenExitIcon,
+    FluentToolIcon
+} from './geometryTools/CustomToolbarIcons';
 
+/**
+ * Top-Right Minimalist Utility Capsule:
+ * Combines Zoom Controls (- / % popover / + / Fit), Collapsible Canvas Minimap,
+ * Viewport Screenshot Capture, and Fullscreen Toggle in one fixed top-right bar.
+ */
 export default function WhiteboardMinimap({
     zoomLevel = 1,
     setZoomLevel,
@@ -17,209 +31,68 @@ export default function WhiteboardMinimap({
     canvasWidth = 1920,
     canvasHeight = 1080,
     containerRef,
+    viewportWidth,
+    viewportHeight,
     shapes = [],
     shapeObjects = [],
     texts = [],
     textObjects = [],
     images = [],
     imageObjects = [],
-    isDrawing = false
+    isDrawing = false,
+    onCaptureScreenshot,
+    onToggleFullscreen,
+    isFullscreen = false
 }) {
-    // Minimap preview toggle
-    const [isMinimapExpanded, setIsMinimapExpanded] = useState(false);
-    // Compact icon mode vs full bar mode
-    const [isBarCollapsed, setIsBarCollapsed] = useState(false);
+    const [activePanel, setActivePanel] = useState(null); // null | 'zoom' | 'minimap'
     const [isDraggingViewport, setIsDraggingViewport] = useState(false);
     const minimapRef = useRef(null);
+    const wrapperRef = useRef(null);
 
-    // Draggable position state (defaults to bottom-left, away from AI button at bottom-right)
-    const [pos, setPos] = useState({ x: 24, y: 0 }); // y calculated on mount
-    const [isDraggingBar, setIsDraggingBar] = useState(false);
-    const dragOffsetRef = useRef({ x: 0, y: 0 });
-
-    // Autohide / collapse zoom bar when user interacts or draws on the canvas
+    // Close open downward popups when drawing begins or clicking outside
     useEffect(() => {
         if (isDrawing) {
-            setIsBarCollapsed(true);
-            setIsMinimapExpanded(false);
+            setActivePanel(null);
         }
     }, [isDrawing]);
 
-    // Restore saved position and collapsed state
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem('whiteboard_zoom_pos');
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
-                    const maxX = Math.max(10, (window.innerWidth || 1200) - 340);
-                    const maxY = Math.max(60, (window.innerHeight || 800) - 60);
-                    setPos({
-                        x: Math.max(10, Math.min(maxX, parsed.x)),
-                        y: Math.max(60, Math.min(maxY, parsed.y))
-                    });
-                } else {
-                    setPos({ x: 24, y: Math.max(60, (window.innerHeight || 800) - 70) });
-                }
-                if (typeof parsed.isBarCollapsed === 'boolean') {
-                    setIsBarCollapsed(parsed.isBarCollapsed);
-                }
-            } else {
-                setPos({ x: 24, y: Math.max(60, (window.innerHeight || 800) - 70) });
+        if (!activePanel) return;
+        const handleOutside = (e) => {
+            if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+                setActivePanel(null);
             }
-        } catch (e) {
-            setPos({ x: 24, y: 650 });
-        }
-    }, []);
-
-    const saveBarState = useCallback((newPos, collapsed) => {
-        try {
-            localStorage.setItem('whiteboard_zoom_pos', JSON.stringify({
-                x: newPos.x,
-                y: newPos.y,
-                isBarCollapsed: collapsed
-            }));
-        } catch (e) {}
-    }, []);
-
-    // Reset zoom bar to default bottom-left position on window resize, sidebar toggle, or fullscreen toggle
-    useEffect(() => {
-        const handleDefaultReset = () => {
-            const defaultPos = { x: 24, y: Math.max(60, (window.innerHeight || 800) - 70) };
-            setPos(defaultPos);
-            saveBarState(defaultPos, isBarCollapsed);
         };
+        window.addEventListener('pointerdown', handleOutside);
+        return () => window.removeEventListener('pointerdown', handleOutside);
+    }, [activePanel]);
 
-        window.addEventListener('resize', handleDefaultReset);
-        document.addEventListener('fullscreenchange', handleDefaultReset);
-        document.addEventListener('webkitfullscreenchange', handleDefaultReset);
-
-        return () => {
-            window.removeEventListener('resize', handleDefaultReset);
-            document.removeEventListener('fullscreenchange', handleDefaultReset);
-            document.removeEventListener('webkitfullscreenchange', handleDefaultReset);
-        };
-    }, [saveBarState, isBarCollapsed]);
-
-    // Auto-hide timer: automatically collapses the zoom tool after usage/inactivity
-    const autoHideTimerRef = useRef(null);
-
-    const scheduleAutoHide = useCallback((delay = 3500) => {
-        if (autoHideTimerRef.current) {
-            clearTimeout(autoHideTimerRef.current);
-        }
-        autoHideTimerRef.current = setTimeout(() => {
-            setIsBarCollapsed(true);
-            setIsMinimapExpanded(false);
-            saveBarState(pos, true);
-        }, delay);
-    }, [pos, saveBarState]);
-
-    const cancelAutoHide = useCallback(() => {
-        if (autoHideTimerRef.current) {
-            clearTimeout(autoHideTimerRef.current);
-            autoHideTimerRef.current = null;
-        }
-    }, []);
-
-    // Clean up on unmount
-    useEffect(() => {
-        return () => {
-            if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
-        };
-    }, []);
-
-    // Dragging bar handler
-    const handleDragStart = (e) => {
-        const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-        const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-        setIsDraggingBar(true);
-        dragOffsetRef.current = {
-            x: clientX - pos.x,
-            y: clientY - pos.y
-        };
-        e.stopPropagation();
-    };
-
-    useEffect(() => {
-        if (!isDraggingBar) return;
-
-        const handleMove = (e) => {
-            const clientX = e.clientX ?? (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-            const clientY = e.clientY ?? (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-            const rawX = clientX - dragOffsetRef.current.x;
-            const rawY = clientY - dragOffsetRef.current.y;
-
-            const maxX = Math.max(10, (window.innerWidth || 1200) - 330);
-            const maxY = Math.max(60, (window.innerHeight || 800) - 50);
-
-            const boundedX = Math.max(10, Math.min(maxX, rawX));
-            const boundedY = Math.max(60, Math.min(maxY, rawY));
-
-            const newPos = { x: boundedX, y: boundedY };
-            setPos(newPos);
-            saveBarState(newPos, isBarCollapsed);
-        };
-
-        const handleUp = () => {
-            setIsDraggingBar(false);
-        };
-
-        window.addEventListener('mousemove', handleMove);
-        window.addEventListener('mouseup', handleUp);
-        window.addEventListener('pointermove', handleMove);
-        window.addEventListener('pointerup', handleUp);
-        window.addEventListener('touchmove', handleMove, { passive: false });
-        window.addEventListener('touchend', handleUp);
-
-        return () => {
-            window.removeEventListener('mousemove', handleMove);
-            window.removeEventListener('mouseup', handleUp);
-            window.removeEventListener('pointermove', handleMove);
-            window.removeEventListener('pointerup', handleUp);
-            window.removeEventListener('touchmove', handleMove);
-            window.removeEventListener('touchend', handleUp);
-        };
-    }, [isDraggingBar, isBarCollapsed, saveBarState]);
-
-    // Normalize callbacks and object lists
     const changeZoom = useCallback((updater) => {
         const fn = setZoomLevel || onZoomChange;
-        if (typeof fn === 'function') {
-            fn(updater);
-        }
+        if (typeof fn === 'function') fn(updater);
     }, [setZoomLevel, onZoomChange]);
 
     const changePan = useCallback((updater) => {
         const fn = setPanOffset || onPanChange;
-        if (typeof fn === 'function') {
-            fn(updater);
-        }
+        if (typeof fn === 'function') fn(updater);
     }, [setPanOffset, onPanChange]);
 
     const resolvedShapes = useMemo(() => (shapes && shapes.length > 0 ? shapes : shapeObjects) || [], [shapes, shapeObjects]);
     const resolvedTexts = useMemo(() => (texts && texts.length > 0 ? texts : textObjects) || [], [texts, textObjects]);
     const resolvedImages = useMemo(() => (images && images.length > 0 ? images : imageObjects) || [], [images, imageObjects]);
 
-    const MAP_WIDTH = 200;
-    const MAP_HEIGHT = 112; // 16:9 ratio
+    const MAP_WIDTH = 216;
+    const MAP_HEIGHT = 122;
 
-    // Dynamic Content & Viewport Envelope
     const bounds = useMemo(() => {
-        let containerW = 1200;
-        let containerH = 700;
-        if (containerRef?.current) {
-            containerW = containerRef.current.clientWidth || 1200;
-            containerH = containerRef.current.clientHeight || 700;
-        } else if (typeof window !== 'undefined') {
-            containerW = window.innerWidth;
-            containerH = window.innerHeight;
-        }
+        const containerW = containerRef?.current?.clientWidth || viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 1200);
+        const containerH = containerRef?.current?.clientHeight || viewportHeight || (typeof window !== 'undefined' ? window.innerHeight : 700);
+        const z = zoomLevel || 1;
 
-        const vpCanvasW = containerW / zoomLevel;
-        const vpCanvasH = containerH / zoomLevel;
-        const vpCanvasX = (canvasWidth / 2) - (vpCanvasW / 2) - panOffset.x;
-        const vpCanvasY = (canvasHeight / 2) - (vpCanvasH / 2) - panOffset.y;
+        const vpCanvasW = containerW / z;
+        const vpCanvasH = containerH / z;
+        const vpCanvasX = (canvasWidth / 2) - (vpCanvasW / 2) - (panOffset.x || 0);
+        const vpCanvasY = (canvasHeight / 2) - (vpCanvasH / 2) - (panOffset.y || 0);
 
         let minX = Math.min(0, vpCanvasX);
         let minY = Math.min(0, vpCanvasY);
@@ -227,7 +100,7 @@ export default function WhiteboardMinimap({
         let maxY = Math.max(canvasHeight, vpCanvasY + vpCanvasH);
 
         const allObjects = [...resolvedShapes, ...resolvedTexts, ...resolvedImages];
-        allObjects.forEach(obj => {
+        allObjects.forEach((obj) => {
             if (!obj) return;
             const ox = obj.x ?? 0;
             const oy = obj.y ?? 0;
@@ -239,32 +112,23 @@ export default function WhiteboardMinimap({
             if (oy + oh > maxY) maxY = oy + oh;
         });
 
-        // 80px margin around content
         minX -= 80;
         minY -= 80;
         maxX += 80;
         maxY += 80;
 
-        const totalW = Math.max(200, maxX - minX);
-        const totalH = Math.max(120, maxY - minY);
-
         return {
             minX,
             minY,
-            maxX,
-            maxY,
-            totalW,
-            totalH,
-            containerW,
-            containerH,
+            totalW: Math.max(200, maxX - minX),
+            totalH: Math.max(120, maxY - minY),
             vpCanvasX,
             vpCanvasY,
             vpCanvasW,
             vpCanvasH
         };
-    }, [containerRef, panOffset, zoomLevel, canvasWidth, canvasHeight, resolvedShapes, resolvedTexts, resolvedImages]);
+    }, [containerRef, viewportWidth, viewportHeight, panOffset, zoomLevel, canvasWidth, canvasHeight, resolvedShapes, resolvedTexts, resolvedImages]);
 
-    // Viewport calculation
     const viewportRect = useMemo(() => {
         const vpX = ((bounds.vpCanvasX - bounds.minX) / bounds.totalW) * MAP_WIDTH;
         const vpY = ((bounds.vpCanvasY - bounds.minY) / bounds.totalH) * MAP_HEIGHT;
@@ -279,50 +143,58 @@ export default function WhiteboardMinimap({
         };
     }, [bounds]);
 
-    // Helpers to project canvas coordinates to minimap SVG
     const toMapX = useCallback((x) => ((x - bounds.minX) / bounds.totalW) * MAP_WIDTH, [bounds]);
     const toMapY = useCallback((y) => ((y - bounds.minY) / bounds.totalH) * MAP_HEIGHT, [bounds]);
     const toMapW = useCallback((w) => (w / bounds.totalW) * MAP_WIDTH, [bounds]);
     const toMapH = useCallback((h) => (h / bounds.totalH) * MAP_HEIGHT, [bounds]);
 
-    // Handle clicking or dragging on the minimap to pan
-    const handleMinimapPointer = useCallback((e) => {
+    const updatePanFromMinimapPointer = useCallback((clientX, clientY) => {
         if (!minimapRef.current) return;
         const rect = minimapRef.current.getBoundingClientRect();
-        const clickX = Math.max(0, Math.min(MAP_WIDTH, e.clientX - rect.left));
-        const clickY = Math.max(0, Math.min(MAP_HEIGHT, e.clientY - rect.top));
+        const clickX = Math.max(0, Math.min(MAP_WIDTH, clientX - rect.left));
+        const clickY = Math.max(0, Math.min(MAP_HEIGHT, clientY - rect.top));
 
-        // Convert minimap click to canvas coordinates using dynamic envelope
         const targetCanvasX = bounds.minX + (clickX / MAP_WIDTH) * bounds.totalW;
         const targetCanvasY = bounds.minY + (clickY / MAP_HEIGHT) * bounds.totalH;
 
-        const newPanX = (canvasWidth / 2) - targetCanvasX;
-        const newPanY = (canvasHeight / 2) - targetCanvasY;
-
-        changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
+        changePan({
+            x: Math.round((canvasWidth / 2) - targetCanvasX),
+            y: Math.round((canvasHeight / 2) - targetCanvasY)
+        });
     }, [bounds, canvasWidth, canvasHeight, changePan]);
 
-    // Zoom Controls (0.1x to 5.0x)
+    useEffect(() => {
+        if (!isDraggingViewport) return;
+        const handleMove = (e) => {
+            updatePanFromMinimapPointer(e.clientX, e.clientY);
+        };
+        const handleUp = () => setIsDraggingViewport(false);
+        window.addEventListener('pointermove', handleMove);
+        window.addEventListener('pointerup', handleUp);
+        window.addEventListener('pointercancel', handleUp);
+        return () => {
+            window.removeEventListener('pointermove', handleMove);
+            window.removeEventListener('pointerup', handleUp);
+            window.removeEventListener('pointercancel', handleUp);
+        };
+    }, [isDraggingViewport, updatePanFromMinimapPointer]);
+
     const zoomIn = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(prev => Math.min(5, +(prev + 0.25).toFixed(2)));
-        scheduleAutoHide(3000);
-    }, [changeZoom, scheduleAutoHide]);
+    }, [changeZoom]);
 
     const zoomOut = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(prev => Math.max(0.1, +(prev - 0.25).toFixed(2)));
-        scheduleAutoHide(3000);
-    }, [changeZoom, scheduleAutoHide]);
+    }, [changeZoom]);
 
     const resetZoom = useCallback((e) => {
         e?.stopPropagation();
         changeZoom(1);
         changePan({ x: 0, y: 0 });
-        scheduleAutoHide(2500);
-    }, [changeZoom, changePan, scheduleAutoHide]);
+    }, [changeZoom, changePan]);
 
-    // Fit Canvas content to Screen
     const fitToScreen = useCallback((e) => {
         e?.stopPropagation();
         const allObjects = [...resolvedShapes, ...resolvedTexts, ...resolvedImages];
@@ -330,7 +202,7 @@ export default function WhiteboardMinimap({
 
         if (allObjects.length > 0) {
             minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
-            allObjects.forEach(obj => {
+            allObjects.forEach((obj) => {
                 if (!obj) return;
                 const ox = obj.x || 0;
                 const oy = obj.y || 0;
@@ -341,252 +213,259 @@ export default function WhiteboardMinimap({
                 if (ox + ow > maxX) maxX = ox + ow;
                 if (oy + oh > maxY) maxY = oy + oh;
             });
-            // 60px padding
             minX -= 60; minY -= 60; maxX += 60; maxY += 60;
         }
 
-        let containerW = containerRef?.current?.clientWidth || window.innerWidth || 1200;
-        let containerH = containerRef?.current?.clientHeight || window.innerHeight || 700;
-
+        const containerW = containerRef?.current?.clientWidth || viewportWidth || (typeof window !== 'undefined' ? window.innerWidth : 1200);
+        const containerH = containerRef?.current?.clientHeight || viewportHeight || (typeof window !== 'undefined' ? window.innerHeight : 700);
         const contentW = Math.max(100, maxX - minX);
         const contentH = Math.max(100, maxY - minY);
 
         const fitZoom = Math.max(0.25, Math.min(2.5, +(Math.min(containerW / contentW, containerH / contentH)).toFixed(2)));
         changeZoom(fitZoom);
-
-        const targetCenterX = (minX + maxX) / 2;
-        const targetCenterY = (minY + maxY) / 2;
-        const newPanX = (canvasWidth / 2) - targetCenterX;
-        const newPanY = (canvasHeight / 2) - targetCenterY;
-        changePan({ x: Math.round(newPanX), y: Math.round(newPanY) });
-        scheduleAutoHide(2500);
-    }, [resolvedShapes, resolvedTexts, resolvedImages, canvasWidth, canvasHeight, containerRef, changeZoom, changePan, scheduleAutoHide]);
+        changePan({
+            x: Math.round((canvasWidth / 2) - ((minX + maxX) / 2)),
+            y: Math.round((canvasHeight / 2) - ((minY + maxY) / 2))
+        });
+    }, [resolvedShapes, resolvedTexts, resolvedImages, canvasWidth, canvasHeight, containerRef, viewportWidth, viewportHeight, changeZoom, changePan]);
 
     const handleSliderChange = (e) => {
         const val = parseFloat(e.target.value);
         changeZoom(+(val / 100).toFixed(2));
-        scheduleAutoHide(3000);
     };
 
+    const pct = Math.round((zoomLevel || 1) * 100);
+
     return (
-        <div 
-            style={{
-                position: 'fixed',
-                left: `${pos.x}px`,
-                top: `${pos.y}px`,
-                zIndex: 80,
-                WebkitBackfaceVisibility: 'hidden',
-                backfaceVisibility: 'hidden',
-                WebkitTransform: 'translate3d(0, 0, 0)',
-                transform: 'translate3d(0, 0, 0)',
-                willChange: 'transform, opacity'
-            }}
+        <div
+            ref={wrapperRef}
             data-interactive="true"
-            onMouseEnter={cancelAutoHide}
-            onMouseLeave={() => {
-                if (!isBarCollapsed) scheduleAutoHide(2500);
-            }}
-            className={`whiteboard-minimap select-none transition-all duration-300 ${
-                isDrawing ? 'opacity-15 pointer-events-none' : 'opacity-40 hover:opacity-100 focus-within:opacity-100'
-            } ${isDraggingBar ? 'opacity-100 scale-102 shadow-2xl' : ''}`}
+            onPointerDown={(e) => e.stopPropagation()}
+            className={`whiteboard-minimap absolute top-2.5 right-3 z-40 select-none transition-opacity duration-200 ${
+                isDrawing ? 'opacity-20 pointer-events-none' : 'opacity-95 hover:opacity-100'
+            }`}
         >
-            {/* Collapsed Pill Button */}
-            {isBarCollapsed ? (
-                <div 
-                    onClick={() => {
-                        setIsBarCollapsed(false);
-                        saveBarState(pos, false);
-                        scheduleAutoHide(4000);
-                    }}
-                    className="bg-slate-900/95 border border-slate-700/80 text-white rounded-full px-3 py-1.5 shadow-2xl flex items-center gap-2 cursor-pointer hover:bg-slate-800 transition group hover:scale-105"
-                    title="Expand Zoom & Minimap Controls"
+            {/* Unified Top-Right Minimalist Capsule */}
+            <div className="bg-slate-900/90 backdrop-blur-md border border-slate-700/80 rounded-xl shadow-xl h-9 px-1 flex items-center gap-0.5 text-slate-200">
+                <button
+                    type="button"
+                    onClick={zoomOut}
+                    className="hidden sm:flex w-7 h-7 items-center justify-center rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+                    title="Zoom Out (-)"
+                    aria-label="Zoom Out"
                 >
-                    <div
-                        onMouseDown={handleDragStart}
-                        onPointerDown={handleDragStart}
-                        onTouchStart={handleDragStart}
-                        className="cursor-grab p-0.5 text-slate-500 hover:text-indigo-400"
-                        title="Drag to move zoom controls"
+                    <ZoomOut className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setActivePanel(prev => (prev === 'zoom' ? null : 'zoom'))}
+                    className={`h-7 px-1.5 rounded-lg text-[11px] font-mono font-bold flex items-center gap-0.5 transition ${
+                        activePanel === 'zoom' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-100'
+                    }`}
+                    title="Zoom Controls & Fit to Screen"
+                    aria-label={`Zoom ${pct}%`}
+                    aria-expanded={activePanel === 'zoom'}
+                >
+                    <span>{pct}%</span>
+                    <ChevronDown className={`w-3 h-3 transition-transform ${activePanel === 'zoom' ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+
+                <button
+                    type="button"
+                    onClick={zoomIn}
+                    className="hidden sm:flex w-7 h-7 items-center justify-center rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+                    title="Zoom In (+)"
+                    aria-label="Zoom In"
+                >
+                    <ZoomIn className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+
+                <div className="w-px h-4 bg-slate-700/80 mx-0.5" />
+
+                {/* Minimap Toggle */}
+                <button
+                    type="button"
+                    onClick={() => setActivePanel(prev => (prev === 'minimap' ? null : 'minimap'))}
+                    className={`w-7 h-7 flex items-center justify-center rounded-lg transition ${
+                        activePanel === 'minimap' ? 'bg-indigo-600 text-white' : 'hover:bg-slate-800 text-slate-300 hover:text-white'
+                    }`}
+                    title={activePanel === 'minimap' ? 'Hide Canvas Minimap' : 'Show Canvas Minimap'}
+                    aria-label="Toggle Canvas Minimap"
+                    aria-expanded={activePanel === 'minimap'}
+                >
+                    <MapIcon className="w-3.5 h-3.5 text-indigo-400" aria-hidden="true" />
+                </button>
+
+                {/* Viewport Screenshot Trigger */}
+                {onCaptureScreenshot && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setActivePanel(null);
+                            onCaptureScreenshot();
+                        }}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition"
+                        title="Capture Viewport Screenshot"
+                        aria-label="Capture Viewport Screenshot"
                     >
-                        <GripHorizontal className="w-3.5 h-3.5" />
+                        <FluentToolIcon icon="fluent:camera-24-regular" className="w-4 h-4 text-sky-400" />
+                    </button>
+                )}
+
+                {/* Single Fullscreen Toggle */}
+                {onToggleFullscreen && (
+                    <button
+                        type="button"
+                        onClick={onToggleFullscreen}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-300 hover:text-white transition group"
+                        title={isFullscreen ? 'Exit Fullscreen (Esc)' : 'Maximize Whiteboard (F)'}
+                        aria-label={isFullscreen ? 'Exit Fullscreen' : 'Maximize Whiteboard'}
+                    >
+                        {isFullscreen ? (
+                            <ArgonFullscreenExitIcon className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" aria-hidden="true" />
+                        ) : (
+                            <ArgonFullscreenIcon className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" aria-hidden="true" />
+                        )}
+                    </button>
+                )}
+            </div>
+
+            {/* Downward Zoom Slider & Fit Popover */}
+            {activePanel === 'zoom' && (
+                <div className="absolute top-full right-0 mt-2 w-60 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl p-3 flex flex-col gap-2.5 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                        <span>Viewport Zoom</span>
+                        <span className="font-mono text-white">{pct}%</span>
                     </div>
-                    <ZoomIn className="w-3.5 h-3.5 text-indigo-400" />
-                    <span className="text-xs font-mono font-bold text-slate-200">
-                        {Math.round(zoomLevel * 100)}%
-                    </span>
-                    <ChevronUp className="w-3 h-3 text-slate-400 group-hover:text-white" />
-                </div>
-            ) : (
-                /* Full Control Bar & Stationary Minimap Popup */
-                <div className="relative">
-                    {/* Minimap Viewport Popup - displayed directly above zoom bar without relocating the zoom bar */}
-                    {isMinimapExpanded && (
-                        <div 
-                            className="absolute bottom-full mb-2 left-0 bg-slate-900 border-2 border-slate-700 rounded-2xl shadow-2xl p-2.5 overflow-hidden backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 z-50"
-                            style={{ width: `${MAP_WIDTH + 20}px` }}
-                        >
-                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-xs font-semibold text-slate-300">
-                                <span className="flex items-center gap-1.5">
-                                    <Map className="w-3.5 h-3.5 text-indigo-400" /> Canvas Minimap
-                                </span>
-                                <button 
-                                    onClick={() => setIsMinimapExpanded(false)}
-                                    className="text-slate-400 hover:text-white p-0.5"
-                                >
-                                    ✕
-                                </button>
-                            </div>
-
-                            <div
-                                ref={minimapRef}
-                                onMouseDown={handleMinimapPointer}
-                                onPointerDown={handleMinimapPointer}
-                                className="relative rounded-lg bg-slate-950/80 border border-slate-800 cursor-crosshair overflow-hidden mt-1.5 shadow-inner"
-                                style={{ width: `${MAP_WIDTH}px`, height: `${MAP_HEIGHT}px` }}
-                            >
-                                <svg width={MAP_WIDTH} height={MAP_HEIGHT} className="absolute inset-0 pointer-events-none">
-                                    {resolvedShapes.map(s => (
-                                        <rect
-                                            key={s.id}
-                                            x={toMapX(s.x || 0)}
-                                            y={toMapY(s.y || 0)}
-                                            width={Math.max(2, toMapW(s.width || 40))}
-                                            height={Math.max(2, toMapH(s.height || 40))}
-                                            fill={s.fill || 'rgba(99, 102, 241, 0.4)'}
-                                            stroke={s.color || '#818cf8'}
-                                            strokeWidth="0.8"
-                                        />
-                                    ))}
-                                    {resolvedImages.map(img => (
-                                        <rect
-                                            key={img.id}
-                                            x={toMapX(img.x || 0)}
-                                            y={toMapY(img.y || 0)}
-                                            width={Math.max(2, toMapW(img.width || 40))}
-                                            height={Math.max(2, toMapH(img.height || 40))}
-                                            fill="rgba(16, 185, 129, 0.4)"
-                                            stroke="#34d399"
-                                            strokeWidth="0.8"
-                                        />
-                                    ))}
-                                    {resolvedTexts.map(t => (
-                                        <rect
-                                            key={t.id}
-                                            x={toMapX(t.x || 0)}
-                                            y={toMapY(t.y || 0)}
-                                            width={Math.max(4, toMapW(t.width || 60))}
-                                            height={Math.max(2, toMapH(t.height || 20))}
-                                            fill="rgba(244, 63, 94, 0.4)"
-                                            stroke="#fb7185"
-                                            strokeWidth="0.8"
-                                        />
-                                    ))}
-                                </svg>
-
-                                {/* Viewport Indicator Box */}
-                                <div
-                                    className="absolute border-2 border-indigo-400 bg-indigo-500/25 rounded shadow-sm pointer-events-none transition-all duration-75"
-                                    style={{
-                                        left: `${viewportRect.x}px`,
-                                        top: `${viewportRect.y}px`,
-                                        width: `${viewportRect.width}px`,
-                                        height: `${viewportRect.height}px`
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Main Draggable Control Bar */}
-                    <div className="bg-slate-900 border-2 border-slate-700/80 rounded-full shadow-2xl px-2.5 py-1 flex items-center gap-1.5 text-white">
-                        {/* Drag Grip Handle */}
-                        <div
-                            onMouseDown={handleDragStart}
-                            onPointerDown={handleDragStart}
-                            onTouchStart={handleDragStart}
-                            className="cursor-grab active:cursor-grabbing p-1 text-slate-500 hover:text-indigo-400 rounded-full"
-                            title="Drag to reposition zoom bar"
-                        >
-                            <GripHorizontal className="w-3.5 h-3.5" />
-                        </div>
-
-                        {/* Minimap Access Toggle */}
+                    <div className="flex items-center gap-2">
                         <button
-                            onClick={() => setIsMinimapExpanded(prev => !prev)}
-                            className={`p-1.5 rounded-full transition flex items-center gap-1 ${
-                                isMinimapExpanded 
-                                    ? 'bg-indigo-600 text-white shadow-sm' 
-                                    : 'hover:bg-slate-800 text-slate-300 hover:text-white'
-                            }`}
-                            title={isMinimapExpanded ? 'Hide Canvas Minimap' : 'Show Canvas Minimap'}
-                        >
-                            <Map className="w-3.5 h-3.5 text-indigo-400" />
-                        </button>
-
-                        <div className="w-px h-3.5 bg-slate-700" />
-
-                        {/* Zoom Out */}
-                        <button
+                            type="button"
                             onClick={zoomOut}
-                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition active:scale-95"
-                            title="Zoom Out (−)"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                            aria-label="Zoom Out"
                         >
                             <ZoomOut className="w-3.5 h-3.5" />
                         </button>
-
-                        {/* Interactive Zoom Slider */}
                         <input
                             type="range"
                             min="10"
                             max="500"
                             step="5"
-                            value={Math.round(zoomLevel * 100)}
+                            value={pct}
                             onChange={handleSliderChange}
-                            className="w-14 sm:w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                            title={`Zoom: ${Math.round(zoomLevel * 100)}%`}
+                            className="flex-1 h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                         />
-
-                        {/* Zoom Reset Button */}
                         <button
-                            onClick={resetZoom}
-                            className="px-1.5 py-0.5 hover:bg-slate-800 text-slate-200 hover:text-white rounded text-[11px] font-mono font-bold transition flex items-center gap-1"
-                            title="Reset Zoom to 100%"
-                        >
-                            <span>{Math.round(zoomLevel * 100)}%</span>
-                            <RotateCcw className="w-2.5 h-2.5 text-slate-400" />
-                        </button>
-
-                        {/* Zoom In */}
-                        <button
+                            type="button"
                             onClick={zoomIn}
-                            className="p-1 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition active:scale-95"
-                            title="Zoom In (+)"
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
+                            aria-label="Zoom In"
                         >
                             <ZoomIn className="w-3.5 h-3.5" />
                         </button>
-
-                        <div className="w-px h-3.5 bg-slate-700" />
-
-                        {/* Fit to Screen */}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-800 text-xs">
                         <button
+                            type="button"
+                            onClick={resetZoom}
+                            className="py-1.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold flex items-center justify-center gap-1 transition"
+                        >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reset 100%</span>
+                        </button>
+                        <button
+                            type="button"
                             onClick={fitToScreen}
-                            className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-full transition"
-                            title="Fit Canvas to Screen (9)"
+                            className="py-1.5 px-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold flex items-center justify-center gap-1 transition"
                         >
-                            <Maximize className="w-3.5 h-3.5" />
+                            <Maximize className="w-3 h-3" />
+                            <span>Fit Screen</span>
                         </button>
+                    </div>
+                </div>
+            )}
 
-                        {/* Collapse Bar */}
+            {/* Downward Interactive Canvas Minimap Popover */}
+            {activePanel === 'minimap' && (
+                <div
+                    className="absolute top-full right-0 mt-2 bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl shadow-2xl p-2.5 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+                    style={{ width: `${MAP_WIDTH + 20}px` }}
+                >
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-800 text-xs font-semibold text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                            <MapIcon className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Canvas Minimap</span>
+                        </span>
                         <button
-                            onClick={() => {
-                                setIsBarCollapsed(true);
-                                saveBarState(pos, true);
-                            }}
-                            className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition"
-                            title="Collapse Zoom Bar"
+                            type="button"
+                            onClick={() => setActivePanel(null)}
+                            className="text-slate-400 hover:text-white p-0.5 rounded"
+                            aria-label="Close Minimap"
                         >
-                            <Minimize2 className="w-3.5 h-3.5" />
+                            <X className="w-3.5 h-3.5" />
                         </button>
+                    </div>
+
+                    <div
+                        ref={minimapRef}
+                        onPointerDown={(e) => {
+                            e.stopPropagation();
+                            setIsDraggingViewport(true);
+                            updatePanFromMinimapPointer(e.clientX, e.clientY);
+                        }}
+                        className="relative rounded-lg bg-slate-950/90 border border-slate-800 cursor-crosshair overflow-hidden mt-2 shadow-inner"
+                        style={{ width: `${MAP_WIDTH}px`, height: `${MAP_HEIGHT}px`, touchAction: 'none' }}
+                    >
+                        <svg width={MAP_WIDTH} height={MAP_HEIGHT} className="absolute inset-0 pointer-events-none">
+                            {resolvedShapes.map((s) => (
+                                <rect
+                                    key={s.id}
+                                    x={toMapX(s.x || 0)}
+                                    y={toMapY(s.y || 0)}
+                                    width={Math.max(2, toMapW(s.width || 40))}
+                                    height={Math.max(2, toMapH(s.height || 40))}
+                                    fill={s.fill || 'rgba(99, 102, 241, 0.35)'}
+                                    stroke={s.color || '#818cf8'}
+                                    strokeWidth="0.8"
+                                />
+                            ))}
+                            {resolvedImages.map((img) => (
+                                <rect
+                                    key={img.id}
+                                    x={toMapX(img.x || 0)}
+                                    y={toMapY(img.y || 0)}
+                                    width={Math.max(2, toMapW(img.width || 40))}
+                                    height={Math.max(2, toMapH(img.height || 40))}
+                                    fill="rgba(16, 185, 129, 0.35)"
+                                    stroke="#34d399"
+                                    strokeWidth="0.8"
+                                />
+                            ))}
+                            {resolvedTexts.map((t) => (
+                                <rect
+                                    key={t.id}
+                                    x={toMapX(t.x || 0)}
+                                    y={toMapY(t.y || 0)}
+                                    width={Math.max(4, toMapW(t.width || 60))}
+                                    height={Math.max(2, toMapH(t.height || 20))}
+                                    fill="rgba(244, 63, 94, 0.35)"
+                                    stroke="#fb7185"
+                                    strokeWidth="0.8"
+                                />
+                            ))}
+                        </svg>
+
+                        {/* Current Viewport Indicator Box */}
+                        <div
+                            className="absolute border-2 border-indigo-400 bg-indigo-500/20 rounded pointer-events-none transition-all duration-75"
+                            style={{
+                                left: `${viewportRect.x}px`,
+                                top: `${viewportRect.y}px`,
+                                width: `${viewportRect.width}px`,
+                                height: `${viewportRect.height}px`
+                            }}
+                        />
                     </div>
                 </div>
             )}

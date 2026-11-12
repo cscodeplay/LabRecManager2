@@ -169,11 +169,11 @@ export default function AppLayout({ children }) {
                 </button>
             </header>
 
-            {/* Separate Top-Rightmost Notification Bell Circle (Offset clear of Fullscreen toggle on Whiteboard) */}
+            {/* Separate Top-Right Notification Bell Circle (Offset clear of Top-Right Zoom/Minimap/Screenshot/Fullscreen capsule on Whiteboard) */}
             <div
                 {...topBarReveal.containerProps}
                 style={{ willChange: topBarReveal.isVisible ? 'transform, opacity' : 'auto' }}
-                className={`fixed top-2.5 ${(pathname?.startsWith('/whiteboard') || pathname?.startsWith('/live-board')) ? 'right-14' : 'right-3.5'} z-[80] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                className={`fixed top-2.5 ${(pathname?.startsWith('/whiteboard') || pathname?.startsWith('/live-board')) ? 'right-[160px] sm:right-[236px]' : 'right-3.5'} z-[80] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
                     topBarReveal.isVisible
                         ? 'translate-y-0 opacity-100 pointer-events-auto'
                         : '-translate-y-[140%] opacity-0 pointer-events-none'

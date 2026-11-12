@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     Mic,
     Volume2,
@@ -29,13 +29,25 @@ import {
     Square,
     Trash2,
     Sliders,
-    Table,
-    Plus
+    Plus,
+    Camera,
+    Folder,
+    FileText,
+    Globe,
+    Music,
+    Wand2,
+    GitBranch,
+    ExternalLink,
+    Download,
+    PanelLeftClose,
+    PanelLeftOpen,
+    MessageSquarePlus,
+    Menu
 } from 'lucide-react';
 import katex from 'katex';
 import toast from 'react-hot-toast';
 import MermaidRenderer from './MermaidRenderer';
-import { aiAPI } from '@/lib/api';
+import { aiAPI, browserAPI } from '@/lib/api';
 
 function transformOutsideMath(input, transformFn) {
     if (!input) return '';
@@ -51,16 +63,13 @@ function transformOutsideMath(input, transformFn) {
 function normalizeScientificLatex(rawText) {
     if (!rawText || typeof rawText !== 'string') return '';
     let s = rawText
-        // 1. Recover LaTeX commands whose leading backslash was parsed as a JSON control character (\f, \t, \b, \r)
         .replace(/\x0c(rac|orall|lat|box|ootnotesize)/g, '\\f$1')
         .replace(/\x09(imes|ext|extbf|extit|extrm|heta|an|anh|au|riangle|o\b|herefore|ilde|op\b|frac)/g, '\\t$1')
         .replace(/\x08(eta|oxed|ar\b|f\b|inom|egin|ig|ullet|ot\b|ackslash|ecause)/g, '\\b$1')
         .replace(/\x0d(ightarrow|ight|ho\b|angle|isingdotseq|times)/g, '\\r$1')
-        // 2. Normalize \[ ... \] and \( ... \) to $$ ... $$ and $ ... $ using callbacks
         .replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$${math}$$`)
         .replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
 
-    // 3. Collapse multi-line $$ ... $$ blocks onto a single line so line splitting keeps display equations intact
     s = s.replace(/\$\$([\s\S]*?)\$\$/g, (match, inner) => {
         const singleLine = inner
             .trim()
@@ -68,7 +77,6 @@ function normalizeScientificLatex(rawText) {
         return `$$${singleLine}$$`;
     });
 
-    // 4. Line-by-line check for pure unadorned equations outside math (e.g. "1. (x + 1)^2 + y^2 = 7" or "x^2 + y^2 + 2x = 6")
     const lines = s.split('\n');
     const normalizedLines = lines.map(line => {
         if (line.includes('$')) return line;
@@ -85,17 +93,14 @@ function normalizeScientificLatex(rawText) {
     });
     s = normalizedLines.join('\n');
 
-    // 5. Convert unicode superscripts outside math: ² -> ^2, ³ -> ^3
     s = transformOutsideMath(s, str => str.replace(/²/g, '^2').replace(/³/g, '^3').replace(/⁴/g, '^4'));
 
-    // 6. Convert plain-English math phrases into LaTeX if outside math using safe callbacks
     s = transformOutsideMath(s, str => str
         .replace(/\b([a-zA-Z])\s+squared\b/gi, (_, g1) => `$${g1}^2$`)
         .replace(/\b([a-zA-Z])\s+cubed\b/gi, (_, g1) => `$${g1}^3$`)
         .replace(/\bsquare\s+root\s+of\s+([a-zA-Z0-9_()+-]+)\b/gi, (_, g1) => `$\\sqrt{${g1}}$`)
     );
 
-    // 7. Auto-wrap bare LaTeX commands with braces outside math: \frac{...}{...}, \sqrt{...}, \boxed{...}, \vec{...}, \hat{...}
     s = transformOutsideMath(s, str => {
         return str
             .replace(/(\\frac\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}(?:\s*(?:\\[a-zA-Z]+|[a-zA-Z0-9^]+))?)/g, (_, g1) => `$${g1}$`)
@@ -106,12 +111,10 @@ function normalizeScientificLatex(rawText) {
             .replace(/(\\(?:mathbf|mathbfit)\s*\{[^{}]*\})/g, (_, g1) => `$${g1}$`);
     });
 
-    // 8. Auto-wrap bare Greek letters or math symbols outside math
     s = transformOutsideMath(s, str => {
         return str.replace(/(\\(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega|Delta|Theta|Lambda|Xi|Pi|Sigma|Phi|Psi|Omega|approx|neq|le|ge|leq|geq|pm|mp|times|div|cdot|in|notin|subset|subseteq|cup|cap|infty|partial|nabla|forall|exists|to|rightarrow|leftarrow|Rightarrow|Leftarrow|iff|implies)\b)/g, (_, g1) => `$${g1}$`);
     });
 
-    // 9. Auto-wrap isolated powers outside math: (x + 1)^2, x^2, y^2, r^2, cm^2, 10^5
     s = transformOutsideMath(s, str => {
         let res = str.replace(/(\([a-zA-Z0-9_\s*+\-.]+\)\^[0-9a-zA-Z+-]+)/g, (_, g1) => `$${g1}$`);
         res = res.replace(/\b([a-zA-Z0-9_]\^[0-9a-zA-Z+-]+)\b/g, (_, g1) => `$${g1}$`);
@@ -126,7 +129,6 @@ function renderFormattedText(rawText) {
     const normalized = normalizeScientificLatex(rawText);
     const mathTokens = [];
 
-    // 1. Extract Block Math $$...$$ BEFORE HTML escaping so <, >, & inside LaTeX are preserved for KaTeX
     let tokenized = normalized.replace(/\$\$([\s\S]*?)\$\$/g, (match, math) => {
         const cleanMath = (math || '').trim();
         if (!cleanMath) return '';
@@ -140,7 +142,6 @@ function renderFormattedText(rawText) {
         }
     });
 
-    // 2. Extract Inline Math $...$ BEFORE HTML escaping
     tokenized = tokenized.replace(/\$([^$\n]+?)\$/g, (match, math) => {
         const cleanMath = (math || '').trim();
         if (!cleanMath) return match;
@@ -154,15 +155,12 @@ function renderFormattedText(rawText) {
         }
     });
 
-    // 3. Escape HTML on the remaining non-math text
     const escapeHtml = (str) => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     let html = escapeHtml(tokenized);
 
-    // 4. Format Markdown Bold **text**, Italic *text*, and Inline Code `code`
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-white">$1</strong>');
     html = html.replace(/`([^`]+)`/g, '<code class="px-1 py-0.5 rounded bg-slate-800 text-indigo-300 font-mono text-[11px]">$1</code>');
 
-    // 5. Restore rendered KaTeX tokens
     html = html.replace(/@@MATH_TOKEN_(\d+)@@/g, (_, idxStr) => {
         return mathTokens[Number(idxStr)] || '';
     });
@@ -170,13 +168,11 @@ function renderFormattedText(rawText) {
     return html;
 }
 
-// Extract math expressions and coordinate points from a single block of text for synchronized graphing
 function extractStepMathMetadata(text = '') {
     const equations = [];
     const points = [];
     if (!text) return { equations, points };
 
-    // Extract LaTeX blocks $$...$$ and inline $...$
     const blockMatches = [...text.matchAll(/\$\$([\s\S]*?)\$\$/g)];
     for (const m of blockMatches) {
         if (m[1]?.trim()) equations.push(m[1].trim());
@@ -187,7 +183,6 @@ function extractStepMathMetadata(text = '') {
         if (m[1]?.trim()) equations.push(m[1].trim());
     }
 
-    // Extract 2D coordinate points like (2, -3) or \left( 2, -3 \right)
     const cleanForPoints = text.replace(/\\left|\\right/g, '');
     const ptMatches = [...cleanForPoints.matchAll(/\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g)];
     for (const pm of ptMatches) {
@@ -208,49 +203,47 @@ export function cleanLatexForSvg(svg) {
         s = s.replace(/\$\$?/g, '');
         s = s.replace(/\\[ ,;!]/g, ' ');
         s = s.replace(/\\frac\{1\}\{2\}/g, '½')
-             .replace(/\\frac\{1\}\{3\}/g, '⅓')
-             .replace(/\\frac\{1\}\{4\}/g, '¼')
-             .replace(/\\frac\{3\}\{4\}/g, '¾')
-             .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1 / $2)');
+            .replace(/\\frac\{1\}\{3\}/g, '⅓')
+            .replace(/\\frac\{1\}\{4\}/g, '¼')
+            .replace(/\\frac\{3\}\{4\}/g, '¾')
+            .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1 / $2)');
         s = s.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
-             .replace(/\\sqrt/g, '√');
+            .replace(/\\sqrt/g, '√');
         s = s.replace(/\^\{\\circ\}|\^\\circ/g, '°')
-             .replace(/\^2|\^\{2\}/g, '²')
-             .replace(/\^3|\^\{3\}/g, '³')
-             .replace(/\^4|\^\{4\}/g, '⁴')
-             .replace(/\^n|\^\{n\}/g, 'ⁿ')
-             .replace(/\^\{-1\}/g, '⁻¹');
+            .replace(/\^2|\^\{2\}/g, '²')
+            .replace(/\^3|\^\{3\}/g, '³')
+            .replace(/\^4|\^\{4\}/g, '⁴')
+            .replace(/\^n|\^\{n\}/g, 'ⁿ')
+            .replace(/\^\{-1\}/g, '⁻¹');
         s = s.replace(/_0|_\{0\}/g, '₀')
-             .replace(/_1|_\{1\}/g, '₁')
-             .replace(/_2|_\{2\}/g, '₂')
-             .replace(/_3|_\{3\}/g, '₃')
-             .replace(/_4|_\{4\}/g, '₄')
-             .replace(/_x|_\{x\}/g, 'ₓ')
-             .replace(/_y|_\{y\}/g, 'ᵧ')
-             .replace(/_k|_\{k\}/g, 'ₖ')
-             .replace(/_\{max\}/g, 'ₘₐₓ')
-             .replace(/_\{min\}/g, 'ₘᵢₙ')
-             .replace(/_\{total\}/g, 'ₜₒₜₐₗ')
-             .replace(/_\{net\}/g, 'ₙₑₜ');
+            .replace(/_1|_\{1\}/g, '₁')
+            .replace(/_2|_\{2\}/g, '₂')
+            .replace(/_3|_\{3\}/g, '₃')
+            .replace(/_4|_\{4\}/g, '₄')
+            .replace(/_x|_\{x\}/g, 'ₓ')
+            .replace(/_y|_\{y\}/g, 'ᵧ')
+            .replace(/_k|_\{k\}/g, 'ₖ')
+            .replace(/_\{max\}/g, 'ₘₐₓ')
+            .replace(/_\{min\}/g, 'ₘᵢₙ')
+            .replace(/_\{total\}/g, 'ₜₒₜₐₗ')
+            .replace(/_\{net\}/g, 'ₙₑₜ');
         s = s.replace(/\\theta/g, 'θ')
-             .replace(/\\alpha/g, 'α')
-             .replace(/\\beta/g, 'β')
-             .replace(/\\gamma/g, 'γ')
-             .replace(/\\delta/g, 'δ')
-             .replace(/\\lambda/g, 'λ')
-             .replace(/\\mu/g, 'μ')
-             .replace(/\\pi/g, 'π')
-             .replace(/\\rho/g, 'ρ')
-             .replace(/\\sigma/g, 'σ')
-             .replace(/\\omega/g, 'ω')
-             .replace(/\\Delta/g, 'Δ')
-             .replace(/\\Omega/g, 'Ω');
+            .replace(/\\alpha/g, 'α')
+            .replace(/\\beta/g, 'β')
+            .replace(/\\gamma/g, 'γ')
+            .replace(/\\delta/g, 'δ')
+            .replace(/\\lambda/g, 'λ')
+            .replace(/\\mu/g, 'μ')
+            .replace(/\\pi/g, 'π')
+            .replace(/\\rho/g, 'ρ')
+            .replace(/\\sigma/g, 'σ')
+            .replace(/\\omega/g, 'ω')
+            .replace(/\\Delta/g, 'Δ')
+            .replace(/\\Omega/g, 'Ω');
         return `<text${attrs}>${s}</text>`;
     });
 }
 
-// Parse text into structured sections, formulas, steps, and statements as the SINGLE SOURCE OF TRUTH
-// for both visual display and step-by-step voice narration.
 export function parseContentBlocks(rawText) {
     if (!rawText) return [];
     const normalizedText = normalizeScientificLatex(rawText);
@@ -270,7 +263,6 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 0. Fenced Code Blocks (```lang ... ```)
         if (trimmed.startsWith('```')) {
             const fenceMatch = trimmed.match(/^```([a-zA-Z0-9_-]*)/);
             const lang = (fenceMatch ? fenceMatch[1] : '').toLowerCase();
@@ -316,11 +308,10 @@ export function parseContentBlocks(rawText) {
             }
 
             charOffset += codeBlockLen;
-            i = j; // Advance outer loop past closing fence
+            i = j;
             continue;
         }
 
-        // 1. Markdown Table Parsing (| Col 1 | Col 2 |)
         if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
             const nextLine = (lines[i + 1] || '').trim();
             if (nextLine.startsWith('|') && nextLine.includes('---')) {
@@ -359,12 +350,11 @@ export function parseContentBlocks(rawText) {
                 });
 
                 charOffset += fullTableMarkdown.length;
-                i = j - 1; // Advance outer loop past the table
+                i = j - 1;
                 continue;
             }
         }
 
-        // 2. Markdown Section Headings (e.g. ### 📌 Given & Concept, ### 📐 Formula, **Given:**, **Formula**)
         const headingMatch = trimmed.match(/^(?:#{1,4}\s+)(.+)$/) ||
             (trimmed.match(/^\*\*([^*]{2,55}):?\*\*$/) ? [trimmed, trimmed.replace(/\*\*/g, '')] : null);
 
@@ -377,7 +367,7 @@ export function parseContentBlocks(rawText) {
                 type: 'heading',
                 prefix: '',
                 text: titleText,
-                spokenText: '', // Headings are structural; voice narration advances directly to the content step
+                spokenText: '',
                 equations: [],
                 points: [],
                 startChar: charOffset,
@@ -387,7 +377,6 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 2. Standalone Display Formula Block ($$...$$)
         if (/^\$\$[\s\S]+\$\$$/.test(trimmed)) {
             const isBoxedAnswer = inAnswerSection || trimmed.includes('\\boxed');
             const meta = extractStepMathMetadata(trimmed);
@@ -409,7 +398,6 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 3. Numbered Steps or Bullet Points (1. ..., Step 1: ..., - ..., • ...)
         const bulletMatch = trimmed.match(/^(?:(\d+[\.\)]|Step\s+\d+[:\.]?|Stage\s+\d+[:\.]?|[-*•])\s+)(.+)$/i);
         if (bulletMatch) {
             const rawPrefix = bulletMatch[1].trim();
@@ -436,7 +424,6 @@ export function parseContentBlocks(rawText) {
             continue;
         }
 
-        // 4. Plain paragraph: only split into sentences if it has NO math delimiters ($) and is long
         if (!trimmed.includes('$') && trimmed.length > 140) {
             const sentences = trimmed.split(/(?<=[.?!])\s+(?=[A-Z])/);
             if (sentences.length > 1) {
@@ -489,11 +476,118 @@ export function parseContentBlocks(rawText) {
 }
 
 const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
+const THREADS_STORAGE_KEY = 'wb_ai_chat_threads_v2';
+
+const NOTE_FREQ_MAP = {
+    C3: 130.81, 'C#3': 138.59, Db3: 138.59, D3: 146.83, 'D#3': 155.56, Eb3: 155.56, E3: 164.81, F3: 174.61, 'F#3': 185.00, Gb3: 185.00, G3: 196.00, 'G#3': 207.65, Ab3: 207.65, A3: 220.00, 'A#3': 233.08, Bb3: 233.08, B3: 246.94,
+    C4: 261.63, 'C#4': 277.18, Db4: 277.18, D4: 293.66, 'D#4': 311.13, Eb4: 311.13, E4: 329.63, F4: 349.23, 'F#4': 369.99, Gb4: 369.99, G4: 392.00, 'G#4': 415.30, Ab4: 415.30, A4: 440.00, 'A#4': 466.16, Bb4: 466.16, B4: 493.88,
+    C5: 523.25, 'C#5': 554.37, Db5: 554.37, D5: 587.33, 'D#5': 622.25, Eb5: 622.25, E5: 659.25, F5: 698.46, 'F#5': 739.99, Gb5: 739.99, G5: 783.99, 'G#5': 830.61, Ab5: 830.61, A5: 880.00, 'A#5': 932.33, Bb5: 932.33, B5: 987.77,
+    C6: 1046.50
+};
+
+const DIATONIC_ORDER = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+
+function buildMusicStaffSvg(musicData) {
+    const notes = Array.isArray(musicData?.notes) ? musicData.notes.slice(0, 16) : [];
+    const title = (musicData?.title || 'Musical Melody Score').replace(/[<>&"]/g, '');
+    const metaLabel = `${musicData?.keySignature || 'C Major'}  |  ${musicData?.timeSignature || '4/4'}  |  ♩=${musicData?.tempoBpm || 110}`;
+    const width = Math.max(460, 110 + notes.length * 36);
+    const height = 185;
+    const staffTop = 62;
+    const lineGap = 11; // 5 lines: 62, 73, 84, 95, 106 (bottom line E4 = 106)
+
+    const noteSvg = notes.map((n, idx) => {
+        const pitchStr = String(n?.pitch || 'C4');
+        const m = pitchStr.match(/^([A-Ga-g])[#b]?(\d)?$/);
+        const letter = (m?.[1] || 'C').toUpperCase();
+        const oct = parseInt(m?.[2] || '4', 10);
+        const stepAboveE4 = (oct - 4) * 7 + (DIATONIC_ORDER[letter] ?? 0) - 2; // E4 = 0
+        const cy = (staffTop + lineGap * 4) - stepAboveE4 * (lineGap / 2);
+        const cx = 86 + idx * 34;
+        const isHalf = Number(n?.duration || 1) >= 2;
+        const ledger = cy > staffTop + lineGap * 4 + 3
+            ? `<line x1="${cx - 9}" y1="${staffTop + lineGap * 5}" x2="${cx + 9}" y2="${staffTop + lineGap * 5}" stroke="#334155" stroke-width="1.3" />`
+            : '';
+        const stemUp = cy >= staffTop + lineGap * 2;
+        const stemX = stemUp ? cx + 5.5 : cx - 5.5;
+        const stemY2 = stemUp ? cy - 26 : cy + 26;
+        return `
+            ${ledger}
+            <ellipse cx="${cx}" cy="${cy}" rx="6.2" ry="4.5" transform="rotate(-18 ${cx} ${cy})" fill="${isHalf ? '#ffffff' : '#0f172a'}" stroke="#0f172a" stroke-width="1.8" />
+            <line x1="${stemX}" y1="${cy}" x2="${stemX}" y2="${stemY2}" stroke="#0f172a" stroke-width="1.6" />
+            <text x="${cx}" y="152" font-family="ui-monospace, monospace" font-size="10" font-weight="600" fill="#475569" text-anchor="middle">${pitchStr}</text>
+        `;
+    }).join('');
+
+    const staffLines = [0, 1, 2, 3, 4].map(i => {
+        const y = staffTop + i * lineGap;
+        return `<line x1="22" y1="${y}" x2="${width - 20}" y2="${y}" stroke="#64748b" stroke-width="1.2" />`;
+    }).join('');
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background:#ffffff;border-radius:12px;">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="12" fill="#ffffff" />
+        <text x="22" y="24" font-family="system-ui, sans-serif" font-size="14" font-weight="700" fill="#0f172a">${title}</text>
+        <text x="22" y="42" font-family="ui-monospace, monospace" font-size="11" fill="#6366f1">${metaLabel}</text>
+        ${staffLines}
+        <text x="26" y="${staffTop + lineGap * 3.6}" font-family="serif" font-size="40" fill="#334155">𝄞</text>
+        <line x1="${width - 22}" y1="${staffTop}" x2="${width - 22}" y2="${staffTop + lineGap * 4}" stroke="#0f172a" stroke-width="2.5" />
+        ${noteSvg}
+    </svg>`;
+}
+
+const MODE_META = {
+    stem: { id: 'stem', label: 'STEM Solve', short: 'STEM', colorClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+    image: { id: 'image', label: 'Create Image', short: 'Image', colorClass: 'bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40' },
+    web: { id: 'web', label: 'Fetch from Web', short: 'Web Search', colorClass: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
+    music: { id: 'music', label: 'Music Studio', short: 'Music', colorClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+    diagram: { id: 'diagram', label: 'Diagram & Flowchart', short: 'Diagram', colorClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' }
+};
+
+function deriveThreadTitle(text, mode = 'stem') {
+    const clean = String(text || '').replace(/\s+/g, ' ').replace(/^#+\s*/, '').trim();
+    if (!clean) {
+        if (mode === 'image') return 'Generated Image';
+        if (mode === 'music') return 'Music Motif';
+        if (mode === 'web') return 'Web Research';
+        return 'New Whiteboard Chat';
+    }
+    return clean.length > 36 ? `${clean.slice(0, 35)}…` : clean;
+}
+
+function getDateBucketLabel(ts) {
+    const now = new Date();
+    const d = new Date(ts || Date.now());
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startYesterday = startToday - 86400000;
+    const t = d.getTime();
+    if (t >= startToday) return 'Today';
+    if (t >= startYesterday) return 'Yesterday';
+    return 'Earlier';
+}
+
+function loadInitialThreads() {
+    try {
+        const raw = localStorage.getItem(THREADS_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                return parsed;
+            }
+        }
+    } catch (_) {}
+    return [{
+        id: `thr_${Date.now()}`,
+        title: 'New Whiteboard Chat',
+        updatedAt: Date.now(),
+        messages: []
+    }];
+}
 
 export default function WhiteboardClosedCaptions({
     isVisible = true,
     isOpen = false,
     isListening = false,
+    onToggleListening = null,
     transcript = '',
     interimTranscript = '',
     feedback = '',
@@ -511,8 +605,12 @@ export default function WhiteboardClosedCaptions({
     onInsertAsText = () => {},
     onInsertDiagram = null,
     onInsertTable = null,
+    onInsertImage = null,
+    onInsertMedia = null,
     onInsertToBoard = null,
     onOpenAiSolution = () => {},
+    onOpenDrivePicker = null,
+    externalDriveAttachment = null,
     onStopSpeaking = () => {},
     onPauseSpeaking = () => {},
     onResumeSpeaking = () => {},
@@ -527,6 +625,7 @@ export default function WhiteboardClosedCaptions({
     aiSpeechEnabled = true,
     onToggleAiSpeech = () => {},
     preferredProvider = 'auto',
+    onChangePreferredProvider = null,
     chatHistory = [],
     onClearChat = () => {},
     onSelectHistoryItem = null,
@@ -534,109 +633,205 @@ export default function WhiteboardClosedCaptions({
     responseVerbosity = 'normal',
     onChangeResponseVerbosity = () => {},
     onClose = () => {},
+    onNewChat = null,
     onExecuteCommand = () => {},
     onOpenPhysicsSpace = null,
     onOpenGraphPlotter = null,
     audioLevel = 0
 }) {
-    const [isMinimized, setIsMinimized] = useState(false);
-    const [lastSpoken, setLastSpoken] = useState('');
-    const [isEditing, setIsEditing] = useState(false);
-    const [editText, setEditText] = useState('');
-    const [isTextEditing, setIsTextEditing] = useState(false);
-    const [isPaneCollapsed, setIsPaneCollapsed] = useState(false);
-    const [isPaneDismissed, setIsPaneDismissed] = useState(false);
-    const [isCcDismissed, setIsCcDismissed] = useState(false);
-    const [showHistorySidebar, setShowHistorySidebar] = useState(false);
-    const [showSpeedDropup, setShowSpeedDropup] = useState(false);
-    const [showVerbosityMenu, setShowVerbosityMenu] = useState(false);
-    const [activeTab, setActiveTab] = useState('solution'); // 'solution' | 'summary'
-    const [followUpInput, setFollowUpInput] = useState('');
-    const [copied, setCopied] = useState(false);
-    const [clickedBlockIdx, setClickedBlockIdx] = useState(null);
+    // ─── Threads & Collapsible Sidebar State (ChatGPT / Gemini style) ───
+    const [threads, setThreads] = useState(loadInitialThreads);
+    const [activeThreadId, setActiveThreadId] = useState(() => loadInitialThreads()[0]?.id || null);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+        if (typeof window !== 'undefined' && window.innerWidth < 720) return false;
+        return true;
+    });
 
-    // Image question scanner state
+    // ─── Composer, Mode & Plus Menu State ───
+    const [composerText, setComposerText] = useState('');
+    const [activeMode, setActiveMode] = useState('stem'); // 'stem' | 'image' | 'web' | 'music' | 'diagram'
+    const [imageStyle, setImageStyle] = useState('Educational Diagram');
+    const [showPlusMenu, setShowPlusMenu] = useState(false);
+    const [showProviderMenu, setShowProviderMenu] = useState(false);
+    const [showVerbosityMenu, setShowVerbosityMenu] = useState(false);
+    const [showSpeedDropup, setShowSpeedDropup] = useState(false);
+    const [isLocalGenerating, setIsLocalGenerating] = useState(false);
+    const [localThinkingLabel, setLocalThinkingLabel] = useState('');
+
+    // ─── Attachments (Camera / Photos / Files / Drive / Web Images) ───
     const [isScanningImage, setIsScanningImage] = useState(false);
     const [scannedPreviewUrl, setScannedPreviewUrl] = useState(null);
     const [scannedFile, setScannedFile] = useState(null);
     const [scannedDataUrl, setScannedDataUrl] = useState(null);
+    const [attachedDocFile, setAttachedDocFile] = useState(null); // { name, content }
     const [isDraggingImage, setIsDraggingImage] = useState(false);
-    const fileInputRef = useRef(null);
-    const editInputRef = useRef(null);
+
+    // Inline Web Images Picker strip triggered from + -> Web Images & Diagrams
+    const [showWebImageTray, setShowWebImageTray] = useState(false);
+    const [webImageQuery, setWebImageQuery] = useState('');
+    const [webImageResults, setWebImageResults] = useState([]);
+    const [isSearchingWebImages, setIsSearchingWebImages] = useState(false);
+
+    // ─── Voice & Live Captions Pill State ───
+    const [isMinimized, setIsMinimized] = useState(false);
+    const [isPaneDismissed, setIsPaneDismissed] = useState(false);
+    const [isCcDismissed, setIsCcDismissed] = useState(false);
+    const [isCcEditing, setIsCcEditing] = useState(false);
+    const [ccEditText, setCcEditText] = useState('');
+    const [copiedId, setCopiedId] = useState(null);
+    const [clickedBlockIdx, setClickedBlockIdx] = useState(null);
+    const [playingMusicMsgId, setPlayingMusicMsgId] = useState(null);
     const [mcpStatus, setMcpStatus] = useState(null);
 
+    const fileInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
+    const docFileInputRef = useRef(null);
+    const composerInputRef = useRef(null);
+    const messagesEndRef = useRef(null);
+    const userIsScrollingRef = useRef(false);
+    const scrollTimeoutRef = useRef(null);
+    const lastSyncedSolutionKeyRef = useRef('');
+    const lastNarratedSolutionRef = useRef('');
+    const lastDriveNonceRef = useRef(null);
+    const audioCtxRef = useRef(null);
+    const musicStopTimerRef = useRef(null);
+
+    // Persist threads cleanly (capping large inline base64 previews gracefully)
+    useEffect(() => {
+        try {
+            const trimmed = threads.slice(0, 25).map(thr => ({
+                ...thr,
+                messages: (thr.messages || []).slice(-30).map(m => ({
+                    ...m,
+                    // Avoid hitting 5MB localStorage quota with huge raw binary dataUrls if older than last 6
+                    imageDataUrl: undefined
+                }))
+            }));
+            localStorage.setItem(THREADS_STORAGE_KEY, JSON.stringify(trimmed));
+        } catch (_) {}
+    }, [threads]);
+
+    // Fetch MCP status pill on mount
     useEffect(() => {
         let mounted = true;
         if (typeof aiAPI?.getMcpStatus === 'function') {
             aiAPI.getMcpStatus()
                 .then(res => {
-                    if (mounted && res?.data?.success) {
-                        setMcpStatus(res.data);
-                    }
+                    if (mounted && res?.data?.success) setMcpStatus(res.data);
                 })
                 .catch(() => {});
         }
         return () => { mounted = false; };
     }, []);
 
-    const lastResponseSeenRef = useRef('');
-    const lastNarratedSolutionRef = useRef('');
-    const scrollContainerRef = useRef(null);
-    const userIsScrollingRef = useRef(false);
-    const scrollTimeoutRef = useRef(null);
+    // Active Thread helper
+    const activeThread = useMemo(() => {
+        return threads.find(t => t.id === activeThreadId) || threads[0] || null;
+    }, [threads, activeThreadId]);
 
-    // Determine the active display response
-    const activeAiResponse = aiSolution?.solutionMarkdown || aiResponseText || aiSolution?.speechResponse || (isAiSpeaking ? aiSpeakingText : '');
-
-    // Reset pane expansion & visibility whenever a fresh AI response arrives
-    useEffect(() => {
-        if (activeAiResponse && activeAiResponse !== lastResponseSeenRef.current) {
-            lastResponseSeenRef.current = activeAiResponse;
-            setIsPaneDismissed(false);
-            setIsCcDismissed(false);
-            setIsPaneCollapsed(false);
-            setClickedBlockIdx(null);
-            setActiveTab(aiSolution?.solutionMarkdown ? 'solution' : 'summary');
+    const activeMessages = activeThread?.messages || [];
+    const latestAssistantMsg = useMemo(() => {
+        for (let i = activeMessages.length - 1; i >= 0; i--) {
+            if (activeMessages[i].role === 'assistant' && !activeMessages[i].isThinking) {
+                return activeMessages[i];
+            }
         }
-    }, [activeAiResponse, aiSolution?.solutionMarkdown]);
+        return null;
+    }, [activeMessages]);
 
-    // Only un-dismiss when panel is explicitly opened (e.g. user triggers shortcut or clicks open)
+    // Active display text for TTS step highlighting
+    const activeAiResponse = aiSolution?.solutionMarkdown || aiResponseText || aiSolution?.speechResponse || (isAiSpeaking ? aiSpeakingText : '') || latestAssistantMsg?.solutionMarkdown || latestAssistantMsg?.content || '';
+    const displayText = activeAiResponse;
+    const blocks = useMemo(() => parseContentBlocks(displayText), [displayText]);
+
+    // Reset pane visibility whenever explicitly opened
     const prevIsOpenRef = useRef(isOpen);
     useEffect(() => {
         if (!prevIsOpenRef.current && isOpen) {
             setIsPaneDismissed(false);
             setIsCcDismissed(false);
+            setTimeout(() => composerInputRef.current?.focus(), 60);
         }
         prevIsOpenRef.current = isOpen;
     }, [isOpen]);
 
-    // Keep track of the most recent utterance or feedback
+    // Attach external Drive / Docs URL chosen via parent WhiteboardImagePickerModal
     useEffect(() => {
-        if (transcript) {
-            setIsCcDismissed(false);
-            setLastSpoken(transcript);
-            if (!isEditing) {
-                setEditText(transcript);
-            }
+        if (externalDriveAttachment?.url && externalDriveAttachment.nonce !== lastDriveNonceRef.current) {
+            lastDriveNonceRef.current = externalDriveAttachment.nonce;
+            setScannedPreviewUrl(externalDriveAttachment.url);
+            setScannedDataUrl(externalDriveAttachment.url);
+            setScannedFile({ name: externalDriveAttachment.title || 'Google Drive File' });
+            setShowPlusMenu(false);
+            toast.success('Attached from Drive & Docs', { icon: '📁' });
         }
-    }, [transcript, isEditing]);
+    }, [externalDriveAttachment]);
 
+    // Sync incoming `aiSolution` results (from voice commands or executeVoiceCommand) into active thread log!
     useEffect(() => {
-        if (isListening || interimTranscript) {
-            setIsCcDismissed(false);
-        }
-    }, [isListening, interimTranscript]);
+        if (!aiSolution || aiSolution.isThinking) return;
+        const markdown = aiSolution.solutionMarkdown || aiSolution.speechResponse || '';
+        if (!markdown && !aiSolution.isError) return;
 
-    const displayText = (activeTab === 'solution' && aiSolution?.solutionMarkdown)
-        ? aiSolution.solutionMarkdown
-        : (aiResponseText || aiSolution?.speechResponse || activeAiResponse);
+        const key = `${aiSolution.question || ''}::${markdown.slice(0, 120)}::${Boolean(aiSolution.isError)}`;
+        if (key === lastSyncedSolutionKeyRef.current) return;
+        lastSyncedSolutionKeyRef.current = key;
+        setIsPaneDismissed(false);
+        setClickedBlockIdx(null);
 
-    const blocks = React.useMemo(() => parseContentBlocks(displayText), [displayText]);
+        setThreads(prev => {
+            const targetId = activeThreadId || prev[0]?.id;
+            return prev.map(thr => {
+                if (thr.id !== targetId) return thr;
+                const msgs = [...(thr.messages || [])];
+                const qText = (aiSolution.question || '').trim();
+                const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+                // If triggered by external voice command where user message wasn't appended locally yet, add it cleanly
+                if (qText && (!lastUser || lastUser.content?.trim() !== qText)) {
+                    msgs.push({
+                        id: `u_sync_${Date.now()}`,
+                        role: 'user',
+                        mode: 'stem',
+                        content: qText,
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    });
+                }
+                const nextTitle = (thr.title === 'New Whiteboard Chat' && qText)
+                    ? deriveThreadTitle(qText, 'stem')
+                    : thr.title;
+                msgs.push({
+                    id: `a_sync_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'stem',
+                    question: qText,
+                    speechResponse: aiSolution.speechResponse || '',
+                    solutionMarkdown: markdown,
+                    content: markdown,
+                    diagram: aiSolution.diagram || null,
+                    schemdrawCode: aiSolution.schemdrawCode || aiSolution.code || null,
+                    canvasAction: aiSolution.canvasAction || null,
+                    physicsAction: aiSolution.physicsAction || null,
+                    graphEquations: aiSolution.graphEquations || [],
+                    suggestedFollowUps: aiSolution.suggestedFollowUps || [],
+                    modelUsed: aiSolution.modelUsed || null,
+                    providerUsed: aiSolution.providerUsed || null,
+                    isError: Boolean(aiSolution.isError),
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+                return {
+                    ...thr,
+                    title: nextTitle,
+                    updatedAt: Date.now(),
+                    messages: msgs
+                };
+            });
+        });
+    }, [aiSolution, activeThreadId]);
 
-    // Automatically start step-synchronized narration whenever a fresh AI solution arrives
+    // Auto-start step-synchronized narration when fresh STEM solution arrives
     useEffect(() => {
         if (!displayText || aiSolution?.isError || blocks.length === 0) return;
-        const solutionKey = `${activeTab}::${displayText}`;
+        const solutionKey = `chat::${displayText}`;
         if (solutionKey !== lastNarratedSolutionRef.current) {
             lastNarratedSolutionRef.current = solutionKey;
             if (typeof onSpeakSteps === 'function') {
@@ -648,18 +843,24 @@ export default function WhiteboardClosedCaptions({
                 });
             }
         }
-    }, [displayText, activeTab, blocks, aiSolution?.isError, onSpeakSteps, speechRate, aiSpeechEnabled]);
+    }, [displayText, blocks, aiSolution?.isError, onSpeakSteps, speechRate, aiSpeechEnabled]);
 
-    // Determine the active step index from step-based narration (primary source of truth)
-    // with fallback to character-index mapping only when speaking non-step text.
-    const activeBlockIndex = React.useMemo(() => {
+    // Voice Closed Captions state tracking
+    useEffect(() => {
+        if (transcript) {
+            setIsCcDismissed(false);
+            if (!isCcEditing) setCcEditText(transcript);
+        }
+    }, [transcript, isCcEditing]);
+
+    useEffect(() => {
+        if (isListening || interimTranscript) setIsCcDismissed(false);
+    }, [isListening, interimTranscript]);
+
+    const activeBlockIndex = useMemo(() => {
         if (blocks.length === 0) return -1;
-        if (isStepMode && activeStepIndex >= 0 && activeStepIndex < blocks.length) {
-            return activeStepIndex;
-        }
-        if (clickedBlockIdx !== null && clickedBlockIdx >= 0 && clickedBlockIdx < blocks.length) {
-            return clickedBlockIdx;
-        }
+        if (isStepMode && activeStepIndex >= 0 && activeStepIndex < blocks.length) return activeStepIndex;
+        if (clickedBlockIdx !== null && clickedBlockIdx >= 0 && clickedBlockIdx < blocks.length) return clickedBlockIdx;
         if (!isAiSpeaking) return -1;
         const spokenLen = Math.max(1, (aiSpeakingText || '').length);
         const totalBlockEnd = blocks[blocks.length - 1]?.endChar || displayText?.length || 1;
@@ -670,24 +871,19 @@ export default function WhiteboardClosedCaptions({
         return Math.min(blocks.length - 1, Math.floor(progress * blocks.length));
     }, [isStepMode, activeStepIndex, isAiSpeaking, speakingCharIndex, blocks, aiSpeakingText, clickedBlockIdx, displayText]);
 
-    // Notify parent (Whiteboard & Graphing Panel) whenever the active step changes
     useEffect(() => {
         if (typeof onActiveStepChange === 'function') {
-            const activeBlock = activeBlockIndex >= 0 && activeBlockIndex < blocks.length
-                ? blocks[activeBlockIndex]
-                : null;
+            const activeBlock = activeBlockIndex >= 0 && activeBlockIndex < blocks.length ? blocks[activeBlockIndex] : null;
             onActiveStepChange(activeBlock, activeBlockIndex, blocks);
         }
     }, [activeBlockIndex, blocks, onActiveStepChange]);
 
-    // Auto-scroll to active step/statement while dictating or navigating (respecting user manual scrolling)
+    // Scroll to bottom on new messages unless user scrolled up
     useEffect(() => {
-        if (userIsScrollingRef.current || activeBlockIndex < 0) return;
-        const el = document.getElementById(`cc-block-${activeBlockIndex}`);
-        if (el && scrollContainerRef.current) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (!userIsScrollingRef.current && messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
-    }, [activeBlockIndex]);
+    }, [activeMessages.length, isAiThinking, isLocalGenerating]);
 
     const handleUserScroll = () => {
         userIsScrollingRef.current = true;
@@ -697,20 +893,135 @@ export default function WhiteboardClosedCaptions({
         }, 3000);
     };
 
-    // Scan an uploaded, dropped, or pasted image to extract the question into the AI request input
-    const handleScanQuestionImage = async (file) => {
-        if (!file || !file.type.startsWith('image/')) {
-            toast.error('Please upload a valid image file (PNG, JPG, WebP)');
+    // ─── Web Audio Synthesizer for Music Mode ───
+    const stopMusicPlayback = useCallback(() => {
+        if (musicStopTimerRef.current) {
+            clearTimeout(musicStopTimerRef.current);
+            musicStopTimerRef.current = null;
+        }
+        try {
+            audioCtxRef.current?.close?.();
+        } catch (_) {}
+        audioCtxRef.current = null;
+        setPlayingMusicMsgId(null);
+    }, []);
+
+    useEffect(() => () => stopMusicPlayback(), [stopMusicPlayback]);
+
+    const playMusicNotes = useCallback((msgId, musicData) => {
+        if (playingMusicMsgId === msgId) {
+            stopMusicPlayback();
             return;
         }
+        stopMusicPlayback();
+        const notes = Array.isArray(musicData?.notes) ? musicData.notes : [];
+        if (notes.length === 0) {
+            toast.error('No playable notes found in score');
+            return;
+        }
+        try {
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const ctx = new AudioCtx();
+            audioCtxRef.current = ctx;
+            const beatSec = 60 / Math.max(40, Math.min(240, Number(musicData?.tempoBpm || 110)));
+            let cursor = ctx.currentTime + 0.05;
 
+            notes.forEach((n) => {
+                const dur = Math.max(0.2, Number(n?.duration || 1) * beatSec);
+                const freq = NOTE_FREQ_MAP[n?.pitch] || 440;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, cursor);
+                gain.gain.setValueAtTime(0.001, cursor);
+                gain.gain.linearRampToValueAtTime(0.22, cursor + 0.025);
+                gain.gain.exponentialRampToValueAtTime(0.001, cursor + dur * 0.92);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(cursor);
+                osc.stop(cursor + dur);
+                cursor += dur;
+            });
+
+            setPlayingMusicMsgId(msgId);
+            const totalMs = Math.max(500, Math.round((cursor - ctx.currentTime) * 1000));
+            musicStopTimerRef.current = setTimeout(() => {
+                setPlayingMusicMsgId(null);
+            }, totalMs);
+        } catch (err) {
+            console.warn('Web Audio playback failed:', err);
+            toast.error('Could not start Web Audio synthesizer');
+        }
+    }, [playingMusicMsgId, stopMusicPlayback]);
+
+    // ─── Thread Management ───
+    const handleStartNewChat = useCallback(() => {
+        const emptyExisting = threads.find(t => (t.messages || []).length === 0);
+        if (emptyExisting) {
+            setActiveThreadId(emptyExisting.id);
+        } else {
+            const newThr = {
+                id: `thr_${Date.now()}`,
+                title: 'New Whiteboard Chat',
+                updatedAt: Date.now(),
+                messages: []
+            };
+            setThreads(prev => [newThr, ...prev]);
+            setActiveThreadId(newThr.id);
+        }
+        setComposerText('');
+        setScannedPreviewUrl(null);
+        setScannedDataUrl(null);
+        setScannedFile(null);
+        setAttachedDocFile(null);
+        setShowPlusMenu(false);
+        setShowWebImageTray(false);
+        if (typeof onNewChat === 'function') onNewChat();
+        setTimeout(() => composerInputRef.current?.focus(), 50);
+    }, [threads, onNewChat]);
+
+    const handleSelectThread = useCallback((thr) => {
+        if (!thr) return;
+        setActiveThreadId(thr.id);
+        // Sync the most recent assistant item back to parent so Add to Board / Plotter stays live
+        const lastAssistant = [...(thr.messages || [])].reverse().find(m => m.role === 'assistant');
+        if (lastAssistant && typeof onSelectHistoryItem === 'function') {
+            lastAssistant && lastAssistant.solutionMarkdown && (lastSyncedSolutionKeyRef.current = `${lastAssistant.question || ''}::${(lastAssistant.solutionMarkdown || '').slice(0, 120)}::${Boolean(lastAssistant.isError)}`);
+            onSelectHistoryItem(lastAssistant);
+        }
+        if (typeof window !== 'undefined' && window.innerWidth < 720) {
+            setIsSidebarOpen(false);
+        }
+    }, [onSelectHistoryItem]);
+
+    const handleDeleteThread = useCallback((thrId, e) => {
+        e?.stopPropagation();
+        setThreads(prev => {
+            const filtered = prev.filter(t => t.id !== thrId);
+            if (filtered.length === 0) {
+                const blank = { id: `thr_${Date.now()}`, title: 'New Whiteboard Chat', updatedAt: Date.now(), messages: [] };
+                setActiveThreadId(blank.id);
+                return [blank];
+            }
+            if (activeThreadId === thrId) {
+                setActiveThreadId(filtered[0].id);
+            }
+            return filtered;
+        });
+    }, [activeThreadId]);
+
+    // ─── Media & Document Attachments ───
+    const handleScanQuestionImage = async (file) => {
+        if (!file || !file.type.startsWith('image/')) {
+            toast.error('Please select a valid image file (PNG, JPG, WebP)');
+            return;
+        }
         const previewUrl = URL.createObjectURL(file);
         setScannedPreviewUrl(previewUrl);
         setScannedFile(file);
         setIsScanningImage(true);
-        setIsEditing(true);
+        setShowPlusMenu(false);
 
-        // Pre-convert to base64 DataURL immediately so it's always ready for solver submission
         const dataUrlPromise = new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = (ev) => {
@@ -723,53 +1034,98 @@ export default function WhiteboardClosedCaptions({
         });
 
         try {
-            // First try with native FormData
             const res = await aiAPI.scanQuestionImage(file, preferredProvider);
             const extractedQuestion = res?.data?.data?.questionText?.trim() || res?.data?.data?.question?.trim();
-            if (extractedQuestion) {
-                setEditText(extractedQuestion);
-                setIsTextEditing(false);
-                toast.success('Question scanned from image!', { icon: '📸' });
+            if (extractedQuestion && !composerText.trim()) {
+                setComposerText(extractedQuestion);
+                toast.success('Scanned question from image!', { icon: '📸' });
             } else {
-                setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
-                setIsTextEditing(false);
-                toast('Image attached! Click Solve to formulate solution.', { icon: '📎' });
+                toast.success('Image attached & ready!', { icon: '🖼️' });
             }
         } catch (err) {
-            console.warn('[WhiteboardCaptions] FormData scan failed, retrying with base64...', err?.message);
-            // Fallback retry using base64 data URL
             try {
-                const b64DataUrl = await dataUrlPromise;
-                if (b64DataUrl) {
-                    const fallbackRes = await aiAPI.scanQuestionImage({ image: b64DataUrl, preferredProvider });
-                    const extracted = fallbackRes?.data?.data?.questionText?.trim() || fallbackRes?.data?.data?.question?.trim();
-                    if (extracted) {
-                        setEditText(extracted);
-                        setIsTextEditing(false);
-                        toast.success('Question scanned from image!', { icon: '📸' });
-                        return;
-                    }
+                const b64 = await dataUrlPromise;
+                if (b64) {
+                    const fallback = await aiAPI.scanQuestionImage({ image: b64, preferredProvider });
+                    const extracted = fallback?.data?.data?.questionText?.trim() || fallback?.data?.data?.question?.trim();
+                    if (extracted && !composerText.trim()) setComposerText(extracted);
                 }
-            } catch (fbErr) {
-                console.error('[WhiteboardCaptions] Base64 fallback error:', fbErr);
-            }
-            // Even if OCR text extraction couldn't parse text, the image is successfully attached for the solver!
-            setEditText(prev => prev.trim() || 'Solve the problem shown in this image');
-            setIsTextEditing(false);
-            toast('Image attached! Click Solve to analyze the image.', { icon: '📎' });
+            } catch (_) {}
+            toast('Image attached — add a prompt or press Send', { icon: '📎' });
         } finally {
             setIsScanningImage(false);
         }
     };
 
-    const handleFormSubmit = async (e) => {
+    const handleDeviceDocAttach = async (file) => {
+        if (!file) return;
+        setShowPlusMenu(false);
+        if (file.type.startsWith('image/')) {
+            handleScanQuestionImage(file);
+            return;
+        }
+        if (/\.(txt|md|csv|json|py|js|ts|html)$/i.test(file.name) || file.type.startsWith('text/')) {
+            try {
+                const text = await file.text();
+                setAttachedDocFile({ name: file.name, content: text.slice(0, 6000) });
+                toast.success(`Attached "${file.name}"`, { icon: '📄' });
+            } catch (_) {
+                toast.error('Could not read file text');
+            }
+        } else {
+            setAttachedDocFile({ name: file.name, content: `[Attached file: ${file.name} (${Math.round(file.size / 1024)} KB)]` });
+            toast.success(`Attached "${file.name}" metadata`, { icon: '📄' });
+        }
+    };
+
+    const handleQuickWebImageSearch = async (e) => {
         e?.preventDefault();
-        const trimmed = editText.trim();
+        const q = (webImageQuery || composerText).trim();
+        if (!q) {
+            toast('Enter keywords to search web images', { icon: '🌐' });
+            return;
+        }
+        setIsSearchingWebImages(true);
+        try {
+            const res = await browserAPI.searchImages({ q });
+            const imgs = res?.data?.images || res?.data?.data?.images || [];
+            setWebImageResults(imgs.slice(0, 12));
+            if (imgs.length === 0) toast('No matching web images found', { icon: '🔍' });
+        } catch (_) {
+            toast.error('Web image search failed');
+        } finally {
+            setIsSearchingWebImages(false);
+        }
+    };
+
+    // Helper to append message pairs inside the active thread
+    const appendMessageToThread = useCallback((threadId, msg, autoTitleCandidate = null) => {
+        setThreads(prev => prev.map(thr => {
+            if (thr.id !== threadId) return thr;
+            const nextTitle = (thr.title === 'New Whiteboard Chat' && autoTitleCandidate)
+                ? deriveThreadTitle(autoTitleCandidate, msg.mode)
+                : thr.title;
+            return {
+                ...thr,
+                title: nextTitle,
+                updatedAt: Date.now(),
+                messages: [...(thr.messages || []), msg]
+            };
+        }));
+    }, []);
+
+    // ─── Unified Send Handler supporting STEM, Create Image, Fetch from Web, Music Studio & Diagram ───
+    const handleSendPrompt = async (e, overrideText = null, overrideMode = null) => {
+        e?.preventDefault?.();
+        const rawPrompt = (overrideText !== null ? overrideText : composerText).trim();
+        const mode = overrideMode || activeMode;
         const hasImg = Boolean(scannedPreviewUrl || scannedDataUrl || scannedFile);
-        if (!trimmed && !hasImg) return;
+        const hasDoc = Boolean(attachedDocFile);
+
+        if (!rawPrompt && !hasImg && !hasDoc) return;
 
         let effectiveDataUrl = scannedDataUrl;
-        if ((!effectiveDataUrl || effectiveDataUrl.startsWith('blob:')) && scannedFile) {
+        if ((!effectiveDataUrl || effectiveDataUrl.startsWith('blob:')) && scannedFile instanceof File) {
             try {
                 effectiveDataUrl = await new Promise((resolve) => {
                     const reader = new FileReader();
@@ -777,20 +1133,206 @@ export default function WhiteboardClosedCaptions({
                     reader.onerror = () => resolve(null);
                     reader.readAsDataURL(scannedFile);
                 });
-            } catch (convErr) {}
+            } catch (_) {}
         }
 
-        const cmdText = trimmed || 'Solve the problem shown in this image';
-        onExecuteCommand(cmdText, {
+        const docPrefix = attachedDocFile ? `\n\n[File: ${attachedDocFile.name}]\n${attachedDocFile.content.slice(0, 3500)}` : '';
+        const promptForAi = (rawPrompt || (hasImg ? 'Analyze or solve this image' : `Summarize ${attachedDocFile?.name}`)) + docPrefix;
+        const displayUserPrompt = rawPrompt || (hasImg ? 'Solve the problem shown in this attached image' : `Analyze "${attachedDocFile?.name}"`);
+        const targetThreadId = activeThread?.id || threads[0]?.id;
+
+        const userMsg = {
+            id: `u_${Date.now()}`,
+            role: 'user',
+            mode,
+            content: displayUserPrompt,
+            attachmentName: scannedFile?.name || attachedDocFile?.name || null,
+            previewUrl: scannedPreviewUrl || effectiveDataUrl || null,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        appendMessageToThread(targetThreadId, userMsg, displayUserPrompt);
+
+        if (overrideText === null) {
+            setComposerText('');
+            setScannedPreviewUrl(null);
+            setScannedDataUrl(null);
+            setScannedFile(null);
+            setAttachedDocFile(null);
+            setShowPlusMenu(false);
+        }
+
+        // Branch 1: 🎨 Create Image (POST /api/ai/generate-image)
+        if (mode === 'image') {
+            setIsLocalGenerating(true);
+            setLocalThinkingLabel(`Generating ${imageStyle.toLowerCase()} artwork...`);
+            try {
+                const res = await aiAPI.generateImage({
+                    prompt: rawPrompt || displayUserPrompt,
+                    style: imageStyle,
+                    provider: preferredProvider !== 'auto' ? preferredProvider : undefined
+                });
+                const imgData = res?.data?.data;
+                appendMessageToThread(targetThreadId, {
+                    id: `a_img_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'image',
+                    question: displayUserPrompt,
+                    content: imgData?.caption || `Generated ${imageStyle} image for "${displayUserPrompt}".`,
+                    generatedImage: {
+                        imageDataUrl: imgData?.imageDataUrl,
+                        svg: imgData?.svg,
+                        caption: imgData?.caption,
+                        isFallback: Boolean(imgData?.isFallback),
+                        style: imageStyle,
+                        prompt: displayUserPrompt
+                    },
+                    modelUsed: imgData?.model || 'Gemini Image Gen',
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } catch (err) {
+                appendMessageToThread(targetThreadId, {
+                    id: `a_err_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'image',
+                    question: displayUserPrompt,
+                    isError: true,
+                    content: `Image generation failed: ${err?.response?.data?.message || err?.message || 'Check your AI API keys in Settings.'}`,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } finally {
+                setIsLocalGenerating(false);
+                setLocalThinkingLabel('');
+            }
+            return;
+        }
+
+        // Branch 2: 🌐 Fetch from Web (/api/browser/search + /images + /youtube)
+        if (mode === 'web') {
+            setIsLocalGenerating(true);
+            setLocalThinkingLabel('Searching the web, images & articles...');
+            try {
+                const [searchRes, imgRes, ytRes] = await Promise.allSettled([
+                    browserAPI.search({ q: rawPrompt || displayUserPrompt, includeAi: 'true' }),
+                    browserAPI.searchImages({ q: rawPrompt || displayUserPrompt }),
+                    browserAPI.searchYoutube({ q: rawPrompt || displayUserPrompt })
+                ]);
+                const sData = searchRes.status === 'fulfilled' ? (searchRes.value?.data || {}) : {};
+                const iData = imgRes.status === 'fulfilled' ? (imgRes.value?.data || {}) : {};
+                const yData = ytRes.status === 'fulfilled' ? (ytRes.value?.data || {}) : {};
+
+                const citations = (sData.results || sData.articles || []).slice(0, 6);
+                const images = (iData.images || iData.data?.images || []).slice(0, 8);
+                const videos = (yData.videos || yData.results || []).slice(0, 4);
+                const aiSummary = sData.aiSummary || sData.summary || sData.answer || (citations[0]?.snippet) || `Web results found for "${displayUserPrompt}".`;
+
+                appendMessageToThread(targetThreadId, {
+                    id: `a_web_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'web',
+                    question: displayUserPrompt,
+                    content: aiSummary,
+                    solutionMarkdown: aiSummary,
+                    webResult: {
+                        query: displayUserPrompt,
+                        aiSummary,
+                        citations,
+                        images,
+                        videos
+                    },
+                    modelUsed: 'Web Search + AI',
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } catch (err) {
+                appendMessageToThread(targetThreadId, {
+                    id: `a_err_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'web',
+                    question: displayUserPrompt,
+                    isError: true,
+                    content: `Web search failed: ${err?.message || 'Unable to reach search endpoint.'}`,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } finally {
+                setIsLocalGenerating(false);
+                setLocalThinkingLabel('');
+            }
+            return;
+        }
+
+        // Branch 3: 🎵 Music Studio (cardAssist type: 'whiteboard_music' + Web Audio)
+        if (mode === 'music') {
+            setIsLocalGenerating(true);
+            setLocalThinkingLabel('Composing notation & audio synthesis...');
+            try {
+                const res = await aiAPI.cardAssist({
+                    type: 'whiteboard_music',
+                    prompt: rawPrompt || displayUserPrompt,
+                    preferredProvider: preferredProvider !== 'auto' ? preferredProvider : undefined
+                });
+                const rawPayload = res?.data?.data?.result || res?.data?.data;
+                let parsed = rawPayload;
+                if (typeof rawPayload === 'string') {
+                    const cleaned = rawPayload.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+                    try { parsed = JSON.parse(cleaned); } catch (_) {
+                        parsed = { title: displayUserPrompt, teachingNotes: rawPayload, tempoBpm: 110, keySignature: 'C Major', timeSignature: '4/4', notes: [{ pitch: 'C4', duration: 1 }, { pitch: 'E4', duration: 1 }, { pitch: 'G4', duration: 1 }, { pitch: 'C5', duration: 2 }] };
+                    }
+                }
+                const musicData = {
+                    title: parsed?.title || `Motif: ${displayUserPrompt}`,
+                    tempoBpm: Number(parsed?.tempoBpm || 110),
+                    keySignature: parsed?.keySignature || 'C Major',
+                    timeSignature: parsed?.timeSignature || '4/4',
+                    abcNotation: parsed?.abcNotation || '',
+                    notes: Array.isArray(parsed?.notes) && parsed.notes.length > 0
+                        ? parsed.notes
+                        : [{ pitch: 'C4', duration: 1 }, { pitch: 'D4', duration: 1 }, { pitch: 'E4', duration: 1 }, { pitch: 'G4', duration: 1 }, { pitch: 'C5', duration: 2 }],
+                    teachingNotes: parsed?.teachingNotes || 'Click Play Synth to hear the motif, or Add Score to Board to place the staff notation.'
+                };
+                musicData.svg = buildMusicStaffSvg(musicData);
+
+                appendMessageToThread(targetThreadId, {
+                    id: `a_mus_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'music',
+                    question: displayUserPrompt,
+                    content: musicData.teachingNotes,
+                    musicData,
+                    modelUsed: res?.data?.data?.modelUsed || 'Music Studio AI',
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } catch (err) {
+                appendMessageToThread(targetThreadId, {
+                    id: `a_err_${Date.now()}`,
+                    role: 'assistant',
+                    mode: 'music',
+                    question: displayUserPrompt,
+                    isError: true,
+                    content: `Music Studio failed: ${err?.response?.data?.message || err?.message}`,
+                    timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                });
+            } finally {
+                setIsLocalGenerating(false);
+                setLocalThinkingLabel('');
+            }
+            return;
+        }
+
+        // Branch 4 & 5: 📊 Diagram or 📐 STEM Solve (delegate to parent whiteboard AI engine + preserve MCP/Voice/Board Sync)
+        const finalCmd = mode === 'diagram' && !/\b(diagram|flowchart|mermaid|circuit|schematic|draw)\b/i.test(promptForAi)
+            ? `Draw a detailed diagram/flowchart for: ${promptForAi}`
+            : promptForAi;
+
+        const convoHistoryForApi = (activeThread?.messages || [])
+            .filter(m => !m.isError)
+            .slice(-16)
+            .map(m => ({ role: m.role, content: m.speechResponse || m.content || '' }));
+
+        onExecuteCommand(finalCmd, {
             imageDataUrl: effectiveDataUrl || scannedDataUrl || scannedPreviewUrl,
-            imageFile: scannedFile,
-            verbosity: responseVerbosity
+            imageFile: scannedFile instanceof File ? scannedFile : undefined,
+            verbosity: responseVerbosity,
+            conversationHistory: convoHistoryForApi
         });
-        setIsEditing(false);
-        setScannedPreviewUrl(null);
-        setScannedDataUrl(null);
-        setScannedFile(null);
-        setEditText('');
     };
 
     const handleDropImage = (e) => {
@@ -800,6 +1342,8 @@ export default function WhiteboardClosedCaptions({
         const file = e.dataTransfer?.files?.[0];
         if (file && file.type.startsWith('image/')) {
             handleScanQuestionImage(file);
+        } else if (file) {
+            handleDeviceDocAttach(file);
         }
     };
 
@@ -818,11 +1362,26 @@ export default function WhiteboardClosedCaptions({
         }
     };
 
-    if (!isVisible && !activeAiResponse && !isOpen) return null;
+    const groupedThreads = useMemo(() => {
+        const groups = { Today: [], Yesterday: [], Earlier: [] };
+        threads.forEach(t => {
+            const bucket = getDateBucketLabel(t.updatedAt);
+            groups[bucket].push(t);
+        });
+        return groups;
+    }, [threads]);
+
+    const showFloatingCc = !isOpen && !isCcDismissed && isVisible && (isListening || Boolean(interimTranscript || transcript || isAiSpeaking || feedback));
+    const showDrawer = Boolean(isOpen && !isPaneDismissed);
+
+    if (!showFloatingCc && !showDrawer) return null;
+
+    const currentModeMeta = MODE_META[activeMode] || MODE_META.stem;
+    const isGenerating = isAiThinking || isLocalGenerating;
 
     return (
         <>
-            {/* Global hidden file input for scanning question images from anywhere */}
+            {/* Hidden Native Inputs (+ Menu Triggers: Photos, Camera, Device Docs) */}
             <input
                 ref={fileInputRef}
                 type="file"
@@ -834,94 +1393,48 @@ export default function WhiteboardClosedCaptions({
                     e.target.value = '';
                 }}
             />
+            <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleScanQuestionImage(file);
+                    e.target.value = '';
+                }}
+            />
+            <input
+                ref={docFileInputRef}
+                type="file"
+                accept=".txt,.md,.csv,.json,.pdf,.doc,.docx,image/*"
+                className="hidden"
+                onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleDeviceDocAttach(file);
+                    e.target.value = '';
+                }}
+            />
 
-            {/* 1. MINIMAL SOLUTION PANE — Placed to the RIGHT of the Center of the Whiteboard */}
-            {(activeAiResponse || isVisible || isOpen) && !isPaneDismissed && (
-                <div className="fixed top-1/2 left-[calc(50%+20px)] -translate-y-1/2 z-40 w-[350px] sm:w-[410px] max-w-[44vw] pointer-events-auto select-none transition-all duration-200 flex flex-col">
-                    {/* Collapsible Chat History Drawer Sidebar (standard AI chatbot style) */}
-                    {showHistorySidebar && (
-                        <div
-                            className="absolute top-0 right-full mr-2 h-full max-h-[85vh] w-64 sm:w-72 bg-slate-900 border border-slate-700/90 rounded-2xl shadow-2xl p-3 z-50 flex flex-col overflow-hidden animate-in slide-in-from-right-3 duration-150 text-slate-200 select-none"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            {/* History Header */}
-                            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800 text-xs">
-                                <div className="flex items-center gap-1.5 font-bold text-white">
-                                    <History className="w-4 h-4 text-indigo-400" />
-                                    <span>Chat History</span>
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-800 border border-slate-700 text-slate-400 font-mono">
-                                        {chatHistory.length}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    {chatHistory.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={onClearChat}
-                                            className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
-                                            title="Clear Chat History"
-                                        >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowHistorySidebar(false)}
-                                        className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                                        title="Close History Drawer"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* History Items List */}
-                            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar text-xs">
-                                {chatHistory.length === 0 ? (
-                                    <div className="py-8 text-center text-slate-500 text-[11px] px-2 flex flex-col items-center gap-2">
-                                        <History className="w-8 h-8 opacity-30 text-slate-400" />
-                                        <span>No chat history yet. Solved problems and questions will appear here.</span>
-                                    </div>
-                                ) : (
-                                    chatHistory.slice().reverse().map((msg, idx) => {
-                                        const isUser = msg.role === 'user';
-                                        const hasSolution = Boolean(msg.solutionMarkdown || msg.speechResponse || (!isUser && msg.content));
-                                        return (
-                                            <div
-                                                key={msg.id || `chat_h_${idx}`}
-                                                onClick={() => {
-                                                    if (hasSolution && typeof onSelectHistoryItem === 'function') {
-                                                        onSelectHistoryItem(msg);
-                                                        setShowHistorySidebar(false);
-                                                    } else if (isUser && typeof onExecuteCommand === 'function') {
-                                                        onExecuteCommand(msg.content, { verbosity: responseVerbosity });
-                                                        setShowHistorySidebar(false);
-                                                    }
-                                                }}
-                                                className={`p-2 rounded-xl border transition cursor-pointer flex flex-col gap-1 ${
-                                                    isUser
-                                                        ? 'bg-slate-800/40 hover:bg-slate-800 border-slate-800/80 hover:border-slate-700'
-                                                        : 'bg-indigo-950/20 hover:bg-indigo-950/40 border-indigo-900/40 hover:border-indigo-700/60'
-                                                }`}
-                                            >
-                                                <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                                    <span className={`font-semibold uppercase tracking-wider ${isUser ? 'text-slate-400' : 'text-indigo-400'}`}>
-                                                        {isUser ? '👤 You' : '🤖 AI Solver'}
-                                                    </span>
-                                                    <span className="font-mono text-[9px] text-slate-500">{msg.timestamp || ''}</span>
-                                                </div>
-                                                <div className="text-[11.5px] text-slate-200 line-clamp-2 leading-relaxed">
-                                                    {msg.question || msg.content?.replace(/^###\s*/, '')}
-                                                </div>
-                                            </div>
-                                        );
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    )}
-
+            {/* ─── 1. CHATGPT / GEMINI STYLE OVERLAY AI DRAWER ────────────────────── */}
+            {showDrawer && (
+                <>
+                    {/* Subtle overlay click-away backdrop */}
                     <div
+                        className="fixed inset-0 z-[78] bg-slate-950/25 backdrop-blur-[1px]"
+                        onClick={() => {
+                            setShowPlusMenu(false);
+                            setShowProviderMenu(false);
+                            setShowVerbosityMenu(false);
+                            setShowSpeedDropup(false);
+                        }}
+                        aria-hidden="true"
+                    />
+
+                    <aside
+                        role="dialog"
+                        aria-label="AI Whiteboard Assistant"
                         onDragOver={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -934,1100 +1447,1171 @@ export default function WhiteboardClosedCaptions({
                         }}
                         onDrop={handleDropImage}
                         onPaste={handlePasteImage}
-                        style={{ backgroundColor: '#0f172a' }}
-                        className={`bg-slate-950 border-2 rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
-                            isDraggingImage
-                                ? 'border-indigo-400 ring-2 ring-indigo-500/40'
-                                : (aiSolution?.isError ? 'border-rose-500 shadow-rose-950/40' : 'border-slate-700')
+                        style={{ backgroundColor: '#0b1120' }}
+                        className={`fixed top-3 bottom-3 right-3 z-[80] flex rounded-2xl border-2 shadow-2xl overflow-hidden text-slate-100 transition-all duration-200 select-none ${
+                            isSidebarOpen ? 'w-[min(860px,95vw)]' : 'w-[min(560px,95vw)]'
+                        } ${
+                            isDraggingImage ? 'border-indigo-400 ring-2 ring-indigo-500/40' : 'border-slate-700/90'
                         }`}
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        {!activeAiResponse ? (
-                            /* Ask AI Solver Initial Card when opened directly without prior solution */
-                            <div className="flex flex-col">
-                                <div
-                                    style={{ backgroundColor: '#1e293b' }}
-                                    className="px-3 py-2 border-b border-slate-700 flex items-center justify-between gap-2 text-xs text-white"
-                                >
-                                    <div className="flex items-center gap-1.5 font-bold text-yellow-400">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowHistorySidebar(prev => !prev)}
-                                            className={`p-1 rounded transition mr-0.5 ${
-                                                showHistorySidebar ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                            }`}
-                                            title={showHistorySidebar ? 'Hide Chat History' : 'View Chat History'}
-                                        >
-                                            <History className="w-3.5 h-3.5" />
-                                        </button>
-                                        <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
-                                        <span>AI Problem Solver &amp; Co-Pilot</span>
-                                        <span
-                                            className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-mono font-normal tracking-wide"
-                                            title="100% Free & Open Source MCP Servers Active: UML, SymPy, SchemDraw, RDKit, SQLite"
-                                        >
-                                            ⚡ MCP Active
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        {/* Response Verbosity Setting */}
-                                        <div className="relative">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowVerbosityMenu(v => !v);
-                                                    setShowSpeedDropup(false);
-                                                }}
-                                                className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 rounded-md text-[10px] font-semibold text-slate-300 hover:text-white capitalize transition flex items-center gap-1"
-                                                title="Explanation Detail: Brief, Normal, or Detailed"
-                                            >
-                                                <span className="text-yellow-400 font-bold">{responseVerbosity === 'brief' ? '⚡' : responseVerbosity === 'detailed' ? '📖' : '⚖️'}</span>
-                                                <span>{responseVerbosity}</span>
-                                                <ChevronDown className="w-2.5 h-2.5 text-slate-400" />
-                                            </button>
-                                            {showVerbosityMenu && (
-                                                <div
-                                                    className="absolute top-full right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 min-w-[120px] animate-in fade-in zoom-in-95 duration-100 text-xs"
-                                                    onClick={e => e.stopPropagation()}
-                                                >
-                                                    <div className="text-[10px] font-semibold text-slate-400 px-1 pb-1 border-b border-slate-800">
-                                                        Explanation Depth
-                                                    </div>
-                                                    {[
-                                                        { id: 'brief', label: 'Brief', icon: '⚡', desc: 'Concise, direct answer' },
-                                                        { id: 'normal', label: 'Normal', icon: '⚖️', desc: 'Balanced step-by-step' },
-                                                        { id: 'detailed', label: 'Detailed', icon: '📖', desc: 'In-depth derivations' }
-                                                    ].map(m => (
-                                                        <button
-                                                            key={m.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                onChangeResponseVerbosity(m.id);
-                                                                setShowVerbosityMenu(false);
-                                                            }}
-                                                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-xs transition ${
-                                                                responseVerbosity === m.id
-                                                                    ? 'bg-indigo-600 text-white font-bold'
-                                                                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                            }`}
-                                                        >
-                                                            <span>{m.icon}</span>
-                                                            <span>{m.label}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-
+                        {/* ── COLLAPSIBLE LEFT THREAD SIDEBAR ── */}
+                        {isSidebarOpen && (
+                            <div
+                                style={{ backgroundColor: '#070b14' }}
+                                className="w-56 sm:w-64 shrink-0 border-r border-slate-800/90 flex flex-col h-full z-20"
+                            >
+                                <div className="p-2.5 border-b border-slate-800/80 flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={handleStartNewChat}
+                                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/35 border border-indigo-500/40 text-indigo-200 hover:text-white text-xs font-semibold transition cursor-pointer"
+                                    >
+                                        <MessageSquarePlus className="w-3.5 h-3.5" />
+                                        <span>New Chat</span>
+                                    </button>
+                                    {threads.length > 1 && (
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                setIsPaneDismissed(true);
-                                                if (onClose) onClose();
+                                                const fresh = { id: `thr_${Date.now()}`, title: 'New Whiteboard Chat', updatedAt: Date.now(), messages: [] };
+                                                setThreads([fresh]);
+                                                setActiveThreadId(fresh.id);
+                                                onClearChat?.();
                                             }}
-                                            className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
-                                            title="Close Solver"
+                                            className="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-slate-800/80 transition"
+                                            title="Clear All Chats"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSidebarOpen(false)}
+                                        className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/80 transition sm:hidden"
+                                        title="Hide Sidebar"
+                                    >
+                                        <PanelLeftClose className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-2 space-y-3 custom-scrollbar">
+                                    {['Today', 'Yesterday', 'Earlier'].map(bucket => {
+                                        const list = groupedThreads[bucket] || [];
+                                        if (list.length === 0) return null;
+                                        return (
+                                            <div key={bucket}>
+                                                <div className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                                    {bucket}
+                                                </div>
+                                                <div className="space-y-1">
+                                                    {list.map(thr => {
+                                                        const isAct = thr.id === activeThread?.id;
+                                                        return (
+                                                            <div
+                                                                key={thr.id}
+                                                                onClick={() => handleSelectThread(thr)}
+                                                                className={`group flex items-center justify-between gap-1.5 px-2.5 py-2 rounded-xl text-xs cursor-pointer transition border ${
+                                                                    isAct
+                                                                        ? 'bg-slate-800/95 border-indigo-500/50 text-white font-semibold shadow-sm'
+                                                                        : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/50 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                <div className="flex flex-col min-w-0 flex-1">
+                                                                    <span className="truncate leading-snug">{thr.title || 'New Whiteboard Chat'}</span>
+                                                                    <span className="text-[10px] text-slate-500 font-mono">
+                                                                        {(thr.messages || []).length} {(thr.messages || []).length === 1 ? 'turn' : 'turns'}
+                                                                    </span>
+                                                                </div>
+                                                                {threads.length > 1 && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => handleDeleteThread(thr.id, e)}
+                                                                        className="p-1 rounded-md text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition shrink-0"
+                                                                        title="Delete chat"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── MAIN CHATBOT COLUMN ── */}
+                        <div className="flex-1 flex flex-col min-w-0 h-full bg-[#0b1120]">
+                            {/* Top Bar: Sidebar Toggle, Active Title, MCP Pill, Provider, Depth, TTS & Close */}
+                            <header
+                                style={{ backgroundColor: '#11192c' }}
+                                className="px-3 py-2 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0"
+                            >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSidebarOpen(prev => !prev)}
+                                        className="p-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 transition shrink-0"
+                                        title={isSidebarOpen ? 'Collapse History Sidebar' : 'Open Chat History Sidebar'}
+                                        aria-label="Toggle History Sidebar"
+                                    >
+                                        {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+                                    </button>
+                                    {!isSidebarOpen && (
+                                        <button
+                                            type="button"
+                                            onClick={handleStartNewChat}
+                                            className="p-1.5 rounded-xl text-indigo-300 hover:text-white hover:bg-slate-800 transition shrink-0"
+                                            title="New Chat"
+                                            aria-label="New Chat"
+                                        >
+                                            <MessageSquarePlus className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                        <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                                        <span className="text-xs font-bold text-slate-100 truncate">
+                                            {activeThread?.title || 'AI Co-Pilot'}
+                                        </span>
+                                        <span
+                                            className="hidden sm:inline-block text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/35 font-mono shrink-0"
+                                            title="MCP Servers Active: SymPy, SchemDraw, UML, RDKit"
+                                        >
+                                            ⚡ MCP{mcpStatus?.servers ? ` (${mcpStatus.servers.length})` : ''}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Controls: Provider, Depth, Auto-Read, Speed, Minimize, Close */}
+                                <div className="flex items-center gap-1 shrink-0">
+                                    {/* AI Provider Selector */}
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowProviderMenu(p => !p);
+                                                setShowVerbosityMenu(false);
+                                                setShowSpeedDropup(false);
+                                            }}
+                                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-semibold text-indigo-300 capitalize flex items-center gap-1 transition"
+                                            title="Switch AI Provider"
+                                        >
+                                            <span>{preferredProvider}</span>
+                                            <ChevronDown className="w-2.5 h-2.5 text-slate-400" />
+                                        </button>
+                                        {showProviderMenu && (
+                                            <div className="absolute top-full right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1 z-50 min-w-[115px] text-xs">
+                                                {[
+                                                    { id: 'auto', label: 'Auto Smart' },
+                                                    { id: 'gemini', label: 'Gemini' },
+                                                    { id: 'groq', label: 'Groq Fast' }
+                                                ].map(p => (
+                                                    <button
+                                                        key={p.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onChangePreferredProvider?.(p.id);
+                                                            setShowProviderMenu(false);
+                                                        }}
+                                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg transition ${
+                                                            preferredProvider === p.id ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        {p.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Depth Selector */}
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowVerbosityMenu(v => !v);
+                                                setShowProviderMenu(false);
+                                                setShowSpeedDropup(false);
+                                            }}
+                                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-semibold text-slate-300 capitalize flex items-center gap-1 transition"
+                                            title="Explanation Depth"
+                                        >
+                                            <span>{responseVerbosity === 'brief' ? '⚡' : responseVerbosity === 'detailed' ? '📖' : '⚖️'}</span>
+                                            <span className="hidden sm:inline">{responseVerbosity}</span>
+                                        </button>
+                                        {showVerbosityMenu && (
+                                            <div className="absolute top-full right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 min-w-[125px] text-xs">
+                                                {[
+                                                    { id: 'brief', label: '⚡ Brief' },
+                                                    { id: 'normal', label: '⚖️ Normal' },
+                                                    { id: 'detailed', label: '📖 Detailed' }
+                                                ].map(m => (
+                                                    <button
+                                                        key={m.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onChangeResponseVerbosity(m.id);
+                                                            setShowVerbosityMenu(false);
+                                                        }}
+                                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg transition ${
+                                                            responseVerbosity === m.id ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        {m.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* TTS Speech Speed */}
+                                    <div className="relative">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowSpeedDropup(s => !s);
+                                                setShowVerbosityMenu(false);
+                                                setShowProviderMenu(false);
+                                            }}
+                                            className="px-1.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-slate-300 transition"
+                                            title="TTS Speech Speed"
+                                        >
+                                            {speechRate}x
+                                        </button>
+                                        {showSpeedDropup && (
+                                            <div className="absolute top-full right-0 mt-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1 z-50 min-w-[64px]">
+                                                {SPEED_OPTIONS.map(spd => (
+                                                    <button
+                                                        key={spd}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            onChangeSpeechRate(spd);
+                                                            setShowSpeedDropup(false);
+                                                            if (isAiSpeaking) onSpeak(aiSpeakingText || displayText, { rate: spd });
+                                                        }}
+                                                        className={`w-full px-2 py-1 rounded text-[10px] font-mono text-center transition ${
+                                                            Math.abs((speechRate || 1) - spd) < 0.05 ? 'bg-yellow-400 text-slate-950 font-bold' : 'text-slate-300 hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        {spd}x
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Voice Auto-Read Mute/Unmute */}
+                                    <button
+                                        type="button"
+                                        onClick={onToggleAiSpeech}
+                                        className={`p-1.5 rounded-lg transition ${
+                                            aiSpeechEnabled ? 'text-indigo-300 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-800'
+                                        }`}
+                                        title={aiSpeechEnabled ? 'Voice Auto-Read ON' : 'Voice Auto-Read Muted'}
+                                    >
+                                        {aiSpeechEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+                                    </button>
+
+                                    {/* Dismiss to Live Captions / Close */}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsPaneDismissed(true);
+                                            onClose?.();
+                                        }}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                                        title="Close AI Assistant"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </header>
+
+                            {/* Drag Overlay */}
+                            {isDraggingImage && (
+                                <div className="px-4 py-2 bg-indigo-950/95 border-b border-indigo-500/40 flex items-center justify-center gap-2 text-xs text-indigo-200 font-semibold">
+                                    <Upload className="w-4 h-4 text-indigo-400 animate-bounce" />
+                                    <span>Drop photo or file to attach to chat</span>
+                                </div>
+                            )}
+
+                            {/* ── CHRONOLOGICAL CONVERSATION LOG (Full Thread Scroll) ── */}
+                            <div
+                                onScroll={handleUserScroll}
+                                onWheel={handleUserScroll}
+                                onTouchStart={handleUserScroll}
+                                className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar select-text"
+                            >
+                                {activeMessages.length === 0 && !isGenerating ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto py-6 space-y-4">
+                                        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-amber-500/20 border border-indigo-400/40 flex items-center justify-center shadow-lg">
+                                            <Sparkles className="w-6 h-6 text-yellow-400" />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-bold text-white">Whiteboard AI Co-Pilot</h3>
+                                            <p className="text-xs text-slate-400 mt-1">
+                                                Ask STEM problems, generate classroom images, search web citations, or compose music — then click <strong className="text-yellow-400">Add to Board</strong>.
+                                            </p>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2 w-full text-left">
+                                            {[
+                                                { mode: 'stem', title: '📐 STEM Solver', prompt: 'Solve 2x + 3y = 6 and x - y = 1', desc: 'Step-by-step math & graphs' },
+                                                { mode: 'image', title: '🎨 Create Image', prompt: 'Clean labeled diagram of a plant cell organelles', desc: 'Gemini image generation' },
+                                                { mode: 'web', title: '🌐 Fetch from Web', prompt: 'Newtons laws of motion key applications', desc: 'Live citations & images' },
+                                                { mode: 'music', title: '🎵 Music Studio', prompt: 'Cheerful C major pentatonic classroom warm-up melody', desc: 'Playable Web Audio score' }
+                                            ].map((card) => (
+                                                <button
+                                                    key={card.mode}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setActiveMode(card.mode);
+                                                        handleSendPrompt(null, card.prompt, card.mode);
+                                                    }}
+                                                    className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 transition text-left cursor-pointer"
+                                                >
+                                                    <div className="text-xs font-bold text-slate-100">{card.title}</div>
+                                                    <div className="text-[10.5px] text-slate-400 mt-0.5 line-clamp-1">{card.desc}</div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    activeMessages.map((msg, mIdx) => {
+                                        if (msg.role === 'user') {
+                                            return (
+                                                <div key={msg.id || mIdx} className="flex flex-col items-end gap-1">
+                                                    <div className="max-w-[85%] rounded-2xl rounded-br-sm px-3.5 py-2.5 bg-indigo-600/20 border border-indigo-500/35 text-slate-100 text-xs space-y-1.5 shadow-sm">
+                                                        {msg.mode && msg.mode !== 'stem' && (
+                                                            <span className={`inline-block text-[9px] px-1.5 py-0.5 rounded-md border font-semibold ${MODE_META[msg.mode]?.colorClass || ''}`}>
+                                                                {MODE_META[msg.mode]?.label}
+                                                            </span>
+                                                        )}
+                                                        {msg.previewUrl && (
+                                                            <img src={msg.previewUrl} alt="User attachment" className="max-h-36 rounded-lg border border-slate-700 object-contain" />
+                                                        )}
+                                                        {msg.attachmentName && !msg.previewUrl && (
+                                                            <div className="text-[10.5px] text-indigo-300 font-mono flex items-center gap-1">
+                                                                <FileText className="w-3 h-3" />
+                                                                <span>{msg.attachmentName}</span>
+                                                            </div>
+                                                        )}
+                                                        <div
+                                                            className="leading-relaxed"
+                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(msg.content) }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-[9.5px] text-slate-500 font-mono pr-1">{msg.timestamp}</span>
+                                                </div>
+                                            );
+                                        }
+
+                                        // ── Assistant Turn Card ──
+                                        const isLatestTurn = latestAssistantMsg?.id === msg.id;
+                                        const msgBlocks = isLatestTurn ? blocks : parseContentBlocks(msg.solutionMarkdown || msg.content);
+                                        const copyTargetText = msg.solutionMarkdown || msg.content || msg.question || '';
+
+                                        return (
+                                            <div
+                                                key={msg.id || mIdx}
+                                                className={`rounded-2xl border p-3.5 space-y-2.5 shadow-md ${
+                                                    msg.isError ? 'bg-rose-950/35 border-rose-500/60' : 'bg-slate-900/75 border-slate-800'
+                                                }`}
+                                            >
+                                                {/* Turn Meta Row + Voice Narration Controls */}
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[11px] font-bold text-yellow-400 flex items-center gap-1">
+                                                            <Sparkles className="w-3 h-3" />
+                                                            <span>AI Co-Pilot</span>
+                                                        </span>
+                                                        {msg.modelUsed && (
+                                                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 font-mono">
+                                                                {String(msg.modelUsed).replace(' (Open Source, MIT)', '')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Inline Voice Controls on Latest STEM Turn */}
+                                                    {isLatestTurn && !msg.isError && msgBlocks.length > 0 && (
+                                                        <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-700/80 rounded-lg p-0.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    let prev = (activeBlockIndex > 0 ? activeBlockIndex : 0) - 1;
+                                                                    while (prev > 0 && msgBlocks[prev]?.type === 'heading') prev--;
+                                                                    onGoToStep?.(Math.max(0, prev), { rate: speechRate, shouldSpeak: isAiSpeaking });
+                                                                }}
+                                                                className="p-1 rounded text-slate-300 hover:text-yellow-400 transition"
+                                                                title="Previous Step"
+                                                            >
+                                                                <ChevronLeft className="w-3 h-3" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (isAiSpeaking && !isAiPaused) onPauseSpeaking();
+                                                                    else if (isAiPaused) onResumeSpeaking();
+                                                                    else if (typeof onSpeakSteps === 'function') {
+                                                                        const startIdx = activeBlockIndex >= 0 ? activeBlockIndex : Math.max(0, msgBlocks.findIndex(b => b.type !== 'heading'));
+                                                                        onSpeakSteps(msgBlocks, { rate: speechRate, startIndex: startIdx, autoPlay: true });
+                                                                    } else {
+                                                                        onSpeak(copyTargetText, { rate: speechRate });
+                                                                    }
+                                                                }}
+                                                                className={`p-1 rounded transition ${
+                                                                    isAiSpeaking && !isAiPaused ? 'bg-yellow-400 text-slate-950' : 'text-yellow-400 hover:bg-slate-800'
+                                                                }`}
+                                                                title={isAiSpeaking && !isAiPaused ? 'Pause Voice' : 'Narrate Steps'}
+                                                            >
+                                                                {isAiSpeaking && !isAiPaused ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    let next = (activeBlockIndex >= 0 ? activeBlockIndex : -1) + 1;
+                                                                    while (next < msgBlocks.length - 1 && msgBlocks[next]?.type === 'heading') next++;
+                                                                    onGoToStep?.(Math.min(msgBlocks.length - 1, next), { rate: speechRate, shouldSpeak: isAiSpeaking });
+                                                                }}
+                                                                className="p-1 rounded text-slate-300 hover:text-yellow-400 transition"
+                                                                title="Next Step"
+                                                            >
+                                                                <ChevronRight className="w-3 h-3" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Concise Spoken Summary Banner */}
+                                                {msg.speechResponse && msg.speechResponse !== msg.solutionMarkdown && (
+                                                    <div className="p-2.5 rounded-xl bg-emerald-950/35 border border-emerald-500/35 text-emerald-100 text-xs leading-relaxed">
+                                                        <div dangerouslySetInnerHTML={{ __html: renderFormattedText(msg.speechResponse) }} />
+                                                    </div>
+                                                )}
+
+                                                {/* Generated Image Card */}
+                                                {msg.generatedImage && (msg.generatedImage.imageDataUrl || msg.generatedImage.svg) && (
+                                                    <div className="rounded-xl border border-fuchsia-500/35 bg-slate-950 overflow-hidden">
+                                                        {msg.generatedImage.imageDataUrl ? (
+                                                            <img
+                                                                src={msg.generatedImage.imageDataUrl}
+                                                                alt={msg.generatedImage.prompt || 'Generated illustration'}
+                                                                className="w-full max-h-64 object-contain bg-slate-900"
+                                                            />
+                                                        ) : (
+                                                            <div
+                                                                className="w-full p-2 bg-white flex items-center justify-center max-h-64 overflow-hidden [&_svg]:max-w-full [&_svg]:h-auto"
+                                                                dangerouslySetInnerHTML={{ __html: msg.generatedImage.svg }}
+                                                            />
+                                                        )}
+                                                        <div className="px-3 py-2 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                                                            <span className="text-[10.5px] text-slate-400 truncate max-w-[55%]">
+                                                                {msg.generatedImage.style}
+                                                            </span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        const src = msg.generatedImage.imageDataUrl || `data:image/svg+xml;charset=utf-8,${encodeURIComponent(msg.generatedImage.svg)}`;
+                                                                        onInsertImage?.(src);
+                                                                    }}
+                                                                    className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-slate-950 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition"
+                                                                >
+                                                                    ✨ Add to Board
+                                                                </button>
+                                                                {msg.generatedImage.imageDataUrl && (
+                                                                    <a
+                                                                        href={msg.generatedImage.imageDataUrl}
+                                                                        download="whiteboard_ai_image.png"
+                                                                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+                                                                        title="Download Image"
+                                                                    >
+                                                                        <Download className="w-3.5 h-3.5" />
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Music Studio Card + Web Audio Synth */}
+                                                {msg.musicData && (
+                                                    <div className="rounded-xl border border-emerald-500/40 bg-slate-950 overflow-hidden space-y-2 p-2.5">
+                                                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                            <div>
+                                                                <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                                                                    <Music className="w-3.5 h-3.5" />
+                                                                    <span>{msg.musicData.title}</span>
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-400 font-mono">
+                                                                    {msg.musicData.keySignature} · {msg.musicData.timeSignature} · {msg.musicData.tempoBpm} BPM
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => playMusicNotes(msg.id, msg.musicData)}
+                                                                    className={`px-2.5 py-1 rounded-lg text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition ${
+                                                                        playingMusicMsgId === msg.id ? 'bg-rose-500 text-white' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                                                                    }`}
+                                                                >
+                                                                    {playingMusicMsgId === msg.id ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3 fill-current" />}
+                                                                    <span>{playingMusicMsgId === msg.id ? 'Stop Audio' : 'Play Synth'}</span>
+                                                                </button>
+                                                                {typeof onInsertDiagram === 'function' && msg.musicData.svg && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => onInsertDiagram(msg.musicData.svg, { title: msg.musicData.title, width: 460, height: 185 })}
+                                                                        className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-slate-950 text-[10.5px] font-bold flex items-center gap-1 cursor-pointer transition"
+                                                                    >
+                                                                        ✨ Add Score to Board
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        {msg.musicData.svg && (
+                                                            <div
+                                                                className="w-full overflow-x-auto bg-white rounded-lg p-1.5 [&_svg]:max-w-full [&_svg]:h-auto"
+                                                                dangerouslySetInnerHTML={{ __html: msg.musicData.svg }}
+                                                            />
+                                                        )}
+                                                        {msg.musicData.abcNotation && (
+                                                            <pre className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono text-emerald-200 overflow-x-auto">
+                                                                {msg.musicData.abcNotation}
+                                                            </pre>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Web Search Rich Cards: Citations, Web Images & Videos */}
+                                                {msg.webResult && (
+                                                    <div className="space-y-2.5">
+                                                        {Array.isArray(msg.webResult.images) && msg.webResult.images.length > 0 && (
+                                                            <div>
+                                                                <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-1.5">
+                                                                    Web Images &amp; Diagrams (Click to Add to Board)
+                                                                </div>
+                                                                <div className="flex gap-2 overflow-x-auto pb-1.5 custom-scrollbar">
+                                                                    {msg.webResult.images.map((im, imIdx) => {
+                                                                        const src = im.image || im.thumbnail || im.url || im.link || im;
+                                                                        return (
+                                                                            <div key={imIdx} className="relative w-28 h-20 shrink-0 rounded-lg overflow-hidden border border-slate-700 bg-slate-950 group">
+                                                                                <img src={src} alt={im.title || 'Web result'} className="w-full h-full object-cover" />
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => onInsertImage?.(src)}
+                                                                                    className="absolute inset-0 bg-slate-950/75 opacity-0 group-hover:opacity-100 text-yellow-300 text-[10px] font-bold flex flex-col items-center justify-center gap-0.5 transition cursor-pointer"
+                                                                                >
+                                                                                    <Plus className="w-4 h-4" />
+                                                                                    <span>Add to Board</span>
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {Array.isArray(msg.webResult.citations) && msg.webResult.citations.length > 0 && (
+                                                            <div className="space-y-1">
+                                                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                                    Sources
+                                                                </div>
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                                                    {msg.webResult.citations.map((cit, cIdx) => (
+                                                                        <a
+                                                                            key={cIdx}
+                                                                            href={cit.url || cit.link}
+                                                                            target="_blank"
+                                                                            rel="noreferrer"
+                                                                            className="p-2 rounded-lg bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 flex flex-col gap-0.5 transition"
+                                                                        >
+                                                                            <div className="text-[11px] font-semibold text-cyan-300 truncate flex items-center justify-between gap-1">
+                                                                                <span className="truncate">{cit.title || cit.url}</span>
+                                                                                <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                                                            </div>
+                                                                            {cit.snippet && (
+                                                                                <p className="text-[10px] text-slate-400 line-clamp-2 leading-snug">{cit.snippet}</p>
+                                                                            )}
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {Array.isArray(msg.webResult.videos) && msg.webResult.videos.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1.5 pt-1">
+                                                                {msg.webResult.videos.map((vid, vIdx) => (
+                                                                    <button
+                                                                        key={vIdx}
+                                                                        type="button"
+                                                                        onClick={() => onInsertMedia?.({ mediaType: 'youtube', url: vid.url || vid.link, title: vid.title })}
+                                                                        className="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 text-[10.5px] font-medium flex items-center gap-1 truncate max-w-[230px] cursor-pointer transition"
+                                                                    >
+                                                                        <Play className="w-3 h-3 shrink-0" />
+                                                                        <span className="truncate">Embed: {vid.title}</span>
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* Structured Markdown / KaTeX / Mermaid / Table Blocks */}
+                                                {msgBlocks.length > 0 ? (
+                                                    <div className="space-y-1.5">
+                                                        {msgBlocks.map((block, bIdx) => {
+                                                            const isActive = isLatestTurn && (bIdx === activeBlockIndex) && (isAiSpeaking || isAiPaused || isStepMode || clickedBlockIdx !== null);
+                                                            const handleSelectStep = () => {
+                                                                setClickedBlockIdx(bIdx);
+                                                                if (isLatestTurn && typeof onGoToStep === 'function') {
+                                                                    onGoToStep(bIdx, { rate: speechRate, shouldSpeak: true });
+                                                                } else {
+                                                                    onSpeak(block.spokenText || block.text, { rate: speechRate });
+                                                                }
+                                                            };
+
+                                                            if (block.type === 'heading') {
+                                                                return (
+                                                                    <div key={block.id || bIdx} className="pt-1.5 pb-0.5 text-[11px] font-bold uppercase tracking-wider text-amber-300 border-b border-slate-800">
+                                                                        <span dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }} />
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            if (block.type === 'mermaid') {
+                                                                return (
+                                                                    <div key={block.id || bIdx} className="my-1.5">
+                                                                        <MermaidRenderer chart={block.text} title="Diagram" onInsertDiagram={onInsertDiagram} />
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            if (block.type === 'code') {
+                                                                return (
+                                                                    <div key={block.id || bIdx} className="my-1.5 rounded-xl border border-slate-700 bg-slate-950 overflow-hidden">
+                                                                        <div className="flex items-center justify-between px-3 py-1 bg-slate-900 border-b border-slate-800 text-[10.5px] font-mono text-indigo-300">
+                                                                            <span>💻 {(block.language || 'code').toUpperCase()}</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => { navigator.clipboard.writeText(block.text); toast.success('Code copied'); }}
+                                                                                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px]"
+                                                                            >Copy</button>
+                                                                        </div>
+                                                                        <pre className="p-2.5 font-mono text-[11px] text-emerald-300 overflow-x-auto select-text">{block.text}</pre>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            if (block.type === 'table') {
+                                                                return (
+                                                                    <div key={block.id || bIdx} className="my-2 rounded-xl border border-slate-700 bg-slate-950 overflow-hidden">
+                                                                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[10.5px]">
+                                                                            <span className="font-bold text-amber-300">📊 Table ({block.rows?.length || 0} rows)</span>
+                                                                            {typeof onInsertTable === 'function' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => onInsertTable(block.text, { fontSize: 12 })}
+                                                                                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 border border-amber-500/40 font-semibold"
+                                                                                >Place Table on Board</button>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="overflow-x-auto p-2 max-h-60">
+                                                                            <table className="w-full text-[11px] border-collapse">
+                                                                                <thead>
+                                                                                    <tr className="bg-slate-800 text-amber-300">
+                                                                                        {block.headers.map((h, hI) => (
+                                                                                            <th key={hI} className="px-2 py-1 border border-slate-700" dangerouslySetInnerHTML={{ __html: renderFormattedText(h) }} />
+                                                                                        ))}
+                                                                                    </tr>
+                                                                                </thead>
+                                                                                <tbody>
+                                                                                    {block.rows.map((r, rI) => (
+                                                                                        <tr key={rI} className="border-b border-slate-800">
+                                                                                            {r.map((c, cI) => (
+                                                                                                <td key={cI} className="px-2 py-1 border border-slate-800 text-center" dangerouslySetInnerHTML={{ __html: renderFormattedText(c) }} />
+                                                                                            ))}
+                                                                                        </tr>
+                                                                                    ))}
+                                                                                </tbody>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <div
+                                                                    key={block.id || bIdx}
+                                                                    onClick={handleSelectStep}
+                                                                    className={`p-2 rounded-xl border transition cursor-pointer text-xs leading-relaxed ${
+                                                                        isActive
+                                                                            ? 'bg-amber-950/60 border-yellow-400 text-yellow-50 ring-1 ring-yellow-400'
+                                                                            : block.type === 'answer'
+                                                                            ? 'bg-emerald-950/60 border-emerald-500/60 text-emerald-100'
+                                                                            : 'bg-slate-950/60 hover:border-slate-600 border-slate-800 text-slate-200'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-start gap-2">
+                                                                        {block.prefix && block.type !== 'formula' && (
+                                                                            <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-yellow-300">
+                                                                                {block.prefix}
+                                                                            </span>
+                                                                        )}
+                                                                        <div className="flex-1 min-w-0" dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }} />
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : msg.content && !msg.generatedImage && !msg.musicData ? (
+                                                    <div className="text-xs text-slate-200 leading-relaxed" dangerouslySetInnerHTML={{ __html: renderFormattedText(msg.content) }} />
+                                                ) : null}
+
+                                                {/* SVG / SchemDraw Diagram Preview inside Turn */}
+                                                {Boolean(msg.diagram?.svg || msg.canvasAction?.svg) && (() => {
+                                                    const diagSvg = msg.diagram?.svg || msg.canvasAction?.svg;
+                                                    const diagTitle = msg.diagram?.title || msg.canvasAction?.title || 'Schematic Diagram';
+                                                    const diagCode = msg.diagram?.code || msg.schemdrawCode || msg.canvasAction?.code || null;
+                                                    return (
+                                                        <div className="rounded-xl border border-slate-700 bg-slate-950 overflow-hidden">
+                                                            <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800">
+                                                                <span className="text-[11px] font-semibold text-slate-200">📊 {diagTitle}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => onInsertDiagram ? onInsertDiagram(diagSvg, { title: diagTitle, code: diagCode, width: 380, height: 380 }) : onInsertToBoard?.(msg)}
+                                                                    className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold cursor-pointer"
+                                                                >
+                                                                    ➕ Add Diagram to Board
+                                                                </button>
+                                                            </div>
+                                                            <div className="bg-white p-2 flex items-center justify-center max-h-56 overflow-auto [&_svg]:max-w-full [&_svg]:h-auto" dangerouslySetInnerHTML={{ __html: diagSvg }} />
+                                                            {diagCode && (
+                                                                <details className="border-t border-slate-800">
+                                                                    <summary className="px-3 py-1.5 text-[10px] font-mono text-emerald-400 cursor-pointer bg-slate-950">🐍 SchemDraw Python Code</summary>
+                                                                    <pre className="p-2.5 text-[10px] font-mono text-indigo-200 bg-slate-950 overflow-x-auto max-h-40">{diagCode}</pre>
+                                                                </details>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* Turn Footer Action Bar: Add to Board, Text, Sticky, Physics Lab, Plot, Copy, Regenerate */}
+                                                <div className="pt-2 border-t border-slate-800/90 flex items-center gap-1.5 flex-wrap">
+                                                    {onInsertToBoard && msg.mode !== 'image' && msg.mode !== 'music' && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => onInsertToBoard(msg)}
+                                                            className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold text-[10.5px] flex items-center gap-1 shadow-xs cursor-pointer transition"
+                                                            title="Add structured AI solution to whiteboard canvas"
+                                                        >
+                                                            ✨ Add to Board
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onInsertAsText(copyTargetText)}
+                                                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-medium cursor-pointer transition"
+                                                    >
+                                                        🔤 Text
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onCreateStickyNote(copyTargetText)}
+                                                        className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[10px] font-medium cursor-pointer transition"
+                                                    >
+                                                        📝 Sticky
+                                                    </button>
+                                                    {onOpenPhysicsSpace && (msg.physicsAction || /force|velocity|gravity|pendulum|projectile/i.test(msg.question || '')) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={onOpenPhysicsSpace}
+                                                            className="px-2 py-1 rounded-lg bg-indigo-900/50 hover:bg-indigo-800 text-indigo-200 border border-indigo-500/40 text-[10px] font-medium cursor-pointer transition"
+                                                        >
+                                                            ⚛️ Physics Lab
+                                                        </button>
+                                                    )}
+                                                    {onOpenGraphPlotter && ((msg.graphEquations?.length > 0) || (msg.canvasAction?.curves?.length > 0)) && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={onOpenGraphPlotter}
+                                                            className="px-2 py-1 rounded-lg bg-cyan-900/50 hover:bg-cyan-800 text-cyan-200 border border-cyan-500/40 text-[10px] font-medium cursor-pointer transition"
+                                                        >
+                                                            📈 Plot
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(copyTargetText);
+                                                            setCopiedId(msg.id);
+                                                            setTimeout(() => setCopiedId(null), 1500);
+                                                        }}
+                                                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition ml-auto"
+                                                        title="Copy response"
+                                                    >
+                                                        {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                                                    </button>
+                                                    {msg.question && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleSendPrompt(null, msg.question, msg.mode || 'stem')}
+                                                            className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-yellow-400 transition"
+                                                            title="Regenerate response"
+                                                        >
+                                                            <RefreshCw className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Suggested Follow-Ups */}
+                                                {isLatestTurn && Array.isArray(msg.suggestedFollowUps) && msg.suggestedFollowUps.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                                        {msg.suggestedFollowUps.slice(0, 3).map((fu, fIdx) => (
+                                                            <button
+                                                                key={fIdx}
+                                                                type="button"
+                                                                onClick={() => handleSendPrompt(null, fu.replace(/^🔄\s*Retry:\s*/i, ''), 'stem')}
+                                                                className="px-2.5 py-1 rounded-full bg-slate-800/90 hover:bg-indigo-600/30 border border-slate-700 hover:border-indigo-500/50 text-[10.5px] text-slate-300 hover:text-white transition cursor-pointer text-left"
+                                                            >
+                                                                {fu}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })
+                                )}
+
+                                {/* Thinking / Generating Loader Bubble */}
+                                {isGenerating && (
+                                    <div className="p-3 rounded-2xl border border-indigo-500/40 bg-slate-900/90 flex items-center justify-between gap-2 text-xs text-yellow-300">
+                                        <div className="flex items-center gap-2">
+                                            <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />
+                                            <span>{localThinkingLabel || 'Thinking & solving step by step...'}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsLocalGenerating(false);
+                                                onStopGeneration?.();
+                                            }}
+                                            className="px-2 py-0.5 rounded-md bg-rose-500/20 hover:bg-rose-500/35 text-rose-300 border border-rose-500/40 text-[10px] font-semibold"
+                                        >
+                                            Stop
+                                        </button>
+                                    </div>
+                                )}
+                                <div ref={messagesEndRef} />
+                            </div>
+
+                            {/* ── INLINE WEB IMAGE SEARCH STRIP (triggered by + -> Web Images & Diagrams) ── */}
+                            {showWebImageTray && (
+                                <div className="px-3 py-2 border-t border-slate-800 bg-slate-900/95 space-y-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <form onSubmit={handleQuickWebImageSearch} className="flex-1 flex items-center gap-1.5">
+                                            <input
+                                                type="text"
+                                                value={webImageQuery}
+                                                onChange={(e) => setWebImageQuery(e.target.value)}
+                                                placeholder="Search web diagrams, photos & labels..."
+                                                className="flex-1 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400"
+                                            />
+                                            <button
+                                                type="submit"
+                                                disabled={isSearchingWebImages}
+                                                className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold"
+                                            >
+                                                {isSearchingWebImages ? '...' : 'Find'}
+                                            </button>
+                                        </form>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowWebImageTray(false)}
+                                            className="p-1 text-slate-400 hover:text-white rounded"
                                         >
                                             <X className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
-                                </div>
-
-                                <div className="p-4 space-y-3 bg-slate-950 text-slate-100">
-                                    {isAiThinking ? (
-                                        <div className="py-8 flex flex-col items-center justify-center gap-2.5 text-xs text-yellow-400 animate-pulse">
-                                            <Loader2 className="w-6 h-6 animate-spin text-yellow-400" />
-                                            <span>Formulating step-by-step solution & graphs...</span>
+                                    {webImageResults.length > 0 && (
+                                        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+                                            {webImageResults.map((img, i) => {
+                                                const src = img.image || img.thumbnail || img.url || img;
+                                                return (
+                                                    <div key={i} className="relative w-20 h-14 shrink-0 rounded-lg overflow-hidden border border-slate-700 group">
+                                                        <img src={src} alt="Web result" className="w-full h-full object-cover" />
+                                                        <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-1 transition">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setScannedPreviewUrl(src);
+                                                                    setScannedDataUrl(src);
+                                                                    setScannedFile({ name: img.title || 'Web Image' });
+                                                                    setShowWebImageTray(false);
+                                                                }}
+                                                                className="px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-bold"
+                                                            >Chat</button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => onInsertImage?.(src)}
+                                                                className="px-1.5 py-0.5 rounded bg-yellow-400 text-slate-950 text-[9px] font-bold"
+                                                            >Board</button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
-                                    ) : (
-                                        <form onSubmit={handleFormSubmit} className="space-y-2.5">
-                                            {(!isTextEditing && editText.trim()) ? (
-                                                <div
-                                                    onClick={() => {
-                                                        setIsTextEditing(true);
-                                                        setTimeout(() => {
-                                                            editInputRef.current?.focus();
-                                                        }, 40);
-                                                    }}
-                                                    className="w-full min-h-[78px] max-h-48 overflow-y-auto custom-scrollbar bg-slate-900 hover:bg-slate-900/90 border border-slate-700 hover:border-yellow-400/80 rounded-xl p-2.5 text-xs text-white leading-relaxed cursor-text relative group transition shadow-inner select-text flex flex-col justify-between"
-                                                    title="Click anywhere in this field to edit"
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ── COMPOSER FOOTER (+ Menu, Mode & File Chips, Mic, Textarea, Send) ── */}
+                            <footer
+                                style={{ backgroundColor: '#11192c' }}
+                                className="p-2.5 border-t border-slate-800 space-y-2 relative shrink-0"
+                            >
+                                {/* + Plus Popover Menu (Attachments & AI Modes) */}
+                                {showPlusMenu && (
+                                    <div
+                                        style={{ backgroundColor: '#0f172a' }}
+                                        className="absolute bottom-full left-2.5 mb-2 w-[min(320px,88vw)] bg-slate-900 border-2 border-slate-700/90 rounded-2xl shadow-2xl p-2.5 z-50 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-120"
+                                    >
+                                        <div>
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 pb-1">
+                                                Attach Media, Files &amp; Web
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => cameraInputRef.current?.click()}
+                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-xs text-slate-200 hover:text-white transition text-left"
                                                 >
-                                                    <div
-                                                        className="text-xs text-slate-100 overflow-x-auto leading-relaxed pb-2"
-                                                        dangerouslySetInnerHTML={{ __html: renderFormattedText(editText) }}
-                                                    />
-                                                    <div className="flex items-center justify-end pt-1 border-t border-slate-800/80 mt-auto">
-                                                        <span className="text-[10px] text-slate-400 group-hover:text-yellow-400 flex items-center gap-1 opacity-70 group-hover:opacity-100 transition bg-slate-800/90 px-1.5 py-0.5 rounded border border-slate-700/60 pointer-events-none">
-                                                            <Pencil className="w-2.5 h-2.5" />
-                                                            <span>Click anywhere to edit</span>
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <textarea
-                                                    ref={editInputRef}
-                                                    rows={3}
-                                                    value={editText}
-                                                    onChange={(e) => setEditText(e.target.value)}
-                                                    onBlur={() => {
-                                                        if (editText.trim()) {
-                                                            setIsTextEditing(false);
-                                                        }
-                                                    }}
-                                                    placeholder="Ask any math problem, line equation, science question, or whiteboard command..."
-                                                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400 resize-none leading-relaxed"
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                                            e.preventDefault();
-                                                            handleFormSubmit(e);
-                                                        }
-                                                    }}
-                                                    autoFocus={isTextEditing}
-                                                />
-                                            )}
-
-                                            {/* Scanned / Uploaded Image Preview Chip */}
-                                            {scannedPreviewUrl && (
-                                                <div className="relative flex items-center gap-2 p-1.5 rounded-xl bg-slate-900 border border-indigo-500/60 shadow-xs max-w-full">
-                                                    <img
-                                                        src={scannedPreviewUrl}
-                                                        alt="Attached problem"
-                                                        className="h-9 w-9 object-cover rounded-lg border border-indigo-500/80 shrink-0"
-                                                    />
-                                                    <div className="flex-1 min-w-0 pr-4">
-                                                        <div className="text-[11px] font-semibold text-indigo-300 truncate">
-                                                            {scannedFile?.name || 'Attached Problem Image'}
-                                                        </div>
-                                                        <div className="text-[10px] text-slate-400">
-                                                            {isScanningImage ? 'Scanning text & diagrams...' : 'Image ready for solver'}
-                                                        </div>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setScannedPreviewUrl(null);
-                                                            setScannedDataUrl(null);
-                                                            setScannedFile(null);
-                                                        }}
-                                                        className="absolute top-1.5 right-1.5 w-4 h-4 bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white rounded-full flex items-center justify-center text-[10px] transition cursor-pointer"
-                                                        title="Remove image"
-                                                    >
-                                                        <X className="w-2.5 h-2.5" />
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            <div className="flex items-center justify-between gap-2">
+                                                    <Camera className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                                    <span>Camera</span>
+                                                </button>
                                                 <button
                                                     type="button"
                                                     onClick={() => fileInputRef.current?.click()}
-                                                    disabled={isScanningImage}
-                                                    className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition cursor-pointer"
-                                                    title="Upload problem image / handwriting"
+                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-xs text-slate-200 hover:text-white transition text-left"
                                                 >
-                                                    {isScanningImage ? (
-                                                        <>
-                                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-                                                            <span>Scanning...</span>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Upload className="w-3.5 h-3.5 text-cyan-400" />
-                                                            <span>Scan Image</span>
-                                                        </>
-                                                    )}
+                                                    <ImageIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                                    <span>Photos</span>
                                                 </button>
-
                                                 <button
-                                                    type="submit"
-                                                    disabled={!editText.trim() && !scannedDataUrl}
-                                                    className="py-1.5 px-4 rounded-lg bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 text-xs font-bold transition flex items-center gap-1.5 shadow-md cursor-pointer"
+                                                    type="button"
+                                                    onClick={() => docFileInputRef.current?.click()}
+                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-xs text-slate-200 hover:text-white transition text-left"
                                                 >
-                                                    <Sparkles className="w-3.5 h-3.5" />
-                                                    <span>Solve</span>
+                                                    <FileText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                                    <span>Device Files</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowPlusMenu(false);
+                                                        if (typeof onOpenDrivePicker === 'function') {
+                                                            onOpenDrivePicker();
+                                                        } else {
+                                                            toast('Drive & Docs picker not linked here', { icon: '📁' });
+                                                        }
+                                                    }}
+                                                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-xs text-slate-200 hover:text-white transition text-left"
+                                                >
+                                                    <Folder className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                                                    <span>Drive &amp; Docs</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowWebImageTray(true);
+                                                        setShowPlusMenu(false);
+                                                        if (composerText.trim()) setWebImageQuery(composerText.trim());
+                                                    }}
+                                                    className="col-span-2 flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-xs text-cyan-300 hover:text-white transition text-left"
+                                                >
+                                                    <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                                                    <span>Web Images &amp; Diagrams</span>
                                                 </button>
                                             </div>
+                                        </div>
 
-                                            {/* Quick Examples */}
-                                            <div className="pt-1 space-y-1">
-                                                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Examples:</span>
-                                                <div className="flex flex-col gap-1 text-[11px]">
-                                                    {[
-                                                        'Draw a series RLC circuit schematic',
-                                                        'Render benzene molecular chemical structure',
-                                                        'Draw flowchart for finding maximum',
-                                                        'Plot vector field F(x, y) = (-y, x)',
-                                                        'Solve 2x + 3y = 6 and x - y = 1',
-                                                        'Find intersection of y = x^2 and y = 2x + 3'
-                                                    ].map((promptText, pIdx) => (
+                                        <div className="border-t border-slate-800 pt-2">
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 pb-1">
+                                                AI Capability Mode
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-1">
+                                                {[
+                                                    { id: 'image', icon: Wand2, color: 'text-fuchsia-400', label: 'Create Image' },
+                                                    { id: 'web', icon: Globe, color: 'text-cyan-400', label: 'Fetch from Web' },
+                                                    { id: 'music', icon: Music, color: 'text-emerald-400', label: 'Music Studio' },
+                                                    { id: 'diagram', icon: GitBranch, color: 'text-indigo-400', label: 'Diagram' },
+                                                    { id: 'stem', icon: Sparkles, color: 'text-amber-400', label: 'STEM Solve' }
+                                                ].map(m => {
+                                                    const MIcon = m.icon;
+                                                    const isAct = activeMode === m.id;
+                                                    return (
                                                         <button
-                                                            key={pIdx}
+                                                            key={m.id}
                                                             type="button"
                                                             onClick={() => {
-                                                                setEditText(promptText);
-                                                                setIsTextEditing(false);
-                                                                onExecuteCommand(promptText);
+                                                                setActiveMode(m.id);
+                                                                setShowPlusMenu(false);
+                                                                composerInputRef.current?.focus();
                                                             }}
-                                                            className="text-left px-2 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-yellow-300 border border-slate-800 hover:border-slate-700 truncate transition"
+                                                            className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs transition text-left ${
+                                                                isAct ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-800/70 hover:bg-slate-800 text-slate-200'
+                                                            }`}
                                                         >
-                                                            💡 {promptText}
+                                                            <MIcon className={`w-3.5 h-3.5 shrink-0 ${isAct ? 'text-white' : m.color}`} />
+                                                            <span>{m.label}</span>
                                                         </button>
-                                                    ))}
-                                                </div>
+                                                    );
+                                                })}
                                             </div>
-                                        </form>
-                                    )}
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                        {/* Minimal Header Bar: Title + Voice Speed Controls + Actions */}
-                        <div
-                            style={{ backgroundColor: aiSolution?.isError ? '#4c0519' : '#1e293b' }}
-                            className={`px-3 py-2 border-b flex items-center justify-between gap-2 text-xs ${
-                                aiSolution?.isError ? 'bg-rose-950 border-rose-500 text-rose-200' : 'bg-slate-900 border-slate-700'
-                            }`}
-                        >
-                            <div className="flex items-center gap-1.5 min-w-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowHistorySidebar(prev => !prev)}
-                                    className={`p-1 rounded transition mr-0.5 ${
-                                        showHistorySidebar ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                    title={showHistorySidebar ? 'Hide Chat History' : 'View Chat History'}
-                                >
-                                    <History className="w-3.5 h-3.5" />
-                                </button>
-                                {aiSolution?.isError ? (
-                                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                                ) : (
-                                    <Sparkles className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                                        </div>
+                                    </div>
                                 )}
 
-                                {aiSolution?.isError ? (
-                                    <div className="flex items-center gap-1.5 text-rose-300 font-semibold text-[11px]">
-                                        <span>AI Error</span>
-                                        {aiSolution?.question && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onExecuteCommand(aiSolution.question)}
-                                                className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold flex items-center gap-1 transition cursor-pointer"
-                                                title="Retry this question"
-                                            >
-                                                <RefreshCw className="w-2.5 h-2.5" />
-                                                <span>Retry</span>
-                                            </button>
+                                {/* Active Mode Pill & Attachment Preview Chips */}
+                                {(activeMode !== 'stem' || scannedPreviewUrl || attachedDocFile) && (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        {activeMode !== 'stem' && (
+                                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10.5px] font-semibold ${currentModeMeta.colorClass}`}>
+                                                <span>{currentModeMeta.label}</span>
+                                                {activeMode === 'image' && (
+                                                    <select
+                                                        value={imageStyle}
+                                                        onChange={(e) => setImageStyle(e.target.value)}
+                                                        className="bg-slate-900/90 text-[10px] text-fuchsia-200 rounded px-1 py-0.2 border border-fuchsia-500/30 focus:outline-none"
+                                                        title="Image Art Style"
+                                                    >
+                                                        <option>Educational Diagram</option>
+                                                        <option>Photorealistic</option>
+                                                        <option>Whiteboard Sketch</option>
+                                                        <option>Vector Illustration</option>
+                                                    </select>
+                                                )}
+                                                <button type="button" onClick={() => setActiveMode('stem')} className="hover:text-white" title="Reset to STEM Solve">
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </span>
                                         )}
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center gap-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => setActiveTab('solution')}
-                                            className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                                                activeTab === 'solution'
-                                                    ? 'bg-yellow-400 text-slate-950 font-bold'
-                                                    : 'text-slate-300 hover:text-white'
-                                            }`}
-                                        >
-                                            Solution
-                                        </button>
-                                        {aiSolution?.solutionMarkdown && aiSolution?.speechResponse && (
-                                            <button
-                                                type="button"
-                                                onClick={() => setActiveTab('summary')}
-                                                className={`px-2 py-0.5 rounded text-[11px] font-semibold transition ${
-                                                    activeTab === 'summary'
-                                                        ? 'bg-yellow-400 text-slate-950 font-bold'
-                                                        : 'text-slate-300 hover:text-white'
-                                                }`}
-                                            >
-                                                Summary
-                                            </button>
+
+                                        {scannedPreviewUrl && (
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-indigo-500/50 text-[10.5px] text-indigo-200">
+                                                <img src={scannedPreviewUrl} alt="Attached" className="w-4 h-4 rounded object-cover" />
+                                                <span className="truncate max-w-[120px]">{scannedFile?.name || 'Image'}</span>
+                                                <button type="button" onClick={() => { setScannedPreviewUrl(null); setScannedDataUrl(null); setScannedFile(null); }} className="hover:text-white">
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </span>
                                         )}
-                                        {onOpenPhysicsSpace && aiSolution?.physicsAction && (
-                                            <button
-                                                type="button"
-                                                onClick={onOpenPhysicsSpace}
-                                                className="px-2 py-0.5 rounded text-[11px] font-semibold transition bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 border border-indigo-500/40 flex items-center gap-1 cursor-pointer"
-                                                title="Open interactive physics simulation laboratory for this question"
-                                            >
-                                                <span>⚛️ Simulate</span>
-                                            </button>
-                                        )}
-                                        {onOpenGraphPlotter && (aiSolution?.graphEquations?.length > 0 || aiSolution?.canvasAction?.curves?.length > 0) && (
-                                            <button
-                                                type="button"
-                                                onClick={onOpenGraphPlotter}
-                                                className="px-2 py-0.5 rounded text-[11px] font-semibold transition bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-500/40 flex items-center gap-1 cursor-pointer"
-                                                title="Open interactive graph plotter"
-                                            >
-                                                <span>📈 Plot</span>
-                                            </button>
-                                        )}
-                                        {aiSolution?.modelUsed && (
-                                            <span
-                                                className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono tracking-wide"
-                                                title={`Generated using ${aiSolution.modelUsed}`}
-                                            >
-                                                ⚡ {aiSolution.modelUsed.replace(' (Open Source, MIT)', '').replace(' (Open Source, BSD-3-Clause)', '')}
+
+                                        {attachedDocFile && (
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-slate-800 border border-amber-500/50 text-[10.5px] text-amber-200">
+                                                <FileText className="w-3 h-3" />
+                                                <span className="truncate max-w-[130px]">{attachedDocFile.name}</span>
+                                                <button type="button" onClick={() => setAttachedDocFile(null)} className="hover:text-white">
+                                                    <X className="w-3 h-3" />
+                                                </button>
                                             </span>
                                         )}
                                     </div>
                                 )}
-                            </div>
 
-                            {/* Voice Speed Control + Step Controls + Speak/Mute + Utility Buttons */}
-                            <div className="flex items-center gap-1 shrink-0">
-                                {/* Step Navigation Controls (Prev / Play-Pause / Next) */}
-                                {!aiSolution?.isError && blocks.length > 0 && (
-                                    <div
-                                        style={{ backgroundColor: '#020617' }}
-                                        className="flex items-center bg-slate-950 border border-slate-700 rounded-lg p-0.5 gap-0.5"
-                                        title="Step-Synchronized Voice Controls"
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (typeof onPrevStep === 'function') {
-                                                    // Find previous non-heading block
-                                                    let prev = (activeBlockIndex > 0 ? activeBlockIndex : 0) - 1;
-                                                    while (prev > 0 && blocks[prev]?.type === 'heading') prev--;
-                                                    if (typeof onGoToStep === 'function') {
-                                                        onGoToStep(Math.max(0, prev), { rate: speechRate, shouldSpeak: isAiSpeaking });
-                                                    } else {
-                                                        onPrevStep({ rate: speechRate });
-                                                    }
-                                                }
-                                            }}
-                                            className="p-0.5 rounded text-slate-300 hover:text-yellow-400 hover:bg-slate-800 transition"
-                                            title="Previous Step"
-                                        >
-                                            <ChevronLeft className="w-3.5 h-3.5" />
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (isAiSpeaking && !isAiPaused) {
-                                                    onPauseSpeaking();
-                                                } else if (isAiPaused) {
-                                                    onResumeSpeaking();
-                                                } else if (typeof onSpeakSteps === 'function') {
-                                                    const startIdx = activeBlockIndex >= 0
-                                                        ? activeBlockIndex
-                                                        : Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
-                                                    onSpeakSteps(blocks, { rate: speechRate, startIndex: startIdx, autoPlay: true });
-                                                } else {
-                                                    onSpeak(displayText, { rate: speechRate });
-                                                }
-                                            }}
-                                            className={`p-0.5 rounded transition ${
-                                                isAiSpeaking && !isAiPaused
-                                                    ? 'bg-yellow-400 text-slate-950 font-bold'
-                                                    : 'text-yellow-400 hover:bg-slate-800'
-                                            }`}
-                                            title={isAiSpeaking && !isAiPaused ? 'Pause step narration' : (isAiPaused ? 'Resume step narration' : 'Play step-by-step narration')}
-                                        >
-                                            {isAiSpeaking && !isAiPaused ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                if (typeof onNextStep === 'function') {
-                                                    let next = (activeBlockIndex >= 0 ? activeBlockIndex : -1) + 1;
-                                                    while (next < blocks.length - 1 && blocks[next]?.type === 'heading') next++;
-                                                    if (typeof onGoToStep === 'function') {
-                                                        onGoToStep(Math.min(blocks.length - 1, next), { rate: speechRate, shouldSpeak: isAiSpeaking });
-                                                    } else {
-                                                        onNextStep({ rate: speechRate });
-                                                    }
-                                                }
-                                            }}
-                                            className="p-0.5 rounded text-slate-300 hover:text-yellow-400 hover:bg-slate-800 transition"
-                                            title="Next Step"
-                                        >
-                                            <ChevronRight className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                )}
-
-                                {/* Speech Speed Dropup Menu (Compact) */}
-                                <div className="relative">
+                                {/* Main Composer Row (+ | Mic | Prompt | Send/Stop) */}
+                                <form onSubmit={(e) => handleSendPrompt(e)} className="flex items-end gap-1.5">
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            setShowSpeedDropup(prev => !prev);
-                                            setShowVerbosityMenu(false);
-                                        }}
-                                        className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-slate-950 border border-slate-700 hover:border-slate-600 text-[10px] font-mono text-slate-300 hover:text-white transition"
-                                        title="AI Speech Speed"
-                                    >
-                                        <span>{speechRate}x</span>
-                                        <ChevronUp className="w-2.5 h-2.5 text-slate-400" />
-                                    </button>
-
-                                    {showSpeedDropup && (
-                                        <div
-                                            className="absolute bottom-full right-0 mb-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl p-1 z-50 flex flex-col gap-0.5 min-w-[64px]"
-                                            onClick={e => e.stopPropagation()}
-                                        >
-                                            {SPEED_OPTIONS.map((spd) => (
-                                                <button
-                                                    key={spd}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        onChangeSpeechRate(spd);
-                                                        setShowSpeedDropup(false);
-                                                        if (isAiSpeaking) {
-                                                            if (typeof onGoToStep === 'function' && activeBlockIndex >= 0) {
-                                                                onGoToStep(activeBlockIndex, { rate: spd, shouldSpeak: true });
-                                                            } else {
-                                                                onSpeak(aiSpeakingText || displayText, { rate: spd });
-                                                            }
-                                                        }
-                                                    }}
-                                                    className={`px-2 py-1 rounded text-[10px] font-mono text-center transition ${
-                                                        Math.abs((speechRate || 1) - spd) < 0.05
-                                                            ? 'bg-yellow-400 text-slate-950 font-bold'
-                                                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                    }`}
-                                                >
-                                                    {spd}x
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Response Verbosity Settings Menu (Dropup) */}
-                                <div className="relative">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowVerbosityMenu(prev => !prev);
-                                            setShowSpeedDropup(false);
-                                        }}
-                                        className={`p-1 rounded transition border ${
-                                            showVerbosityMenu
-                                                ? 'bg-indigo-600 text-white border-indigo-400'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-800 border-transparent hover:border-slate-700'
+                                        onClick={() => setShowPlusMenu(p => !p)}
+                                        disabled={isScanningImage}
+                                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                                            showPlusMenu
+                                                ? 'bg-indigo-600 border-indigo-400 text-white'
+                                                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
                                         }`}
-                                        title={`Explanation depth: ${responseVerbosity} (Click to change)`}
+                                        title="Attach Camera, Photos, Files, Drive, Web Images or Switch AI Mode"
                                     >
-                                        <Sliders className="w-3.5 h-3.5" />
+                                        {isScanningImage ? <Loader2 className="w-4 h-4 animate-spin text-cyan-400" /> : <Plus className={`w-4 h-4 transition-transform ${showPlusMenu ? 'rotate-45' : ''}`} />}
                                     </button>
 
-                                    {showVerbosityMenu && (
-                                        <div
-                                            className="absolute bottom-full right-0 mb-1 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 min-w-[130px] text-xs"
-                                            onClick={e => e.stopPropagation()}
-                                        >
-                                            <div className="text-[10px] font-semibold text-slate-400 px-1 pb-1 border-b border-slate-800">
-                                                Explanation Depth
-                                            </div>
-                                            {[
-                                                { id: 'brief', label: 'Brief', icon: '⚡' },
-                                                { id: 'normal', label: 'Normal', icon: '⚖️' },
-                                                { id: 'detailed', label: 'Detailed', icon: '📖' }
-                                            ].map(m => (
-                                                <button
-                                                    key={m.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        onChangeResponseVerbosity(m.id);
-                                                        setShowVerbosityMenu(false);
-                                                    }}
-                                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-xs transition ${
-                                                        responseVerbosity === m.id
-                                                            ? 'bg-indigo-600 text-white font-bold'
-                                                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                                                    }`}
-                                                >
-                                                    <span>{m.icon}</span>
-                                                    <span>{m.label}</span>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Stop Generation (Icon Only) or Regenerate (Icon Only) */}
-                                {isAiThinking ? (
-                                    <button
-                                        type="button"
-                                        onClick={onStopGeneration}
-                                        className="p-1 rounded text-rose-400 hover:text-rose-300 hover:bg-rose-950/60 border border-rose-800/60 transition"
-                                        title="Stop generation"
-                                    >
-                                        <Square className="w-3.5 h-3.5 fill-current" />
-                                    </button>
-                                ) : (
-                                    aiSolution?.question && (
+                                    {typeof onToggleListening === 'function' && (
                                         <button
                                             type="button"
-                                            onClick={() => onExecuteCommand(aiSolution.question, { verbosity: responseVerbosity })}
-                                            className="p-1 rounded text-slate-300 hover:text-yellow-400 hover:bg-slate-800 transition"
-                                            title="Regenerate solution"
+                                            onClick={onToggleListening}
+                                            className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                                                isListening
+                                                    ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300 ring-2 ring-emerald-500/40 animate-pulse'
+                                                    : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                                            }`}
+                                            style={isListening && audioLevel > 0.05 ? { boxShadow: `0 0 ${Math.round(audioLevel * 18)}px rgba(16,185,129,0.65)` } : undefined}
+                                            title={isListening ? 'Stop Voice Input' : 'Voice Dictation'}
                                         >
-                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            <Mic className="w-4 h-4" />
                                         </button>
-                                    )
-                                )}
-
-                                {/* Mute / Resume / Read Aloud Voice Toggle */}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (isAiSpeaking && !isAiPaused) {
-                                            if (typeof onPauseSpeaking === 'function') {
-                                                onPauseSpeaking();
-                                            } else {
-                                                onStopSpeaking();
-                                            }
-                                        } else if (isAiPaused) {
-                                            if (typeof onResumeSpeaking === 'function') {
-                                                onResumeSpeaking();
-                                            } else if (typeof onSpeakSteps === 'function' && blocks.length > 0) {
-                                                const resumeIdx = activeBlockIndex >= 0 ? activeBlockIndex : 0;
-                                                onSpeakSteps(blocks, { rate: speechRate, startIndex: resumeIdx, autoPlay: true });
-                                            }
-                                        } else if (typeof onSpeakSteps === 'function' && blocks.length > 0) {
-                                            setClickedBlockIdx(null);
-                                            const startIdx = activeBlockIndex >= 0 ? activeBlockIndex : Math.max(0, blocks.findIndex(b => b.type !== 'heading'));
-                                            onSpeakSteps(blocks, { rate: speechRate, startIndex: startIdx, autoPlay: true });
-                                        } else {
-                                            setClickedBlockIdx(null);
-                                            onSpeak(displayText, { rate: speechRate });
-                                        }
-                                    }}
-                                    className={`p-1 rounded transition ${
-                                        isAiSpeaking && !isAiPaused
-                                            ? 'bg-yellow-400 text-slate-950 hover:bg-yellow-300'
-                                            : isAiPaused
-                                                ? 'bg-amber-600 text-white hover:bg-amber-500'
-                                                : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                                    }`}
-                                    title={isAiSpeaking && !isAiPaused ? 'Pause/Mute step narration' : (isAiPaused ? 'Resume step narration' : 'Read steps aloud')}
-                                >
-                                    {isAiSpeaking && !isAiPaused ? <Volume2 className="w-3.5 h-3.5 animate-pulse" /> : <VolumeX className="w-3.5 h-3.5" />}
-                                </button>
-
-                                {/* Copy */}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(displayText);
-                                        setCopied(true);
-                                        setTimeout(() => setCopied(false), 1800);
-                                    }}
-                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
-                                    title="Copy solution"
-                                >
-                                    {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-
-                                {/* Collapse */}
-                                <button
-                                    type="button"
-                                    onClick={() => setIsPaneCollapsed(prev => !prev)}
-                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
-                                    title={isPaneCollapsed ? 'Expand' : 'Collapse'}
-                                >
-                                    {isPaneCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                                </button>
-
-                                {/* Dismiss */}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setIsPaneDismissed(true);
-                                        if (onClose) onClose();
-                                    }}
-                                    className="p-1 rounded text-slate-300 hover:text-white hover:bg-slate-800 transition"
-                                    title="Close Solution Pane"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Question Subtitle + Active Step Synchronizer Badge */}
-                        {!isPaneCollapsed && (aiSolution?.question || activeBlockIndex >= 0) && (
-                            <div
-                                style={{ backgroundColor: '#1e293b' }}
-                                className="px-3 py-1.5 bg-slate-900 border-b border-slate-700 text-[11px] text-slate-200 flex items-center justify-between gap-2 font-medium"
-                            >
-                                <div className="truncate min-w-0 flex items-center">
-                                    {aiSolution?.question ? (
-                                        <>
-                                            <span className="text-yellow-400 font-bold mr-1 shrink-0">Q:</span>
-                                            <span 
-                                                className="truncate" 
-                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(aiSolution.question) }}
-                                            />
-                                        </>
-                                    ) : (
-                                        <span className="text-slate-400">Step-by-Step Solution</span>
-                                    )}
-                                </div>
-                                {activeBlockIndex >= 0 && blocks[activeBlockIndex] && (
-                                    <span
-                                        style={{ backgroundColor: '#422006', borderColor: '#facc15' }}
-                                        className="shrink-0 px-1.5 py-0.5 rounded border text-[10px] font-bold text-yellow-300"
-                                    >
-                                        {blocks[activeBlockIndex].stepNumber
-                                            ? `Step ${blocks[activeBlockIndex].stepNumber}/${blocks.filter(b => b.type !== 'heading').length}`
-                                            : `Active`}
-                                    </span>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Step / Statement Body with Real-Time Voice Highlighting */}
-                        {!isPaneCollapsed && (
-                            <div className="flex flex-col" style={{ backgroundColor: '#0f172a' }}>
-                                <div
-                                    ref={scrollContainerRef}
-                                    onScroll={handleUserScroll}
-                                    onWheel={handleUserScroll}
-                                    onTouchStart={handleUserScroll}
-                                    style={{ backgroundColor: '#0f172a' }}
-                                    className="p-3 text-xs text-slate-100 space-y-1.5 max-h-[52vh] overflow-y-auto custom-scrollbar select-text bg-slate-950"
-                                >
-                                    {/* Unified Initial AI Response Banner */}
-                                    {aiSolution?.speechResponse && (
-                                        <div className="mb-2 p-2.5 rounded-xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-indigo-950/80 border border-emerald-500/40 text-emerald-100 text-xs shadow-md">
-                                            <div className="flex items-center gap-1.5 font-bold text-[11px] text-emerald-400 uppercase tracking-wider mb-1">
-                                                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                                                <span>Initial Answer & Summary</span>
-                                            </div>
-                                            <div
-                                                className="leading-relaxed font-medium text-slate-100"
-                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(aiSolution.speechResponse) }}
-                                            />
-                                        </div>
                                     )}
 
-                                    {blocks.length > 0 ? (
-                                        blocks.map((block, idx) => {
-                                            const isActive = (idx === activeBlockIndex) && (isAiSpeaking || isAiPaused || isStepMode || clickedBlockIdx !== null);
-                                            const handleSelectStep = () => {
-                                                setClickedBlockIdx(idx);
-                                                if (typeof onGoToStep === 'function') {
-                                                    onGoToStep(idx, { rate: speechRate, shouldSpeak: true });
-                                                } else {
-                                                    onSpeak(block.spokenText || block.text, { rate: speechRate });
-                                                }
-                                            };
-
-                                            if (block.type === 'heading') {
-                                                return (
-                                                    <div
-                                                        id={`cc-block-${idx}`}
-                                                        key={block.id || idx}
-                                                        style={isActive ? { backgroundColor: '#422006', borderColor: '#facc15' } : undefined}
-                                                        className={`pt-2 pb-1 px-2 flex items-center gap-1.5 border-b transition-colors ${
-                                                            isActive
-                                                                ? 'border-yellow-400 text-yellow-300 rounded-lg'
-                                                                : 'border-slate-700 text-amber-300'
-                                                        }`}
-                                                    >
-                                                        <span
-                                                            className="text-[11px] font-bold uppercase tracking-wider"
-                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
-                                                        />
-                                                    </div>
-                                                );
-                                            }
-
-                                            if (block.type === 'formula') {
-                                                return (
-                                                    <div
-                                                        id={`cc-block-${idx}`}
-                                                        key={block.id || idx}
-                                                        onClick={handleSelectStep}
-                                                        style={{
-                                                            backgroundColor: isActive ? '#422006' : '#1e293b',
-                                                            borderColor: isActive ? '#facc15' : '#475569'
-                                                        }}
-                                                        className={`p-2 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
-                                                            isActive
-                                                                ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
-                                                                : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-100'
-                                                        }`}
-                                                        title="Click to jump to and hear this formula"
-                                                    >
-                                                        <div
-                                                            className="w-full min-w-0 leading-relaxed text-[12px]"
-                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
-                                                        />
-                                                    </div>
-                                                );
-                                            }
-
-                                            if (block.type === 'answer') {
-                                                return (
-                                                    <div
-                                                        id={`cc-block-${idx}`}
-                                                        key={block.id || idx}
-                                                        onClick={handleSelectStep}
-                                                        style={{
-                                                            backgroundColor: isActive ? '#422006' : '#064e3b',
-                                                            borderColor: isActive ? '#facc15' : '#10b981'
-                                                        }}
-                                                        className={`p-2.5 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
-                                                            isActive
-                                                                ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
-                                                                : 'bg-emerald-950 hover:border-yellow-400/70 border-emerald-500 text-emerald-100'
-                                                        }`}
-                                                        title="Click to jump to and hear final answer"
-                                                    >
-                                                        <div className="flex items-start gap-2">
-                                                            <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded border ${
-                                                                isActive
-                                                                    ? 'bg-yellow-400 text-slate-950 font-extrabold border-yellow-300'
-                                                                    : 'bg-emerald-700 text-emerald-100 border-emerald-500'
-                                                            }`}>
-                                                                {block.prefix || '✅'}
-                                                            </span>
-                                                            <div
-                                                                className="flex-1 min-w-0 leading-relaxed text-[12px] font-medium"
-                                                                dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-
-                                            if (block.type === 'mermaid') {
-                                                return (
-                                                    <div id={`cc-block-${idx}`} key={block.id || idx} className="my-1.5">
-                                                        <MermaidRenderer
-                                                            chart={block.text}
-                                                            title="Algorithmic / Architecture Flowchart"
-                                                            onInsertDiagram={onInsertDiagram}
-                                                        />
-                                                    </div>
-                                                );
-                                            }
-
-                                            if (block.type === 'code') {
-                                                const lang = (block.language || 'code').toUpperCase();
-                                                return (
-                                                    <div
-                                                        id={`cc-block-${idx}`}
-                                                        key={block.id || idx}
-                                                        className="my-2 rounded-xl border border-slate-700/80 bg-slate-950 overflow-hidden shadow-lg"
-                                                    >
-                                                        <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-[11px] font-mono">
-                                                            <div className="flex items-center gap-1.5 text-indigo-400 font-bold">
-                                                                <span>💻</span>
-                                                                <span>{lang} Implementation</span>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    navigator.clipboard.writeText(block.text);
-                                                                    toast.success(`${lang} code copied!`, { icon: '📋' });
-                                                                }}
-                                                                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-[10px] font-sans transition cursor-pointer"
-                                                            >
-                                                                Copy Code
-                                                            </button>
-                                                        </div>
-                                                        <pre className="p-3.5 font-mono leading-relaxed text-emerald-300 overflow-x-auto select-text whitespace-pre bg-slate-950 text-xs">
-                                                            <code>{block.text}</code>
-                                                        </pre>
-                                                    </div>
-                                                );
-                                            }
-
-                                            if (block.type === 'table') {
-                                                return (
-                                                    <div
-                                                        id={`cc-block-${idx}`}
-                                                        key={block.id || idx}
-                                                        className="my-2.5 rounded-xl border border-slate-700/80 bg-slate-950 overflow-hidden shadow-lg"
-                                                    >
-                                                        <div className="flex items-center justify-between px-3 py-2 bg-slate-900 border-b border-slate-800 text-[11px]">
-                                                            <div className="flex items-center gap-1.5 text-amber-400 font-bold">
-                                                                <span>📊</span>
-                                                                <span>Dry-Run Trace Table</span>
-                                                                <span className="text-[10px] text-slate-400 font-normal font-sans">
-                                                                    ({block.rows?.length || 0} rows)
-                                                                </span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                {typeof onInsertTable === 'function' && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => onInsertTable(block.text, { fontSize: 12 })}
-                                                                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 active:scale-95 text-amber-300 border border-amber-500/40 text-[11px] font-medium transition cursor-pointer flex items-center gap-1.5 shadow-xs"
-                                                                        title="Place this trace table directly onto the whiteboard with 12px font"
-                                                                    >
-                                                                        <span>📋</span>
-                                                                        <span>Place Table on Whiteboard</span>
-                                                                    </button>
-                                                                )}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        navigator.clipboard.writeText(block.text);
-                                                                        toast.success('Trace table Markdown copied!', { icon: '📋' });
-                                                                    }}
-                                                                    className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 text-[10px] transition cursor-pointer"
-                                                                    title="Copy raw table markdown"
-                                                                >
-                                                                    Copy
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                        <div className="overflow-x-auto max-h-[380px] p-2 bg-slate-950">
-                                                            <table className="w-full text-xs text-left border-collapse">
-                                                                <thead>
-                                                                    <tr className="bg-slate-800/90 text-amber-300 font-semibold border-b border-slate-700">
-                                                                        {block.headers.map((h, hIdx) => (
-                                                                            <th key={hIdx} className="px-3 py-2 text-center whitespace-nowrap border-r border-slate-700/60 last:border-r-0">
-                                                                                <span dangerouslySetInnerHTML={{ __html: renderFormattedText(h) }} />
-                                                                            </th>
-                                                                        ))}
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-slate-800 font-mono text-[11.5px]">
-                                                                    {block.rows.map((row, rIdx) => (
-                                                                        <tr
-                                                                            key={rIdx}
-                                                                            className={`transition ${
-                                                                                rIdx % 2 === 0 ? 'bg-slate-900/40 hover:bg-slate-800/40' : 'bg-slate-950 hover:bg-slate-800/40'
-                                                                            }`}
-                                                                        >
-                                                                            {row.map((cell, cIdx) => (
-                                                                                <td
-                                                                                    key={cIdx}
-                                                                                    className="px-3 py-2 text-center whitespace-nowrap text-slate-200 border-r border-slate-800/60 last:border-r-0"
-                                                                                >
-                                                                                    <span dangerouslySetInnerHTML={{ __html: renderFormattedText(cell) }} />
-                                                                                </td>
-                                                                            ))}
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-
-                                            return (
-                                                <div
-                                                    id={`cc-block-${idx}`}
-                                                    key={block.id || idx}
-                                                    onClick={handleSelectStep}
-                                                    style={{
-                                                        backgroundColor: isActive ? '#422006' : '#1e293b',
-                                                        borderColor: isActive ? '#facc15' : '#334155'
-                                                    }}
-                                                    className={`p-2 rounded-xl transition-all duration-200 border-2 cursor-pointer ${
-                                                        isActive
-                                                            ? 'border-yellow-400 text-yellow-50 ring-2 ring-yellow-400 shadow-lg'
-                                                            : 'bg-slate-900 hover:border-yellow-400/60 border-slate-700 text-slate-200'
-                                                    }`}
-                                                    title="Click to jump to and hear this step"
-                                                >
-                                                    <div className="flex items-start gap-2">
-                                                        <span className={`shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                                            isActive ? 'bg-yellow-400 text-slate-950 font-extrabold' : 'bg-slate-800 text-yellow-300'
-                                                        }`}>
-                                                            {block.prefix || '•'}
-                                                        </span>
-                                                        <div
-                                                            className="flex-1 min-w-0 leading-relaxed text-[12px]"
-                                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(block.text) }}
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div
-                                            className="leading-relaxed whitespace-pre-wrap select-text text-slate-100 text-[12px]"
-                                            dangerouslySetInnerHTML={{ __html: renderFormattedText(displayText) }}
-                                        />
-                                    )}
-
-                                    {/* Interactive Diagram Preview inside Solution Pane with One-Click Insert to Board */}
-                                    {Boolean(aiSolution?.diagram?.svg || aiSolution?.canvasAction?.svg || aiSolution?.diagramProps?.svg) && (() => {
-                                        const diagSvg = aiSolution?.diagram?.svg || aiSolution?.canvasAction?.svg || aiSolution?.diagramProps?.svg;
-                                        const diagTitle = aiSolution?.diagram?.title || aiSolution?.canvasAction?.title || 'Circuit / Schematic Diagram';
-                                        const diagCode = aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code || null;
-                                        return (
-                                            <div className="mt-2.5 rounded-xl border border-slate-700/80 bg-slate-900/90 overflow-hidden shadow-md">
-                                                <div className="flex items-center justify-between px-3 py-1.5 bg-slate-950/90 border-b border-slate-800">
-                                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
-                                                        <span>📊</span>
-                                                        <span>{diagTitle}</span>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (typeof onInsertDiagram === 'function') {
-                                                                onInsertDiagram(diagSvg, {
-                                                                    title: diagTitle,
-                                                                    code: diagCode,
-                                                                    width: 380,
-                                                                    height: 380
-                                                                });
-                                                            } else if (typeof onInsertToBoard === 'function') {
-                                                                onInsertToBoard(aiSolution);
-                                                            }
-                                                        }}
-                                                        className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-[10px] font-bold transition cursor-pointer shadow-xs"
-                                                        title="Insert this diagram onto the whiteboard canvas"
-                                                    >
-                                                        <span>➕</span>
-                                                        <span>Insert Diagram to Board</span>
-                                                    </button>
-                                                </div>
-                                                <div 
-                                                    className="w-full flex items-center justify-center bg-white p-3 overflow-auto max-h-64 [&_svg]:max-w-full [&_svg]:max-h-56 [&_svg]:h-auto shadow-inner"
-                                                    dangerouslySetInnerHTML={{ __html: diagSvg }}
-                                                />
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {/* Collapsible SchemDraw Python Code in 10px font under diagram / solution */}
-                                    {(aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code) && (
-                                        <div className="mt-2.5 rounded-xl border border-slate-700/80 bg-slate-900/90 overflow-hidden shadow-md">
-                                            <details className="group">
-                                                <summary className="flex items-center justify-between px-3 py-1.5 cursor-pointer bg-slate-950/90 hover:bg-slate-800/60 transition text-slate-300 hover:text-white select-none" style={{ fontSize: '10px' }}>
-                                                    <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold text-emerald-400">
-                                                        <span>🐍</span>
-                                                        <span>View Executed SchemDraw Python Code</span>
-                                                    </div>
-                                                    <span className="text-[10px] text-slate-400 font-mono group-open:rotate-180 transition-transform">▼</span>
-                                                </summary>
-                                                <div className="p-2.5 bg-slate-950 border-t border-slate-800/80 relative">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const codeStr = aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code || '';
-                                                            navigator.clipboard.writeText(codeStr);
-                                                            toast.success('Python code copied to clipboard!', { icon: '📋' });
-                                                        }}
-                                                        className="absolute top-2 right-2 px-1.5 py-0.5 text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded border border-slate-600 transition"
-                                                        title="Copy Python Code"
-                                                    >
-                                                        Copy
-                                                    </button>
-                                                    <pre className="font-mono text-[10px] leading-relaxed text-indigo-200 whitespace-pre overflow-x-auto max-h-52 pr-12" style={{ fontSize: '10px' }}>
-                                                        <code>{aiSolution?.diagram?.code || aiSolution?.schemdrawCode || aiSolution?.canvasAction?.code}</code>
-                                                    </pre>
-                                                </div>
-                                            </details>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Minimal Footer Actions + Follow-up Input */}
-                                <div
-                                    style={{ backgroundColor: '#1e293b' }}
-                                    className="px-3 py-2 border-t border-slate-700 bg-slate-900 flex flex-col gap-1.5"
-                                >
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        {onInsertToBoard && (
-                                            <button
-                                                type="button"
-                                                onClick={() => onInsertToBoard(aiSolution)}
-                                                className="px-2 py-0.5 rounded-md bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold text-[10px] transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                                title="Insert structured solution card onto canvas"
-                                            >
-                                                ✨ Insert to Board
-                                            </button>
-                                        )}
-                                        <button
-                                            type="button"
-                                            onClick={() => onInsertAsText(displayText)}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition cursor-pointer"
-                                        >
-                                            🔤 Insert as Text
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => onCreateStickyNote(displayText)}
-                                            className="px-2 py-0.5 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-600 text-[10px] font-medium transition"
-                                        >
-                                            📝 Sticky Note
-                                        </button>
-                                        {onOpenPhysicsSpace && (
-                                            <button
-                                                type="button"
-                                                onClick={onOpenPhysicsSpace}
-                                                className="px-2 py-0.5 rounded-md bg-indigo-900/60 hover:bg-indigo-800/80 text-indigo-200 hover:text-white border border-indigo-500/50 text-[10px] font-medium transition flex items-center gap-1 cursor-pointer"
-                                                title="Open interactive physics simulation laboratory"
-                                            >
-                                                ⚛️ Physics Lab
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    <form
-                                        onSubmit={(e) => {
-                                            e.preventDefault();
-                                            if (followUpInput.trim()) {
-                                                onExecuteCommand(followUpInput.trim(), { verbosity: responseVerbosity });
-                                                setFollowUpInput('');
+                                    <textarea
+                                        ref={composerInputRef}
+                                        rows={1}
+                                        value={composerText}
+                                        onChange={(e) => setComposerText(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                                e.preventDefault();
+                                                handleSendPrompt(e);
                                             }
                                         }}
-                                        className="flex items-center gap-1.5"
-                                    >
-                                        <input
-                                            type="text"
-                                            value={followUpInput}
-                                            onChange={(e) => setFollowUpInput(e.target.value)}
-                                            placeholder="Ask follow-up..."
-                                            style={{ backgroundColor: '#0f172a' }}
-                                            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-yellow-400"
-                                        />
+                                        placeholder={
+                                            activeMode === 'image' ? 'Describe the diagram or image to generate...'
+                                                : activeMode === 'web' ? 'Search the web for articles, citations & images...'
+                                                : activeMode === 'music' ? 'Describe a melody, scale, BPM or chord exercise...'
+                                                : activeMode === 'diagram' ? 'Describe the circuit, flowchart or UML diagram...'
+                                                : 'Ask anything, solve math, or paste/drop an image...'
+                                        }
+                                        className="flex-1 min-h-[36px] max-h-28 py-2 px-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-indigo-500 text-xs text-white placeholder-slate-400 focus:outline-none resize-none leading-snug custom-scrollbar"
+                                    />
+
+                                    {isGenerating ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsLocalGenerating(false);
+                                                onStopGeneration?.();
+                                            }}
+                                            className="w-9 h-9 rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shrink-0 transition cursor-pointer"
+                                            title="Stop generation"
+                                        >
+                                            <Square className="w-3.5 h-3.5 fill-current" />
+                                        </button>
+                                    ) : (
                                         <button
                                             type="submit"
-                                            disabled={!followUpInput.trim()}
-                                            className="px-2.5 py-1 rounded-lg bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 text-xs font-bold transition flex items-center gap-1"
+                                            disabled={!composerText.trim() && !scannedPreviewUrl && !attachedDocFile}
+                                            className="w-9 h-9 rounded-xl bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+                                            title="Send prompt"
                                         >
-                                            <Send className="w-3 h-3" />
+                                            <Send className="w-4 h-4" />
                                         </button>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-                        </>
-                        )}
-                    </div>
-                </div>
+                                    )}
+                                </form>
+                            </footer>
+                        </div>
+                    </aside>
+                </>
             )}
 
-            {/* 2. BOTTOM AI REQUEST & CLOSED CAPTIONS BAR — Supports Image Upload & Drag-and-Drop Question Scanning */}
-            {!isCcDismissed && isVisible && (isListening || Boolean(interimTranscript || transcript || feedback)) && (
+            {/* ─── 2. FLOATING LIVE CLOSED CAPTIONS BAR (when Drawer is Closed/Minimized during Voice/TTS) ── */}
+            {showFloatingCc && (
                 <div
-                    onDragOver={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsDraggingImage(true);
-                    }}
-                    onDragLeave={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setIsDraggingImage(false);
-                    }}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingImage(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingImage(false); }}
                     onDrop={handleDropImage}
                     onPaste={handlePasteImage}
-                    className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-xl w-[92%] sm:w-[540px] pointer-events-auto select-none transition-all duration-200 flex flex-col"
+                    className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[75] max-w-xl w-[92%] sm:w-[540px] pointer-events-auto select-none transition-all duration-200 flex flex-col"
                 >
-
                     {isMinimized ? (
-                        /* Minimized floating pill */
                         <div
                             onClick={() => setIsMinimized(false)}
                             className="mx-auto flex items-center justify-between gap-2.5 px-3.5 py-1.5 bg-slate-950/90 hover:bg-slate-900 border border-slate-700/80 rounded-full shadow-2xl cursor-pointer text-xs text-slate-200 backdrop-blur-md transition group"
@@ -2035,277 +2619,98 @@ export default function WhiteboardClosedCaptions({
                             <div className="flex items-center gap-2">
                                 <span className="relative flex h-2 w-2">
                                     {isListening && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
-                                    <span className={`relative inline-flex rounded-full h-2 w-2 ${isListening ? 'bg-emerald-500' : 'bg-slate-500'}`}></span>
+                                    <span className={`relative inline-flex rounded-full h-2 w-2 ${isListening ? 'bg-emerald-500' : 'bg-indigo-500'}`}></span>
                                 </span>
                                 <span className="font-semibold text-[11px] text-indigo-300">Voice AI</span>
                                 <span className="text-slate-400 text-[11px] truncate max-w-[200px]">
-                                    {isAiSpeaking ? '🔊 AI Speaking...' : isListening ? (interimTranscript || transcript || 'Listening...') : 'Voice AI'}
+                                    {isAiSpeaking ? '🔊 AI Speaking...' : isListening ? (interimTranscript || transcript || 'Listening...') : 'Open Captions'}
                                 </span>
                             </div>
-
                             <Maximize2 className="w-3 h-3 text-slate-400 group-hover:text-white" />
                         </div>
                     ) : (
-                        /* Full Bottom AI Request & Closed Captions Banner */
-                        <div className={`bg-slate-950/95 backdrop-blur-md border rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-150 ${
-                            isDraggingImage ? 'border-indigo-400 ring-2 ring-indigo-500/40' : 'border-slate-700/90'
-                        }`}>
-                            {/* Top Status Bar */}
+                        <div className="bg-slate-950/95 backdrop-blur-md border border-slate-700/90 rounded-2xl shadow-2xl overflow-hidden text-white flex flex-col">
                             <div className="px-3.5 py-1.5 bg-slate-900/90 border-b border-slate-800/80 flex items-center justify-between text-[11px]">
                                 <div className="flex items-center gap-2">
-                                    {isScanningImage ? (
-                                        <div className="flex items-center gap-1.5 text-indigo-400 font-semibold">
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>Scanning Image Question...</span>
-                                        </div>
-                                    ) : isAiSpeaking ? (
-                                        <div className="flex items-center gap-1.5 text-purple-400 font-semibold">
-                                            <Volume2 className="w-3.5 h-3.5 animate-pulse text-purple-400" />
-                                            <span>AI Speaking ({speechRate}x)</span>
-                                        </div>
-                                    ) : isAiThinking ? (
-                                        <div className="flex items-center gap-1.5 text-amber-400 font-semibold">
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                            <span>AI Solving...</span>
-                                        </div>
+                                    {isAiSpeaking ? (
+                                        <span className="flex items-center gap-1.5 text-purple-400 font-semibold">
+                                            <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+                                            AI Speaking ({speechRate}x)
+                                        </span>
                                     ) : isListening ? (
-                                        <div className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-                                            <span className="relative flex h-2 w-2">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                            </span>
-                                            <Mic className="w-3.5 h-3.5 text-emerald-400" />
-                                            <span>Microphone Active</span>
-                                        </div>
+                                        <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                                            <Mic className="w-3.5 h-3.5" />
+                                            Microphone Active
+                                        </span>
                                     ) : (
-                                        <div className="flex items-center gap-1.5 text-slate-400">
-                                            <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                                            <span className="font-medium text-slate-300">Voice AI</span>
-                                        </div>
+                                        <span className="text-indigo-300 font-medium">Live Captions</span>
                                     )}
                                 </div>
-
-                                {/* Controls: Stop Speech, Edit Toggle (Pencil), Minimize, Close */}
                                 <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => onOpenAiSolution?.()}
+                                        className="px-2 py-0.5 rounded bg-indigo-600/80 hover:bg-indigo-500 text-white text-[10px] font-semibold transition"
+                                        title="Open full AI Chat Drawer"
+                                    >
+                                        Open Chat
+                                    </button>
                                     {isAiSpeaking && (
-                                        <button
-                                            type="button"
-                                            onClick={onStopSpeaking}
-                                            className="p-1 rounded text-rose-300 hover:text-white hover:bg-rose-500/30 transition border border-rose-500/30"
-                                            title="Mute Speech Output"
-                                        >
+                                        <button type="button" onClick={onStopSpeaking} className="p-1 rounded text-rose-300 hover:bg-rose-500/20" title="Mute Speech">
                                             <VolumeX className="w-3.5 h-3.5" />
                                         </button>
                                     )}
-
-                                    {/* Edit / Type Toggle with Tooltip */}
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setIsEditing(prev => !prev);
-                                            if (!editText && transcript) setEditText(transcript);
-                                        }}
-                                        className={`p-1 rounded transition border ${
-                                            isEditing
-                                                ? 'bg-indigo-600 text-white border-indigo-400'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-800 border-transparent hover:border-slate-700'
-                                        }`}
-                                        title={isEditing ? 'Close input' : 'Edit or type question'}
-                                    >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsMinimized(true)}
-                                        className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                                        title="Minimize"
-                                    >
+                                    <button type="button" onClick={() => setIsMinimized(true)} className="p-1 rounded text-slate-400 hover:text-white" title="Minimize">
                                         <Minimize2 className="w-3.5 h-3.5" />
                                     </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setIsCcDismissed(true);
-                                            if (typeof onClose === 'function') onClose();
-                                        }}
-                                        className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition"
-                                        title="Close"
-                                    >
+                                    <button type="button" onClick={() => setIsCcDismissed(true)} className="p-1 rounded text-slate-400 hover:text-white" title="Dismiss">
                                         <X className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Drag-and-drop overlay indicator */}
-                            {isDraggingImage && (
-                                <div className="px-4 py-3 bg-indigo-950/90 border-b border-indigo-500/40 flex items-center justify-center gap-2 text-xs text-indigo-200 font-semibold">
-                                    <Upload className="w-4 h-4 text-indigo-400 animate-bounce" />
-                                    <span>Drop image here to scan the question</span>
-                                </div>
-                            )}
-
-                            {/* Main Closed Captions / AI Request Input Area */}
-                            <div className="px-4 py-2.5 min-h-[48px] max-h-32 overflow-y-auto custom-scrollbar flex flex-col justify-center">
-                                {isEditing ? (
+                            <div className="px-4 py-2.5 text-xs">
+                                {isCcEditing ? (
                                     <form
-                                        onSubmit={handleFormSubmit}
-                                        className="flex items-center gap-1.5 w-full my-0.5"
+                                        onSubmit={(e) => {
+                                            e.preventDefault();
+                                            if (ccEditText.trim()) {
+                                                onExecuteCommand(ccEditText.trim(), { verbosity: responseVerbosity });
+                                                setIsCcEditing(false);
+                                                onOpenAiSolution?.();
+                                            }
+                                        }}
+                                        className="flex items-center gap-1.5"
                                     >
-                                        {/* Retained Single Scan Image Button */}
-                                        <button
-                                            type="button"
-                                            onClick={() => fileInputRef.current?.click()}
-                                            disabled={isScanningImage}
-                                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-indigo-300 border border-slate-700 shrink-0 transition"
-                                            title="Scan or upload question image"
-                                        >
-                                            {isScanningImage ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" /> : <ImageIcon className="w-3.5 h-3.5" />}
-                                        </button>
-
-                                        {/* Compact Image Chip if image is attached */}
-                                        {scannedPreviewUrl && (
-                                            <div className="relative shrink-0 flex items-center">
-                                                <img
-                                                    src={scannedPreviewUrl}
-                                                    alt="Attached question"
-                                                    className="h-7 w-7 object-cover rounded-md border border-indigo-500/70 shadow-sm"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setScannedPreviewUrl(null);
-                                                        setScannedDataUrl(null);
-                                                        setScannedFile(null);
-                                                    }}
-                                                    className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full flex items-center justify-center text-[9px] shadow"
-                                                    title="Remove image"
-                                                >
-                                                    <X className="w-2.5 h-2.5" />
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {(!isTextEditing && editText.trim()) ? (
-                                            <div
-                                                onClick={() => {
-                                                    setIsTextEditing(true);
-                                                    setTimeout(() => {
-                                                        editInputRef.current?.focus();
-                                                    }, 40);
-                                                }}
-                                                className="flex-1 bg-slate-900 hover:bg-slate-900/90 border border-indigo-500/80 hover:border-indigo-400 rounded-lg px-2.5 py-1 text-xs text-white cursor-text flex items-center justify-between gap-2 overflow-x-auto select-text"
-                                                title="Click anywhere to edit"
-                                            >
-                                                <div
-                                                    className="truncate min-w-0"
-                                                    dangerouslySetInnerHTML={{ __html: renderFormattedText(editText) }}
-                                                />
-                                                <span className="text-[10px] text-slate-400 flex items-center gap-0.5 shrink-0 opacity-70 pointer-events-none">
-                                                    <Pencil className="w-2.5 h-2.5" />
-                                                    <span>Edit</span>
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <input
-                                                ref={editInputRef}
-                                                type="text"
-                                                value={editText}
-                                                onChange={(e) => setEditText(e.target.value)}
-                                                onPaste={handlePasteImage}
-                                                onBlur={() => {
-                                                    if (editText.trim()) {
-                                                        setIsTextEditing(false);
-                                                    }
-                                                }}
-                                                placeholder={
-                                                    isScanningImage
-                                                        ? 'Scanning image for question...'
-                                                        : scannedPreviewUrl
-                                                            ? 'Enter optional instructions, or press Enter to solve image...'
-                                                            : 'Type question, or paste an image...'
-                                                }
-                                                autoFocus
-                                                className="flex-1 bg-slate-900 border border-indigo-500/80 rounded-lg px-2.5 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                                            />
-                                        )}
-
-                                        <button
-                                            type="submit"
-                                            disabled={(!editText.trim() && !scannedPreviewUrl) || isScanningImage}
-                                            className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1 shrink-0"
-                                            title="Send to AI"
-                                        >
-                                            <Send className="w-3 h-3" />
-                                            <span>Send</span>
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsEditing(false)}
-                                            className="p-1 text-slate-400 hover:text-white rounded shrink-0"
-                                            title="Close"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
+                                        <input
+                                            type="text"
+                                            value={ccEditText}
+                                            onChange={(e) => setCcEditText(e.target.value)}
+                                            className="flex-1 bg-slate-900 border border-indigo-500/70 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none"
+                                            autoFocus
+                                        />
+                                        <button type="submit" className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold">Ask</button>
+                                        <button type="button" onClick={() => setIsCcEditing(false)} className="p-1 text-slate-400"><X className="w-3.5 h-3.5" /></button>
                                     </form>
                                 ) : isAiSpeaking && aiSpeakingText ? (
-                                    <div className="text-purple-200 text-xs sm:text-sm font-medium leading-snug truncate">
-                                        <span className="text-purple-400 font-bold mr-1.5">🔊 AI Tutor:</span>
-                                        <span>{aiSpeakingText}</span>
-                                    </div>
-                                ) : isAiThinking ? (
-                                    <div className="text-amber-200/90 text-xs sm:text-sm italic flex items-center gap-2">
-                                        <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
-                                        <span>Interpreting request and calculating solution...</span>
+                                    <div className="text-purple-200 font-medium truncate">
+                                        <span className="text-purple-400 font-bold mr-1.5">🔊</span>
+                                        {aiSpeakingText}
                                     </div>
                                 ) : interimTranscript || transcript ? (
-                                    <div
-                                        onClick={() => {
-                                            setIsEditing(true);
-                                            setEditText(transcript || interimTranscript);
-                                        }}
-                                        className="text-xs sm:text-sm leading-snug cursor-pointer group flex items-center justify-between"
-                                        title="Click to edit or correct this text"
-                                    >
+                                    <div onClick={() => { setIsCcEditing(true); setCcEditText(transcript || interimTranscript); }} className="cursor-pointer flex items-center justify-between">
                                         <div>
-                                            {transcript && (
-                                                <span className="text-white font-medium mr-1.5">{transcript}</span>
-                                            )}
-                                            {interimTranscript && (
-                                                <span className="text-cyan-300 italic opacity-90 animate-pulse">
-                                                    {interimTranscript}...
-                                                </span>
-                                            )}
+                                            {transcript && <span className="text-white mr-1.5">{transcript}</span>}
+                                            {interimTranscript && <span className="text-cyan-300 italic animate-pulse">{interimTranscript}...</span>}
                                         </div>
-                                        <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1.5" />
+                                        <Pencil className="w-3 h-3 text-slate-500 ml-2 shrink-0" />
                                     </div>
-                                ) : (feedback && !aiSolution?.solutionMarkdown && !aiSolution?.speechResponse) ? (
-                                    <div className="text-xs sm:text-sm font-medium text-emerald-300 flex items-center gap-2">
-                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                ) : feedback ? (
+                                    <div className="text-emerald-300 flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                                         <span>{feedback}</span>
                                     </div>
-                                ) : (
-                                    <div
-                                        onClick={() => setIsEditing(true)}
-                                        className="text-xs text-slate-400 italic cursor-pointer hover:text-slate-300 flex items-center justify-between group"
-                                        title="Click to type or drop an image"
-                                    >
-                                        <span>{isListening ? 'Speak a command, type a question, or drag & drop an image...' : 'Click to type a question, or drag & drop / upload an image to scan & solve.'}</span>
-                                        <Pencil className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition shrink-0 ml-1.5" />
-                                    </div>
-                                )}
-
-                                {/* Recent Feedback Pill (if different from speech and not already in solution pane) */}
-                                {feedback && (transcript || interimTranscript || isAiSpeaking) && !aiSolution?.solutionMarkdown && !aiSolution?.speechResponse && (
-                                    <div className="mt-1.5 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-emerald-400 font-medium">
-                                        <span className="flex items-center gap-1.5">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                                            {feedback}
-                                        </span>
-                                    </div>
-                                )}
+                                ) : null}
                             </div>
                         </div>
                     )}

@@ -2409,6 +2409,80 @@ Output MUST be ONLY valid JSON matching this schema:
                 };
                 break;
 
+            case 'whiteboard_crossword':
+                systemPrompt = `You are a STEM & classroom crossword puzzle creator.
+Generate a clean educational crossword word list for topic: "${prompt || context.topic || 'Science & Mathematics'}".
+Difficulty: ${context.difficulty || 'standard'}
+Target entries: ${context.count || 10}
+
+STRICT RULES:
+1. Every "word" MUST contain ONLY uppercase English letters A-Z (no spaces, hyphens, numbers, or punctuation), length 3 to 12 characters.
+2. Ensure words share common vowels/consonants so they can intersect on a grid.
+3. Keep every clue concise (under 14 words) and classroom-accurate.
+4. Output ONLY valid JSON matching:
+{
+  "topic": "Topic Title",
+  "entries": [
+    { "word": "FORCE", "clue": "Mass times acceleration (Newton's second law)" },
+    { "word": "ORBIT", "clue": "Curved path of a planet around a star" }
+  ]
+}`;
+                fallbackFn = () => ({
+                    topic: prompt ? prompt.trim() : (context.topic || 'General STEM'),
+                    entries: [
+                        { word: 'ENERGY', clue: 'Capacity of a system to perform work' },
+                        { word: 'VECTOR', clue: 'Quantity having both magnitude and direction' },
+                        { word: 'ATOM', clue: 'Smallest unit of an element retaining properties' },
+                        { word: 'ORBIT', clue: 'Curved gravitational path around a body' },
+                        { word: 'PRISM', clue: 'Optical glass shape that disperses light' },
+                        { word: 'GRAPH', clue: 'Visual plot relating variables on axes' },
+                        { word: 'FORCE', clue: 'Interaction that changes motion of mass' },
+                        { word: 'CELL', clue: 'Basic structural unit of living organisms' }
+                    ]
+                });
+                break;
+
+            case 'whiteboard_music':
+                systemPrompt = `You are an interactive classroom music composer and theory tutor.
+Compose a short playable classroom melody & harmony notation for: "${prompt || 'C major warmup arpeggio'}".
+
+REQUIREMENTS:
+1. Use standard scientific pitch notation (e.g. "C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5", "F#4", "Bb4") or "REST".
+2. Include duration in beats (0.5, 1, 1.5, 2, 4) for 8 to 16 notes, tempo BPM (70 to 140), timeSignature ("4/4" or "3/4"), and keySignature (e.g. "C Major").
+3. Output ONLY valid JSON matching:
+{
+  "title": "Descriptive Melody Title",
+  "tempo": 104,
+  "timeSignature": "4/4",
+  "keySignature": "C Major",
+  "chords": ["C", "F", "G7", "C"],
+  "description": "Concise 1-2 sentence musical explanation",
+  "notes": [
+    { "pitch": "C4", "duration": 1 },
+    { "pitch": "E4", "duration": 1 }
+  ]
+}`;
+                fallbackFn = () => ({
+                    title: prompt ? `${prompt.trim().slice(0, 42)}` : 'C Major Classroom Warmup',
+                    tempo: 108,
+                    timeSignature: '4/4',
+                    keySignature: 'C Major',
+                    chords: ['C', 'G', 'Am', 'F', 'C'],
+                    description: 'Balanced 8-note C major arpeggio and stepwise resolution ready for classroom playback and staff stamping.',
+                    notes: [
+                        { pitch: 'C4', duration: 1 },
+                        { pitch: 'E4', duration: 1 },
+                        { pitch: 'G4', duration: 1 },
+                        { pitch: 'C5', duration: 1 },
+                        { pitch: 'B4', duration: 0.5 },
+                        { pitch: 'A4', duration: 0.5 },
+                        { pitch: 'G4', duration: 1 },
+                        { pitch: 'E4', duration: 1 },
+                        { pitch: 'C4', duration: 1 }
+                    ]
+                });
+                break;
+
             case 'voice_command':
             default:
                 return this.executeVoiceCommand(prompt, context);
@@ -10666,6 +10740,97 @@ REQUIREMENTS:
             provider: res.provider,
             model: res.model,
             diagram: parsed
+        };
+    }
+
+    /**
+     * Generate a visual educational image for the whiteboard chatbot:
+     * tries Gemini native image generation first when key is configured, and falls back
+     * seamlessly to custom vector SVG illustration generation so image creation never dead-ends.
+     */
+    async generateWhiteboardImage({ prompt, style = 'clean educational illustration', provider = 'auto' }) {
+        if (!prompt || !prompt.trim()) {
+            throw new Error('Image prompt is required');
+        }
+        const cleanPrompt = prompt.trim();
+        await this.ensureConfigLoaded?.();
+
+        const keyToUse = this.geminiKey ? this.geminiKey.trim() : '';
+        if (keyToUse && provider !== 'groq') {
+            const imageModels = [
+                'gemini-2.0-flash-exp-image-generation',
+                'gemini-2.0-flash-preview-image-generation'
+            ];
+            for (const m of imageModels) {
+                try {
+                    const restRes = await axios.post(
+                        `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${keyToUse}`,
+                        {
+                            contents: [{
+                                role: 'user',
+                                parts: [{
+                                    text: `Create a high-clarity, classroom-ready ${style} of: ${cleanPrompt}. Clean composition, legible labels if needed, no watermarks.`
+                                }]
+                            }],
+                            generationConfig: {
+                                responseModalities: ['IMAGE', 'TEXT']
+                            }
+                        },
+                        { timeout: 45000 }
+                    );
+                    const parts = restRes.data?.candidates?.[0]?.content?.parts || [];
+                    const imgPart = parts.find(p => p.inlineData?.data);
+                    const textPart = parts.find(p => typeof p.text === 'string' && p.text.trim());
+                    if (imgPart?.inlineData?.data) {
+                        const mimeType = imgPart.inlineData.mimeType || 'image/png';
+                        return {
+                            provider: 'gemini',
+                            model: m,
+                            isVectorFallback: false,
+                            mimeType,
+                            imageDataUrl: `data:${mimeType};base64,${imgPart.inlineData.data}`,
+                            caption: textPart?.text?.trim() || cleanPrompt,
+                            title: cleanPrompt.slice(0, 64)
+                        };
+                    }
+                } catch (imgErr) {
+                    console.warn(`[AIService] Gemini image model ${m} fallback:`, imgErr.message?.slice(0, 90));
+                }
+            }
+        }
+
+        // Resilient SVG Vector Illustration fallback (also works with Groq / other text LLMs)
+        const svgPrompt = `Create a vivid, publication-quality educational vector SVG illustration for: "${cleanPrompt}".
+Style: ${style}.
+Requirements:
+- Return ONLY JSON: { "title": "...", "caption": "...", "svg": "<svg viewBox=\\"0 0 512 384\\" width=\\"100%\\" height=\\"100%\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>" }
+- Use rich layered shapes, gradients (<defs>), balanced classroom palette, clear annotations, and readable typography.`;
+        const res = await this.executeChatCompletion({
+            messages: [{ role: 'user', content: svgPrompt }],
+            systemPrompt: 'You are an expert educational SVG illustrator. Output ONLY valid JSON.',
+            preferredProvider: provider || 'auto',
+            temperature: 0.25,
+            jsonMode: true
+        });
+        const parsed = this.parseJSONResponse(res.text || '{}') || {};
+        let svg = parsed.svg || '';
+        if (!svg) {
+            const match = (res.text || '').match(/<svg[\s\S]*?<\/svg>/i);
+            svg = match ? match[0] : '';
+        }
+        if (!svg) {
+            throw new Error('Could not generate an illustration for that prompt.');
+        }
+        const imageDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        return {
+            provider: res.provider,
+            model: res.model,
+            isVectorFallback: true,
+            mimeType: 'image/svg+xml',
+            svg,
+            imageDataUrl,
+            caption: parsed.caption || cleanPrompt,
+            title: parsed.title || cleanPrompt.slice(0, 64)
         };
     }
 }

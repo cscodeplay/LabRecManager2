@@ -663,6 +663,33 @@ router.post('/generate-diagram', authenticate, asyncHandler(async (req, res) => 
 }));
 
 /**
+ * @route   POST /api/ai/generate-image
+ * @desc    Generate AI educational illustration (Gemini raster image or vector SVG fallback)
+ * @access  Public / Optional Auth
+ */
+router.post('/generate-image', optionalAuth, asyncHandler(async (req, res) => {
+    const { prompt, style = 'clean educational illustration', provider = 'auto' } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+        return res.status(400).json({ success: false, message: 'Image prompt is required' });
+    }
+
+    try {
+        const result = await aiService.generateWhiteboardImage({ prompt, style, provider });
+        res.json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        console.error('[AI Route] Generate image error:', err.message);
+        res.status(500).json({
+            success: false,
+            message: err.message || 'Image generation failed'
+        });
+    }
+}));
+
+/**
  * @route   GET /api/ai/mcp-status
  * @desc    Get live status of commercial-safe open source MCP servers and available tools
  * @access  Public / Optional Auth
