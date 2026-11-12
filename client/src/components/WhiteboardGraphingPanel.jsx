@@ -902,28 +902,9 @@ export default function WhiteboardGraphingPanel({
     const isQuizSideOpen = leftSiderollMode === 'partial';
     const leftOffsetClass = isQuizSideOpen ? 'left-[456px]' : 'left-3';
 
-    // If closed, render a minimal launcher pill on the left side of the whiteboard
+    // If closed, do not render a persistent floating widget (opened on-demand from the STEM Suite toolbar)
     if (!isVisible) {
-        return (
-            <button
-                type="button"
-                onClick={() => {
-                    setIsVisible(true);
-                    setIsCollapsed(false);
-                }}
-                style={{ backgroundColor: '#0f172a' }}
-                className={`fixed bottom-24 ${leftOffsetClass} z-40 px-3 py-2 rounded-xl border-2 border-slate-700 hover:border-yellow-400 text-slate-100 shadow-2xl flex items-center gap-2 text-xs font-bold transition-all duration-300 pointer-events-auto`}
-                title="Open Interactive 2D/3D Graphing Panel"
-            >
-                <Grid className="w-4 h-4 text-yellow-400" />
-                <span>Graph</span>
-                {equations.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-yellow-400 text-slate-950 text-[10px] font-extrabold">
-                        {equations.length}
-                    </span>
-                )}
-            </button>
-        );
+        return null;
     }
 
     // If collapsed, render a compact vertical/horizontal header pill on the left side

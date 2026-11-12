@@ -107,11 +107,36 @@ export const ArgonFlashcardsIcon = createFluentToolIcon('ArgonFlashcardsIcon', '
 export const ArgonStemSuiteIcon = createFluentToolIcon('ArgonStemSuiteIcon', 'fluent-color:library-24', 'fluent:shapes-24-regular');
 
 // 9. Media, Browser, Slideshow, Curtain & Recorder
+export const YouTubeBrandIcon = React.forwardRef(({ className = 'w-5 h-5', size, style, ...rest }, ref) => {
+    const dimStyle = size ? { width: size, height: size, ...style } : style;
+    return (
+        <span
+            ref={ref}
+            className={`inline-flex items-center justify-center shrink-0 leading-none ${size ? '' : className}`}
+            style={dimStyle}
+            {...rest}
+        >
+            <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true" className="shrink-0 select-none">
+                <path
+                    fill="#FF0000"
+                    d="M22.54 6.42a2.78 2.78 0 0 0-1.94-1.96C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 1.96A29 29 0 0 0 1 12a29 29 0 0 0 .46 5.58 2.78 2.78 0 0 0 1.94 1.96C5.12 20 12 20 12 20s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-1.96A29 29 0 0 0 23 12a29 29 0 0 0-.46-5.58z"
+                />
+                <polygon fill="#FFFFFF" points="9.75 15.02 15.5 12 9.75 8.98 9.75 15.02" />
+            </svg>
+        </span>
+    );
+});
+YouTubeBrandIcon.displayName = 'YouTubeBrandIcon';
+
 export const ArgonBrowserIcon = createFluentToolIcon('ArgonBrowserIcon', 'fluent-color:globe-24', 'fluent:panel-right-24-regular');
 export const ArgonMediaIcon = createFluentToolIcon('ArgonMediaIcon', 'fluent-color:video-24', 'fluent:filmstrip-play-24-regular');
-export const ArgonYoutubeIcon = createFluentToolIcon('ArgonYoutubeIcon', 'fluent:movies-and-tv-24-filled', 'fluent:movies-and-tv-24-regular', 'text-rose-500');
+export const ArgonYoutubeIcon = YouTubeBrandIcon;
 export const ArgonImageIcon = createFluentToolIcon('ArgonImageIcon', 'fluent-color:image-24', 'fluent:draw-shape-24-regular');
 export const ArgonDocumentIcon = createFluentToolIcon('ArgonDocumentIcon', 'fluent-color:document-text-24', 'fluent:note-24-regular');
+export const ArgonPdfBookIcon = createFluentToolIcon('ArgonPdfBookIcon', 'fluent-color:book-open-24', 'fluent:book-open-24-regular');
+export const ArgonCloudUploadIcon = createFluentToolIcon('ArgonCloudUploadIcon', 'fluent-color:arrow-square-down-24', 'fluent:arrow-upload-24-regular');
+export const ArgonMicColorIcon = createFluentToolIcon('ArgonMicColorIcon', 'fluent-color:mic-24', 'fluent:mic-24-regular');
+export const ArgonLinkColorIcon = createFluentToolIcon('ArgonLinkColorIcon', 'fluent-color:link-multiple-24', 'fluent:link-24-regular');
 export const ArgonCodeIcon = createFluentToolIcon('ArgonCodeIcon', 'fluent-color:code-block-24', 'fluent:flowchart-24-regular');
 export const ArgonTemplatesIcon = createFluentToolIcon('ArgonTemplatesIcon', 'fluent-color:design-ideas-24', 'fluent:wand-24-regular');
 export const ArgonSlideshowIcon = createFluentToolIcon('ArgonSlideshowIcon', 'fluent-color:slide-text-sparkle-24', 'fluent:filmstrip-play-24-regular');

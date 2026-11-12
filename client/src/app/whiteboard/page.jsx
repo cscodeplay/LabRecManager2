@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { 
     ArrowLeft, Pencil, Users, Share2, Video, VideoOff, Plus, Trash2, Copy, 
     Image as ImageIcon, Edit3, LayoutGrid, List, ChevronLeft, ChevronRight, 
-    ArrowUpDown, ArrowUp, ArrowDown 
+    ArrowUpDown, ArrowUp, ArrowDown, Camera 
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 import io from 'socket.io-client';
 import Whiteboard from '@/components/Whiteboard';
 import WhiteboardShareModal from '@/components/WhiteboardShareModal';
-import CameraOverlay from '@/components/CameraOverlay';
+import WhiteboardPagesGridModal from '@/components/WhiteboardPagesGridModal';
 import CollaborationSuiteTabs from '@/components/CollaborationSuiteTabs';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import api from '@/lib/api';
@@ -44,9 +44,11 @@ export default function WhiteboardPage() {
     const [sortField, setSortField] = useState('lastOpenedAt'); // 'lastOpenedAt' | 'title' | 'sizeBytes' | 'pageCount'
     const [sortDirection, setSortDirection] = useState('desc'); // 'asc' | 'desc'
     const [previewPages, setPreviewPages] = useState({}); // { [fileId]: number }
+    const [gridModalFile, setGridModalFile] = useState(null);
+    const [initialPage, setInitialPage] = useState(0);
 
-    // Camera state
-    const [showCamera, setShowCamera] = useState(false);
+    // Screen, Video & Mic Recording Studio State (invoked by top-left button & toolbar)
+    const [showRecorderPanel, setShowRecorderPanel] = useState(false);
 
     // Socket ref
     const socketRef = useRef(null);
@@ -435,8 +437,8 @@ export default function WhiteboardPage() {
         const isCurrentBoardShared = isSharing && sharedFileId === activeFileId;
 
         return (
-            <div className="h-[100dvh] w-screen bg-slate-100 flex flex-col overflow-hidden relative touch-none select-none overscroll-none whiteboard-workspace-root">
-                {/* Top-Left Icon-Only Navigation, Camera & Live Status Cluster */}
+            <div className="h-[100dvh] w-full min-w-0 max-w-full bg-slate-100 flex flex-col overflow-hidden relative touch-none select-none overscroll-none whiteboard-workspace-root">
+                {/* Top-Left Icon-Only Navigation, Recorder Studio & Live Status Cluster */}
                 <div className="absolute top-2.5 left-3 z-30 flex items-center gap-2">
                     <button 
                         type="button"
@@ -453,15 +455,15 @@ export default function WhiteboardPage() {
                     </button>
                     <button
                         type="button"
-                        onClick={() => setShowCamera(!showCamera)}
-                        className={`w-9 h-9 rounded-xl font-medium transition flex items-center justify-center shadow-md border ${showCamera
-                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500'
+                        onClick={() => setShowRecorderPanel(prev => !prev)}
+                        className={`w-9 h-9 rounded-xl font-medium transition flex items-center justify-center shadow-md border ${showRecorderPanel
+                            ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-500 shadow-rose-500/30'
                             : 'bg-white/95 hover:bg-white text-slate-700 border-slate-200/80'
                             }`}
-                        title={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
-                        aria-label={showCamera ? 'Turn Camera Off' : 'Turn Camera On'}
+                        title={showRecorderPanel ? 'Close Screen/Audio Recording Studio' : 'Open Screen & Audio Recording Studio'}
+                        aria-label={showRecorderPanel ? 'Close Screen Recording Studio' : 'Open Screen Recording Studio'}
                     >
-                        {showCamera ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
+                        <Camera className="w-4 h-4" />
                     </button>
                     {isCurrentBoardShared ? (
                         <span
@@ -484,9 +486,9 @@ export default function WhiteboardPage() {
                     ) : null}
                 </div>
 
-                {/* Whiteboard Area */}
-                <main className="flex-1 overflow-hidden p-0 flex items-center justify-center touch-none select-none overscroll-none">
-                    <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-100 flex items-center justify-center' : 'w-full h-full'}`}>
+                {/* Whiteboard Area (Full-bleed responsive canvas with zero iPad half-screen clipping) */}
+                <main className="flex-1 w-full min-w-0 h-full overflow-hidden p-0 flex items-center justify-center touch-none select-none overscroll-none">
+                    <div className={`${isFullscreen ? 'fixed inset-0 z-[9999] bg-slate-100 flex items-center justify-center' : 'w-full h-full min-w-0'}`}>
                         <Whiteboard
                             width={1920}
                             height={1080}
@@ -506,6 +508,9 @@ export default function WhiteboardPage() {
                             socket={socketRef.current}
                             sessionId={isCurrentBoardShared ? sessionId : `personal_${user?.id}_${activeFileId}`}
                             whiteboardId={activeFileId}
+                            initialPage={initialPage}
+                            externalShowRecorder={showRecorderPanel}
+                            onRecorderVisibilityChange={setShowRecorderPanel}
                         />
                     </div>
                 </main>
@@ -520,15 +525,6 @@ export default function WhiteboardPage() {
                     onStartSharing={handleStartSharing}
                     onStopSharing={handleStopSharing}
                     onUpdatePermissions={handleUpdatePermissions}
-                />
-
-                {/* Camera Overlay */}
-                <CameraOverlay
-                    isOpen={showCamera}
-                    onClose={() => setShowCamera(false)}
-                    socket={socketRef.current}
-                    sessionId={sessionId}
-                    isInstructor={true}
                 />
             </div>
         );
@@ -642,6 +638,20 @@ export default function WhiteboardPage() {
                                                 LIVE
                                             </div>
                                         )}
+
+                                        {/* Icon-Only Grid Layout View & Reorder Pages */}
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setGridModalFile(file);
+                                            }}
+                                            className="absolute top-2 right-2 z-20 w-7 h-7 rounded-lg bg-slate-900/70 hover:bg-slate-900 text-white shadow-md flex items-center justify-center transition-all opacity-85 hover:opacity-100 hover:scale-105"
+                                            title="Grid Layout View & Reorder Pages"
+                                            aria-label="Grid Layout View and Reorder Pages"
+                                        >
+                                            <LayoutGrid className="w-3.5 h-3.5" />
+                                        </button>
 
                                         {/* Multi-page Left Arrow */}
                                         {totalPagesCount > 1 && (
@@ -944,6 +954,18 @@ export default function WhiteboardPage() {
                                                     ) : (
                                                         <div className="flex items-center justify-end gap-1 text-slate-500">
                                                             <button 
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setGridModalFile(file);
+                                                                }}
+                                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
+                                                                title="Grid Layout View & Reorder Pages"
+                                                                aria-label="Grid Layout View and Reorder Pages"
+                                                            >
+                                                                <LayoutGrid className="w-4 h-4" />
+                                                            </button>
+                                                            <button 
                                                                 onClick={() => setActiveFileId(file.id)}
                                                                 className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
                                                                 title="Open Whiteboard"
@@ -983,6 +1005,22 @@ export default function WhiteboardPage() {
                     </div>
                 )}
             </main>
+
+            {/* Icon-Only Grid Layout View & Reorder Pages Modal */}
+            <WhiteboardPagesGridModal
+                isOpen={Boolean(gridModalFile)}
+                file={gridModalFile}
+                onClose={() => setGridModalFile(null)}
+                onSelectPage={(fileId, pageIdx) => {
+                    setInitialPage(pageIdx);
+                    setActiveFileId(fileId);
+                    setGridModalFile(null);
+                }}
+                onFileUpdated={(updatedFile) => {
+                    setFiles(prev => prev.map(f => f.id === updatedFile.id ? { ...f, ...updatedFile } : f));
+                    setGridModalFile(updatedFile);
+                }}
+            />
         </div>
     );
 }

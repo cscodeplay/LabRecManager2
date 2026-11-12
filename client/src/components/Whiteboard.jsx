@@ -18,7 +18,7 @@ import {
     ChevronUp, ChevronsUp, ChevronsDown, FileText, Check, Pause, Play, RotateCcw, Globe, Music,
     Underline, Bold, Italic, Shapes, Database, MessageSquare, Sigma, Calculator, Layers, ScanText,
     ZoomIn, ZoomOut, BookOpen, Gamepad2, Bot, Atom, MoreHorizontal, Hand, Table,
-    FileSpreadsheet, Link as LinkIcon
+    FileSpreadsheet, Link as LinkIcon, LayoutGrid, GripVertical
 } from 'lucide-react';
 import fixWebmDuration from 'fix-webm-duration';
 import katex from 'katex';
@@ -113,8 +113,13 @@ import {
     ArgonBrowserIcon,
     ArgonMediaIcon,
     ArgonYoutubeIcon,
+    YouTubeBrandIcon,
     ArgonImageIcon,
     ArgonDocumentIcon,
+    ArgonPdfBookIcon,
+    ArgonCloudUploadIcon,
+    ArgonMicColorIcon,
+    ArgonLinkColorIcon,
     ArgonCodeIcon,
     ArgonTemplatesIcon,
     ArgonSlideshowIcon,
@@ -151,6 +156,7 @@ const RightTriangleIcon = (props) => <FluentToolIcon icon="fluent:binder-triangl
 const BroomIcon = ArgonBroomIcon;
 const YoutubeIcon = ArgonYoutubeIcon;
 import api, { aiAPI } from '@/lib/api';
+import { reorderWhiteboardPagesState } from '@/lib/whiteboardPageUtils';
 import { toast } from 'react-hot-toast';
 import { useAuthStore, useVoiceStore } from '@/lib/store';
 import { formatDate, formatTime } from '@/lib/dateUtils';
@@ -823,7 +829,10 @@ export default function Whiteboard({
     isStudent = false,
     userName = 'Instructor',
     userIdentifier = '',
-    isMeetingMode = false
+    isMeetingMode = false,
+    initialPage = undefined,
+    externalShowRecorder = undefined,
+    onRecorderVisibilityChange = null
 }) {
     // Canvas dimensions - keep fixed to prevent content loss (must be initialized before any hooks or effects)
     const canvasWidth = width;
@@ -980,7 +989,31 @@ export default function Whiteboard({
     const [showTableModal, setShowTableModal] = useState(false);
     const [showCustomIconsModal, setShowCustomIconsModal] = useState(false);
     const [showAlignMenu, setShowAlignMenu] = useState(false);
-    const [showRecorder, setShowRecorder] = useState(false);
+    const [internalShowRecorder, setInternalShowRecorder] = useState(false);
+    const showRecorder = externalShowRecorder !== undefined ? externalShowRecorder : internalShowRecorder;
+    const setShowRecorder = useCallback((valOrUpdater) => {
+        const nextVal = typeof valOrUpdater === 'function' ? valOrUpdater(showRecorder) : valOrUpdater;
+        setInternalShowRecorder(nextVal);
+        if (onRecorderVisibilityChange) {
+            onRecorderVisibilityChange(nextVal);
+        }
+    }, [showRecorder, onRecorderVisibilityChange]);
+
+    // Live Floating Date & Time HUD Overlay State
+    const [showDateTimeOverlay, setShowDateTimeOverlay] = useState(false);
+    const [dateTimePos, setDateTimePos] = useState({ x: 24, y: 72 });
+    const [dateTimeUse24h, setDateTimeUse24h] = useState(false);
+    const [currentDateTimeTick, setCurrentDateTimeTick] = useState(() => new Date());
+
+    useEffect(() => {
+        if (!showDateTimeOverlay) return;
+        setCurrentDateTimeTick(new Date());
+        const timer = setInterval(() => {
+            setCurrentDateTimeTick(new Date());
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [showDateTimeOverlay]);
+
     const [showSelectPicker, setShowSelectPicker] = useState(false);
     const [showHighlighterPicker, setShowHighlighterPicker] = useState(false);
     const [showMathFlyout, setShowMathFlyout] = useState(false);
@@ -2183,8 +2216,12 @@ export default function Whiteboard({
         if (!el) return;
 
         const updateFit = () => {
-            const cw = el.clientWidth || window.innerWidth;
-            const ch = el.clientHeight || window.innerHeight;
+            const rect = el.getBoundingClientRect();
+            const measuredW = rect.width > 0 ? rect.width : (el.clientWidth || window.innerWidth);
+            const measuredH = rect.height > 0 ? rect.height : (el.clientHeight || window.innerHeight);
+            const cw = Math.max(measuredW, 320);
+            const ch = Math.max(measuredH, 240);
+
             if (cw > 0 && ch > 0) {
                 setViewportSize(prev => (prev.width === cw && prev.height === ch ? prev : { width: cw, height: ch }));
 
@@ -2214,12 +2251,28 @@ export default function Whiteboard({
         };
 
         updateFit();
+        const rafId = requestAnimationFrame(updateFit);
+        const t1 = setTimeout(updateFit, 150);
+        const t2 = setTimeout(updateFit, 350);
+
         const observer = new ResizeObserver(updateFit);
         observer.observe(el);
         window.addEventListener('resize', updateFit);
+        window.addEventListener('orientationchange', updateFit);
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', updateFit);
+        }
+
         return () => {
+            cancelAnimationFrame(rafId);
+            clearTimeout(t1);
+            clearTimeout(t2);
             observer.disconnect();
             window.removeEventListener('resize', updateFit);
+            window.removeEventListener('orientationchange', updateFit);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', updateFit);
+            }
         };
     }, [canvasWidth, canvasHeight, width, height, isStudent]);
 
@@ -2696,9 +2749,14 @@ export default function Whiteboard({
 
                 if (saved && isMounted) {
                     const state = typeof saved === 'string' ? JSON.parse(saved) : saved;
+                    const targetPage = typeof initialPage === 'number'
+                        ? Math.max(0, Math.min(initialPage, (state.totalPages || 1) - 1))
+                        : (state.currentPage !== undefined ? state.currentPage : 0);
+
                     // Restore all state
                     if (state.pages) setPages(state.pages);
-                    if (state.currentPage !== undefined) setCurrentPage(state.currentPage);
+                    setCurrentPage(targetPage);
+                    currentPageRef.current = targetPage;
                     if (state.totalPages !== undefined) setTotalPages(state.totalPages);
                     if (state.pageBackgrounds) setPageBackgrounds(state.pageBackgrounds);
                     if (state.pageImageObjects) setPageImageObjects(state.pageImageObjects);
@@ -2723,7 +2781,7 @@ export default function Whiteboard({
                     }
 
                     // Restore canvas content for current page
-                    if (state.pages && state.pages[state.currentPage || 0]) {
+                    if (state.pages && state.pages[targetPage]) {
                         const canvas = canvasRef.current;
                         if (canvas) {
                             const ctx = canvas.getContext('2d');
@@ -2732,7 +2790,7 @@ export default function Whiteboard({
                                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                                 ctx.drawImage(img, 0, 0);
                             };
-                            img.src = state.pages[state.currentPage || 0];
+                            img.src = state.pages[targetPage];
                         }
                     }
                     console.log('✅ Whiteboard state restored from storage');
@@ -12171,27 +12229,20 @@ export default function Whiteboard({
         return 'crosshair';
     };
 
-    // Insert DateTime Text
+    // Toggle Live Date & Time HUD Overlay (rather than stamping static text onto the canvas)
     const handleInsertDateTime = useCallback(() => {
-        const now = new Date();
-        const formatted = `${formatDate(now, { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' })} - ${formatTime(now)}`;
-        
-        const newText = {
-            id: 'datetime-stamp', // Fixed ID to overwrite previous
-            text: formatted,
-            x: 20,
-            y: 20,
-            color: color || '#000000',
-            fontSize: Math.max(16, strokeWidth * 6),
-            isEditing: false
-        };
-        
-        setTextObjects(prev => {
-            // Remove previous datetime stamp if exists, and append the new one
-            return [...prev.filter(t => t.id !== 'datetime-stamp'), newText];
+        setShowDateTimeOverlay(prev => {
+            const next = !prev;
+            if (next) {
+                toast('Live Date & Time HUD overlay enabled', { icon: '🕒' });
+            } else {
+                toast('Live Date & Time HUD overlay hidden', { icon: '🕒' });
+            }
+            return next;
         });
-        saveToHistory();
-    }, [color, strokeWidth, saveToHistory, setTextObjects]);
+        // Clear out any old legacy static datetime-stamp object from canvas textObjects
+        setTextObjects(prev => prev.filter(t => t.id !== 'datetime-stamp'));
+    }, [setTextObjects]);
 
     // Insert Interactive Graph Plotter
     const handleInsertGraph = useCallback(() => {
@@ -12579,6 +12630,17 @@ export default function Whiteboard({
         swapMap(setPagePdfObjects);
         swapMap(setPage3DObjects);
         swapMap(setPageGraphObjects);
+        swapMap(setPageQuizObjects);
+        swapMap(setPageAIPanels);
+
+        setPageThumbnails(prev => {
+            const newThumbs = [...prev];
+            while (newThumbs.length <= Math.max(dragIndex, hoverIndex)) newThumbs.push(null);
+            const [dragged] = newThumbs.splice(dragIndex, 1);
+            newThumbs.splice(hoverIndex, 0, dragged);
+            pageThumbnailsRef.current = newThumbs;
+            return newThumbs;
+        });
 
         if (currentPage === dragIndex) {
             setCurrentPage(hoverIndex);
@@ -21807,6 +21869,89 @@ export default function Whiteboard({
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
 
+                {/* Active Tool Floating HUD Indicator (vital for iPad / Apple Pencil where CSS cursor is hidden) */}
+                <div className="absolute top-2.5 left-24 sm:left-32 z-30 pointer-events-none select-none flex items-center gap-1.5 bg-slate-900/90 text-white px-2.5 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs font-semibold backdrop-blur-md animate-in fade-in">
+                    <div className="w-4 h-4 flex items-center justify-center shrink-0">
+                        {React.createElement(getCustomToolbarIcon(tool, ArgonPenIcon), { className: 'w-4 h-4' })}
+                    </div>
+                    <span className="capitalize text-[11px] tracking-wide text-slate-100">
+                        {tool === 'pen' ? (penMode === 'sparkle' ? 'Sparkle Pen' : 'Pen') : tool}
+                    </span>
+                    {['pen', 'highlighter', 'line', 'arrow', 'shape', 'fill'].includes(tool) && (
+                        <span
+                            className="w-2.5 h-2.5 rounded-full border border-slate-700 shadow-2xs shrink-0"
+                            style={{ backgroundColor: tool === 'highlighter' ? highlighterColor : (tool === 'fill' ? (fillColor || color) : color) }}
+                        />
+                    )}
+                </div>
+
+                {/* Floating Live Date & Time HUD Overlay */}
+                {showDateTimeOverlay && (
+                    <div
+                        className="fixed z-50 flex items-center gap-2 bg-slate-900/95 hover:bg-slate-900 text-white px-3 py-1.5 rounded-xl shadow-2xl border border-slate-700/80 backdrop-blur-md select-none touch-none animate-in fade-in"
+                        style={{
+                            left: `${dateTimePos.x}px`,
+                            top: `${dateTimePos.y}px`,
+                            cursor: 'grab'
+                        }}
+                        onPointerDown={(e) => {
+                            const startX = e.clientX;
+                            const startY = e.clientY;
+                            const origX = dateTimePos.x;
+                            const origY = dateTimePos.y;
+
+                            const onPointerMove = (moveEvent) => {
+                                const dx = moveEvent.clientX - startX;
+                                const dy = moveEvent.clientY - startY;
+                                setDateTimePos({
+                                    x: Math.max(10, Math.min(window.innerWidth - 220, origX + dx)),
+                                    y: Math.max(10, Math.min(window.innerHeight - 60, origY + dy))
+                                });
+                            };
+
+                            const onPointerUp = () => {
+                                window.removeEventListener('pointermove', onPointerMove);
+                                window.removeEventListener('pointerup', onPointerUp);
+                            };
+
+                            window.addEventListener('pointermove', onPointerMove);
+                            window.addEventListener('pointerup', onPointerUp);
+                        }}
+                    >
+                        <div className="flex items-center gap-1.5 text-cyan-400">
+                            <CalendarClock className="w-3.5 h-3.5 shrink-0" />
+                            <span className="text-[11px] font-semibold text-slate-200">
+                                {formatDate(currentDateTimeTick, { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </span>
+                        </div>
+                        <div className="w-px h-3 bg-slate-700 shrink-0" />
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setDateTimeUse24h(prev => !prev);
+                            }}
+                            className="text-[11px] font-mono font-bold text-white hover:text-cyan-300 transition px-1 py-0.5 rounded bg-slate-800/80 border border-slate-700/50"
+                            title="Click to toggle 12h / 24h format"
+                        >
+                            {dateTimeUse24h
+                                ? currentDateTimeTick.toLocaleTimeString('en-US', { hour12: false })
+                                : currentDateTimeTick.toLocaleTimeString('en-US', { hour12: true })}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setShowDateTimeOverlay(false);
+                            }}
+                            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                            title="Close Date & Time overlay"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                )}
+
             {/* View-Only Status Pill (Fullscreen moved into Top-Right Unified Capsule) */}
             {!canUserDraw ? (
                 <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 px-3.5 py-2 flex items-center gap-2 rounded-full z-40 animate-in fade-in">
@@ -21839,7 +21984,7 @@ export default function Whiteboard({
                     role="toolbar"
                     aria-label="Whiteboard Primary Toolbar"
                     className={`absolute bottom-3 inset-x-0 mx-auto w-fit flex-row flex-wrap sm:flex-nowrap justify-center items-center px-2 py-1 rounded-2xl gap-0.5 max-w-[calc(100vw-16px)] bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700/70 flex z-50 overflow-visible hide-scrollbar transition-opacity duration-200 ${
-                    !isStateLoaded ? 'pointer-events-none opacity-60' : (isDrawing ? 'opacity-20 hover:opacity-100' : 'opacity-95 hover:opacity-100')
+                    !isStateLoaded ? 'pointer-events-none opacity-60' : (isDrawing ? 'opacity-80 hover:opacity-100' : 'opacity-95 hover:opacity-100')
                 }`}>
                     {/* Core Drawing Tools & Suite Drop-Ups */}
                     <div role="group" aria-label="Core Drawing Tools" className="flex flex-wrap sm:flex-nowrap justify-center items-center gap-0.5">
@@ -23446,12 +23591,14 @@ export default function Whiteboard({
                                         <button
                                             type="button"
                                             onClick={() => { handleInsertDateTime(); setShowToolsFlyout(false); }}
-                                            className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition text-left"
+                                            className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition text-left ${
+                                                showDateTimeOverlay ? 'bg-primary-500 text-white shadow-xs' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                                            }`}
                                         >
                                             <div className="w-6 h-6 rounded-lg bg-slate-800/90 flex items-center justify-center shrink-0">
-                                                <CalendarClock className="w-3.5 h-3.5 text-cyan-400" />
+                                                <CalendarClock className={`w-3.5 h-3.5 ${showDateTimeOverlay ? 'text-white' : 'text-cyan-400'}`} />
                                             </div>
-                                            <span>Insert DateTime</span>
+                                            <span>Date &amp; Time Overlay</span>
                                         </button>
 
                                         <button
@@ -24058,6 +24205,22 @@ export default function Whiteboard({
                                         return (
                                             <div
                                                 key={`page-item-${idx}`}
+                                                draggable
+                                                onDragStart={(e) => {
+                                                    e.dataTransfer.setData('text/plain', String(idx));
+                                                }}
+                                                onDragOver={(e) => {
+                                                    e.preventDefault();
+                                                    e.dataTransfer.dropEffect = 'move';
+                                                }}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    const raw = e.dataTransfer.getData('text/plain');
+                                                    const fromIdx = raw ? parseInt(raw, 10) : NaN;
+                                                    if (!isNaN(fromIdx) && fromIdx !== idx) {
+                                                        reorderPage(fromIdx, idx);
+                                                    }
+                                                }}
                                                 className={`group/page flex flex-col gap-1.5 p-2 rounded-xl border transition cursor-pointer ${
                                                     isCur
                                                         ? 'bg-indigo-600/25 border-indigo-400/80 text-white ring-1 ring-indigo-500/40'
@@ -24097,19 +24260,45 @@ export default function Whiteboard({
 
                                                 <div className="flex items-center justify-between px-0.5">
                                                     <span className="font-semibold text-[11px] truncate">Page {idx + 1}</span>
-                                                    {totalPages > 1 && (
+                                                    <div className="flex items-center gap-0.5">
                                                         <button
                                                             type="button"
+                                                            disabled={idx === 0}
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setPageToDeleteConfirm(idx);
+                                                                reorderPage(idx, idx - 1);
                                                             }}
-                                                            className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 rounded-md transition opacity-70 group-hover/page:opacity-100"
-                                                            title={`Delete Page ${idx + 1}`}
+                                                            className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded transition disabled:opacity-20"
+                                                            title="Move page up"
                                                         >
-                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                            <ChevronUp className="w-3.5 h-3.5" />
                                                         </button>
-                                                    )}
+                                                        <button
+                                                            type="button"
+                                                            disabled={idx === totalPages - 1}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                reorderPage(idx, idx + 1);
+                                                            }}
+                                                            className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded transition disabled:opacity-20"
+                                                            title="Move page down"
+                                                        >
+                                                            <ChevronDown className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        {totalPages > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setPageToDeleteConfirm(idx);
+                                                                }}
+                                                                className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/15 rounded-md transition opacity-70 group-hover/page:opacity-100"
+                                                                title={`Delete Page ${idx + 1}`}
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -31618,7 +31807,7 @@ export default function Whiteboard({
                     >
                         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                             <div className="flex items-center gap-2">
-                                <Film className="w-5 h-5 text-indigo-400" />
+                                <ArgonMediaIcon className="w-5 h-5" />
                                 <h3 className="text-base font-bold text-slate-100">Insert Media to Canvas</h3>
                             </div>
                             <button
@@ -31633,13 +31822,13 @@ export default function Whiteboard({
                         {/* Tabs: Office Documents, Record Clip, YouTube, Whiteboard Recordings, PDF, Local File, Web Embed */}
                         <div className="flex bg-slate-800/80 p-1 rounded-xl gap-1">
                             {[
-                                { id: 'document', icon: FileSpreadsheet, tooltip: 'Link Office Document (Excel, Word, PDF)' },
-                                { id: 'record', icon: Camera, tooltip: 'Record Video / Audio Clip (Webcam & Mic)' },
-                                { id: 'youtube', icon: YoutubeIcon, tooltip: 'YouTube Video' },
-                                { id: 'recordings', icon: Film, tooltip: 'Saved Whiteboard Recordings' },
-                                { id: 'pdf', icon: FileText, tooltip: 'Interactive PDF Document' },
-                                { id: 'local', icon: Upload, tooltip: 'Upload Video or Audio File' },
-                                { id: 'embed', icon: Globe, tooltip: 'Web Embed / Simulation' }
+                                { id: 'document', icon: ArgonDocumentIcon, tooltip: 'Link Office Document (Excel, Word, PDF)' },
+                                { id: 'record', icon: ArgonRecorderIcon, tooltip: 'Record Video / Audio Clip (Webcam & Mic)' },
+                                { id: 'youtube', icon: YouTubeBrandIcon, tooltip: 'YouTube Video' },
+                                { id: 'recordings', icon: ArgonSlideshowIcon, tooltip: 'Saved Whiteboard Recordings' },
+                                { id: 'pdf', icon: ArgonPdfBookIcon, tooltip: 'Interactive PDF Document' },
+                                { id: 'local', icon: ArgonCloudUploadIcon, tooltip: 'Upload Video or Audio File' },
+                                { id: 'embed', icon: ArgonBrowserIcon, tooltip: 'Web Embed / Simulation' }
                             ].map(tab => {
                                 const IconComponent = tab.icon;
                                 return (
@@ -31651,10 +31840,10 @@ export default function Whiteboard({
                                         className={`flex-1 py-2 flex items-center justify-center rounded-lg transition ${
                                             mediaInputTab === tab.id
                                                 ? 'bg-indigo-600 text-white shadow'
-                                                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                                                : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
                                         }`}
                                     >
-                                        <IconComponent className="w-4 h-4" />
+                                        <IconComponent className="w-5 h-5" />
                                     </button>
                                 );
                             })}
