@@ -70,6 +70,7 @@ import OfficeThemeToggle from '@/components/OfficeThemeToggle';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
+import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
 import { useThemeStore } from '@/lib/store';
 import { evaluateCellFormula, SheetDependencyGraph, normalizeKey } from '@/lib/excelFormulaEngine';
 import LabIntelSidebar from './components/LabIntelSidebar';
@@ -415,6 +416,7 @@ export default function ExcelEditorPage() {
     const [title, setTitle] = useState(searchParams.get('title') || 'Untitled Spreadsheet');
     const [isDriveFile, setIsDriveFile] = useState(Boolean(driveFileIdParam));
     const [saveStatus, setSaveStatus] = useState('saved');
+    const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam);
 
     // Grid state
     const [rowCount, setRowCount] = useState(1000);
@@ -3179,6 +3181,17 @@ export default function ExcelEditorPage() {
                         >
                             <ArrowLeft size={16} />
                             <span className="hidden sm:inline">Documents</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowWelcomeHub(true)}
+                            className={`p-1.5 rounded-lg transition flex items-center gap-1 text-xs font-semibold ${
+                                isDark ? 'text-emerald-300 hover:text-white hover:bg-slate-800' : 'text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50'
+                            }`}
+                            title="Open Welcome Launchpad & Templates"
+                        >
+                            <Sparkles size={14} className="text-emerald-500" />
+                            <span className="hidden sm:inline">New / Templates</span>
                         </button>
                         <OfficeOpenImportMenu
                             currentApp="excel"
@@ -6215,6 +6228,88 @@ export default function ExcelEditorPage() {
                     onRetry={loadSpreadsheet}
                 />
             )}
+
+            {/* Welcome Launchpad Screen */}
+            <OfficeAppWelcomeHub
+                isOpen={showWelcomeHub}
+                onClose={() => setShowWelcomeHub(false)}
+                appName="excel"
+                onSelectBlank={() => {
+                    setShowWelcomeHub(false);
+                    setSheets([{
+                        name: 'Sheet1',
+                        cells: {}
+                    }]);
+                    setTitle('Untitled Spreadsheet');
+                }}
+                onSelectTemplate={(tmplId) => {
+                    setShowWelcomeHub(false);
+                    if (tmplId === 'gradebook') {
+                        setSheets([{
+                            name: 'Gradebook',
+                            cells: {
+                                'A1': { val: 'Student Name', bold: true, bg: '#dcfce7' },
+                                'B1': { val: 'Midterm (40)', bold: true, bg: '#dcfce7' },
+                                'C1': { val: 'Lab Practical (30)', bold: true, bg: '#dcfce7' },
+                                'D1': { val: 'Final Exam (30)', bold: true, bg: '#dcfce7' },
+                                'E1': { val: 'Total (100)', bold: true, bg: '#bbf7d0' },
+                                'A2': { val: 'Aarav Sharma' }, 'B2': { val: '36' }, 'C2': { val: '28' }, 'D2': { val: '27' }, 'E2': { val: '=SUM(B2:D2)' },
+                                'A3': { val: 'Priya Patel' }, 'B3': { val: '38' }, 'C3': { val: '29' }, 'D3': { val: '29' }, 'E3': { val: '=SUM(B3:D3)' },
+                                'A4': { val: 'Rohan Mehta' }, 'B4': { val: '32' }, 'C4': { val: '25' }, 'D4': { val: '24' }, 'E4': { val: '=SUM(B4:D4)' },
+                                'A5': { val: 'Class Average', bold: true }, 'E5': { val: '=AVERAGE(E2:E4)', bold: true }
+                            }
+                        }]);
+                        setTitle('Student Gradebook & Analytics');
+                    } else if (tmplId === 'attendance') {
+                        setSheets([{
+                            name: 'Attendance',
+                            cells: {
+                                'A1': { val: 'Roll No', bold: true, bg: '#f1f5f9' },
+                                'B1': { val: 'Student Name', bold: true, bg: '#f1f5f9' },
+                                'C1': { val: 'Mon', bold: true, bg: '#f1f5f9' },
+                                'D1': { val: 'Tue', bold: true, bg: '#f1f5f9' },
+                                'E1': { val: 'Wed', bold: true, bg: '#f1f5f9' },
+                                'F1': { val: 'Thu', bold: true, bg: '#f1f5f9' },
+                                'G1': { val: 'Fri', bold: true, bg: '#f1f5f9' },
+                                'H1': { val: 'Present %', bold: true, bg: '#e0f2fe' },
+                                'A2': { val: '101' }, 'B2': { val: 'Ananya Roy' }, 'C2': { val: 'P' }, 'D2': { val: 'P' }, 'E2': { val: 'P' }, 'F2': { val: 'P' }, 'G2': { val: 'P' }, 'H2': { val: '100%' },
+                                'A3': { val: '102' }, 'B3': { val: 'Kabir Verma' }, 'C3': { val: 'P' }, 'D3': { val: 'A' }, 'E3': { val: 'P' }, 'F3': { val: 'P' }, 'G3': { val: 'P' }, 'H3': { val: '80%' }
+                            }
+                        }]);
+                        setTitle('Class & Lab Attendance Log');
+                    } else {
+                        setSheets([{
+                            name: 'ExperimentLog',
+                            cells: {
+                                'A1': { val: 'Trial #', bold: true, bg: '#dbeafe' },
+                                'B1': { val: 'Temperature (°C)', bold: true, bg: '#dbeafe' },
+                                'C1': { val: 'Pressure (kPa)', bold: true, bg: '#dbeafe' },
+                                'D1': { val: 'Volume (L)', bold: true, bg: '#dbeafe' },
+                                'E1': { val: 'PV/T Constant', bold: true, bg: '#bfdbfe' },
+                                'A2': { val: '1' }, 'B2': { val: '298.15' }, 'C2': { val: '101.3' }, 'D2': { val: '22.4' }, 'E2': { val: '=(B2*C2)/D2' }
+                            }
+                        }]);
+                        setTitle('Science Experiment Data Log');
+                    }
+                }}
+                onOpenFile={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.xlsx,.xls,.csv';
+                    input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            setShowWelcomeHub(false);
+                            handleNativeFileUpload(file);
+                        }
+                    };
+                    input.click();
+                }}
+                onOpenOfficeMedia={() => {
+                    setShowWelcomeHub(false);
+                    router.push('/documents');
+                }}
+            />
         </div>
     );
 }

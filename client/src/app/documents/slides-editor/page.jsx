@@ -48,6 +48,7 @@ import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
+import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
 import { useThemeStore } from '@/lib/store';
 
 const BG_PRESETS = [
@@ -141,6 +142,7 @@ export default function SlidesEditorPage() {
     const [title, setTitle] = useState(searchParams.get('title') || 'Untitled Presentation');
     const [isDriveFile, setIsDriveFile] = useState(Boolean(driveFileIdParam));
     const [saveStatus, setSaveStatus] = useState('saved'); // 'saving', 'saved', 'offline'
+    const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [slides, setSlides] = useState(DEFAULT_SLIDES);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -666,6 +668,17 @@ export default function SlidesEditorPage() {
                         >
                             <ArrowLeft size={16} />
                             <span className="hidden sm:inline">Documents</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowWelcomeHub(true)}
+                            className={`p-1.5 rounded-lg transition flex items-center gap-1 text-xs font-semibold ${
+                                isDark ? 'text-orange-300 hover:text-white hover:bg-slate-800' : 'text-orange-600 hover:text-orange-800 hover:bg-orange-50'
+                            }`}
+                            title="Open Welcome Launchpad & Templates"
+                        >
+                            <Sparkles size={14} className="text-orange-500" />
+                            <span className="hidden sm:inline">New / Templates</span>
                         </button>
                         <OfficeOpenImportMenu
                             currentApp="presentation"
@@ -1788,6 +1801,134 @@ export default function SlidesEditorPage() {
                     subMessage="Loading widescreen 16:9 stage, presentation layouts, and KaTeX rendering"
                 />
             )}
+
+            {/* Welcome Launchpad Screen */}
+            <OfficeAppWelcomeHub
+                isOpen={showWelcomeHub}
+                onClose={() => setShowWelcomeHub(false)}
+                appName="slides"
+                onSelectBlank={() => {
+                    setShowWelcomeHub(false);
+                    setSlides([
+                        {
+                            id: `slide_${Date.now()}`,
+                            layout: 'title',
+                            title: 'Untitled Presentation',
+                            subtitle: 'Click to add presenter name or subtitle',
+                            content: '',
+                            bg: '#0f172a',
+                            text: '#f8fafc',
+                            notes: ''
+                        }
+                    ]);
+                    setCurrentSlideIndex(0);
+                    setTitle('Untitled Presentation');
+                }}
+                onSelectTemplate={(tmplId) => {
+                    setShowWelcomeHub(false);
+                    if (tmplId === 'lecture-deck') {
+                        setSlides([
+                            {
+                                id: `slide_${Date.now()}_1`,
+                                layout: 'title',
+                                title: 'Chapter 4: Advanced Physics Mechanics',
+                                subtitle: 'Department of Applied Sciences • Dr. A. Kumar',
+                                content: '',
+                                bg: '#0f172a',
+                                text: '#f8fafc'
+                            },
+                            {
+                                id: `slide_${Date.now()}_2`,
+                                layout: 'content',
+                                title: 'Learning Objectives & Syllabus Scope',
+                                content: '• Understand Newton\'s laws in non-inertial frames\n• Formulate angular momentum conservation equations\n• Analyze harmonic oscillators and damping coefficients',
+                                bg: '#0f172a',
+                                text: '#f8fafc'
+                            },
+                            {
+                                id: `slide_${Date.now()}_3`,
+                                layout: 'content',
+                                title: 'Key Mathematical Equations',
+                                content: 'The fundamental Lagrangian formulation is expressed as:\nL = T - V\nwhere T is kinetic energy and V is potential field energy.',
+                                bg: '#0f172a',
+                                text: '#f8fafc'
+                            }
+                        ]);
+                        setCurrentSlideIndex(0);
+                        setTitle('Chapter 4: Advanced Physics Mechanics');
+                    } else if (tmplId === 'defense-deck') {
+                        setSlides([
+                            {
+                                id: `slide_${Date.now()}_1`,
+                                layout: 'title',
+                                title: 'Science Project Defense & Findings',
+                                subtitle: 'Final Evaluation Panel • Department Committee',
+                                content: '',
+                                bg: '#1e1b4b',
+                                text: '#f8fafc'
+                            },
+                            {
+                                id: `slide_${Date.now()}_2`,
+                                layout: 'content',
+                                title: 'Problem Statement & Motivation',
+                                content: 'Addressing algorithmic bottlenecks in real-time sensor processing for smart lab devices.',
+                                bg: '#1e1b4b',
+                                text: '#f8fafc'
+                            },
+                            {
+                                id: `slide_${Date.now()}_3`,
+                                layout: 'content',
+                                title: 'Empirical Results & Benchmark Comparison',
+                                content: '• 34% reduction in inference latency\n• 99.2% classification accuracy\n• Zero runtime drift across 1,000 trials',
+                                bg: '#1e1b4b',
+                                text: '#f8fafc'
+                            }
+                        ]);
+                        setCurrentSlideIndex(0);
+                        setTitle('Science Project Defense & Findings');
+                    } else {
+                        setSlides([
+                            {
+                                id: `slide_${Date.now()}_1`,
+                                layout: 'title',
+                                title: 'Hands-on Technical Demonstration',
+                                subtitle: 'Live Experiment & Architectural Walkthrough',
+                                content: '',
+                                bg: '#064e3b',
+                                text: '#f0fdf4'
+                            },
+                            {
+                                id: `slide_${Date.now()}_2`,
+                                layout: 'content',
+                                title: 'System Architecture & Data Flow',
+                                content: '1. Ingestion via IoT sensors\n2. Real-time stream processing\n3. Interactive dashboard and telemetry alerts',
+                                bg: '#064e3b',
+                                text: '#f0fdf4'
+                            }
+                        ]);
+                        setCurrentSlideIndex(0);
+                        setTitle('Technical Workshop & Demo');
+                    }
+                }}
+                onOpenFile={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.pptx,.ppt';
+                    input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            setShowWelcomeHub(false);
+                            setTitle(file.name.replace(/\.[^/.]+$/, ''));
+                            toast.success(`Loaded "${file.name}"`);
+                        }
+                    };
+                    input.click();
+                }}
+                onOpenOfficeMedia={() => {
+                    setShowWelcomeHub(false);
+                    router.push('/documents');
+                }}
+            />
         </div>
     );
 }

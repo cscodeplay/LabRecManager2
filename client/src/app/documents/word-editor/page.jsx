@@ -65,6 +65,7 @@ import OfficeThemeToggle from '@/components/OfficeThemeToggle';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
+import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
 import { useThemeStore } from '@/lib/store';
 
 const ACADEMIC_TEMPLATES = {
@@ -157,6 +158,7 @@ export default function WordEditorPage() {
     const [mediaDocId, setMediaDocId] = useState(null);
     const [title, setTitle] = useState(searchParams.get('title') || 'Untitled Document');
     const [isDriveFile, setIsDriveFile] = useState(Boolean(driveFileIdParam));
+    const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam && !fileUrlParam);
     const [saveStatus, setSaveStatus] = useState('saved'); // 'saving', 'saved', 'offline'
     const [lastSavedTime, setLastSavedTime] = useState(null);
     const [wordCount, setWordCount] = useState(0);
@@ -859,6 +861,17 @@ export default function WordEditorPage() {
                         >
                             <ArrowLeft size={16} />
                             <span className="hidden sm:inline">Documents</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowWelcomeHub(true)}
+                            className={`p-1.5 rounded-lg transition flex items-center gap-1 text-xs font-semibold ${
+                                isDark ? 'text-blue-300 hover:text-white hover:bg-slate-800' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                            }`}
+                            title="Open Welcome Launchpad & Templates"
+                        >
+                            <Sparkles size={14} className="text-blue-500" />
+                            <span className="hidden sm:inline">New / Templates</span>
                         </button>
                         <OfficeOpenImportMenu
                             currentApp="word"
@@ -2218,6 +2231,53 @@ export default function WordEditorPage() {
                     subMessage="Loading paginated canvas, KaTeX equations, and revision history"
                 />
             )}
+
+            {/* Welcome Launchpad Screen */}
+            <OfficeAppWelcomeHub
+                isOpen={showWelcomeHub}
+                onClose={() => setShowWelcomeHub(false)}
+                appName="word"
+                onSelectBlank={() => {
+                    setShowWelcomeHub(false);
+                    if (editorRef.current) {
+                        editorRef.current.innerHTML = '<p>Start typing your document...</p>';
+                        updateCounts();
+                        updateOutline();
+                    }
+                }}
+                onSelectTemplate={(tmplId) => {
+                    setShowWelcomeHub(false);
+                    if (tmplId === 'lab-report') applyTemplateDirect('lab-report');
+                    else if (tmplId === 'research-paper') applyTemplateDirect('research-paper');
+                    else if (tmplId === 'course-syllabus') applyTemplateDirect('formal-notice');
+                    else applyTemplateDirect('lab-report');
+                }}
+                onOpenFile={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.docx,.doc,.txt';
+                    input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            setShowWelcomeHub(false);
+                            const reader = new FileReader();
+                            reader.onload = (re) => {
+                                if (editorRef.current) {
+                                    editorRef.current.innerText = re.target.result;
+                                    setTitle(file.name.replace(/\.[^/.]+$/, ''));
+                                    updateCounts();
+                                }
+                            };
+                            reader.readAsText(file);
+                        }
+                    };
+                    input.click();
+                }}
+                onOpenOfficeMedia={() => {
+                    setShowWelcomeHub(false);
+                    router.push('/documents');
+                }}
+            />
         </div>
     );
 }

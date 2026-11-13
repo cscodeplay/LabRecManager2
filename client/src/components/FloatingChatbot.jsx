@@ -9889,15 +9889,14 @@ export default function FloatingChatbot() {
             {!isOpen && (
                 <button
                     onClick={() => { setIsOpen(true); setIsMinimized(false); }}
-                    className="fixed bottom-12 right-4 z-[9999] w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 text-white shadow-2xl shadow-violet-500/40 flex items-center justify-center hover:scale-110 hover:shadow-violet-500/60 transition-all duration-300 group"
-                    title="LIA (⌘J / Ctrl+J)"
+                    className="fixed bottom-6 right-4 z-[9999] p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-lg text-purple-600 dark:text-purple-400 hover:scale-105 hover:border-purple-400 hover:shadow-purple-500/20 transition-all flex items-center justify-center group cursor-pointer"
+                    title="LIA AI Assistant (⌘J / Ctrl+J)"
+                    aria-label="Open LIA AI Assistant"
                 >
-                    <Bot className="w-6 h-6 group-hover:scale-110 transition-transform" />
-                    {/* Pulse ring */}
-                    <span className="absolute inset-0 rounded-full bg-violet-400 animate-ping opacity-20" />
+                    <Bot className="w-4 h-4 group-hover:scale-110 transition-transform" />
                     {/* Unread badge */}
                     {unread > 0 && (
-                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
                             {unread}
                         </span>
                     )}

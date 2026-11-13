@@ -463,7 +463,7 @@ export default function WhiteboardPage() {
                         title={showRecorderPanel ? 'Close Screen/Audio Recording Studio' : 'Open Screen & Audio Recording Studio'}
                         aria-label={showRecorderPanel ? 'Close Screen Recording Studio' : 'Open Screen Recording Studio'}
                     >
-                        <Camera className="w-4 h-4" />
+                        <Video className="w-4 h-4" />
                     </button>
                     {isCurrentBoardShared ? (
                         <span

@@ -60,27 +60,50 @@ const FILE_ICONS = {
 };
 
 const getFolderIcon = (name, size = 'lg') => {
+    const dim = size === 'lg' ? 40 : 24;
     const sizeCls = size === 'lg' ? 'w-10 h-10' : 'w-6 h-6';
+    let iconElement;
     switch (name) {
         case 'Office Media Files':
-            return <Cloud className={`${sizeCls} text-rose-500 fill-rose-100`} />;
+            iconElement = <Cloud style={{ width: dim, height: dim }} className={`${sizeCls} text-rose-500 fill-rose-100 shrink-0`} />;
+            break;
         case 'Word Documents':
-            return <FluentWordDocIcon className={sizeCls} />;
+            iconElement = <FluentWordDocIcon size={dim} className={`${sizeCls} shrink-0`} />;
+            break;
         case 'Excel Spreadsheets':
-            return <FluentExcelDocIcon className={sizeCls} />;
+            iconElement = <FluentExcelDocIcon size={dim} className={`${sizeCls} shrink-0`} />;
+            break;
         case 'Presentations (Slides)':
-            return <FluentSlidesDocIcon className={sizeCls} />;
+            iconElement = <FluentSlidesDocIcon size={dim} className={`${sizeCls} shrink-0`} />;
+            break;
         case 'PDF Documents':
-            return <FluentPdfDocIcon className={sizeCls} />;
+            iconElement = <FluentPdfDocIcon size={dim} className={`${sizeCls} shrink-0`} />;
+            break;
         case 'Images':
-            return <Sparkles className={`${sizeCls} text-purple-500 fill-purple-100`} />;
+            iconElement = <Sparkles style={{ width: dim, height: dim }} className={`${sizeCls} text-purple-500 fill-purple-100 shrink-0`} />;
+            break;
         case 'Audio':
-            return <Film className={`${sizeCls} text-pink-500 fill-pink-100`} />;
+            iconElement = <Film style={{ width: dim, height: dim }} className={`${sizeCls} text-pink-500 fill-pink-100 shrink-0`} />;
+            break;
         case 'Video':
-            return <Video className={`${sizeCls} text-indigo-500 fill-indigo-100`} />;
+            iconElement = <Video style={{ width: dim, height: dim }} className={`${sizeCls} text-indigo-500 fill-indigo-100 shrink-0`} />;
+            break;
+        case 'Whiteboard Recordings':
+        case 'Recordings':
+            iconElement = <Film style={{ width: dim, height: dim }} className={`${sizeCls} text-indigo-500 fill-indigo-100 shrink-0`} />;
+            break;
         default:
-            return <Folder className={`${sizeCls} text-yellow-400 fill-yellow-100`} />;
+            iconElement = <Folder style={{ width: dim, height: dim }} className={`${sizeCls} text-yellow-400 fill-yellow-100 shrink-0`} />;
+            break;
     }
+    return (
+        <div
+            style={{ width: `${dim}px`, height: `${dim}px`, minWidth: `${dim}px`, minHeight: `${dim}px` }}
+            className={`${sizeCls} shrink-0 flex items-center justify-center`}
+        >
+            {iconElement}
+        </div>
+    );
 };
 
 const openDocumentInApp = (doc, router) => {
@@ -1755,20 +1778,6 @@ export default function DocumentsPage() {
                 >
                     <HardDrive className="w-5 h-5" />
                 </button>
-                <button
-                    onClick={() => setActiveTab('recordings')}
-                    className={`h-10 w-10 rounded-xl relative flex items-center justify-center transition shadow-2xs ${activeTab === 'recordings'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
-                    title={`Whiteboard Recordings${recordings.length > 0 ? ` (${recordings.length})` : ''}`}
-                >
-                    <Film className="w-5 h-5" />
-                    {recordings.length > 0 && (
-                        <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full ring-2 ring-white dark:ring-slate-900">
-                            {recordings.length}
-                        </span>
-                    )}
-                </button>
             </div>
 
             {/* Filters */}
@@ -1878,6 +1887,39 @@ export default function DocumentsPage() {
                                 <span className="font-bold text-slate-900">{currentFolder.name}</span>
                             </div>
                         )}
+                    </div>
+                )
+            }
+
+            {/* Breadcrumbs for Whiteboard Recordings */}
+            {
+                activeTab === 'recordings' && (
+                    <div className="flex items-center gap-2 mb-4 text-sm text-slate-600 dark:text-slate-300 overflow-x-auto pb-2">
+                        <button
+                            onClick={() => { setActiveTab('my'); handleFolderClick(null); }}
+                            className="flex items-center gap-1 hover:text-primary-600 text-slate-600 dark:text-slate-300"
+                        >
+                            <HardDrive className="w-4 h-4" />
+                            My Documents
+                        </button>
+                        {currentFolder && (
+                            <div className="flex items-center gap-2 shrink-0">
+                                <ChevronRight className="w-4 h-4 text-slate-400" />
+                                <button
+                                    onClick={() => setActiveTab('my')}
+                                    className="hover:text-primary-600 text-slate-600 dark:text-slate-300"
+                                >
+                                    {currentFolder.name}
+                                </button>
+                            </div>
+                        )}
+                        <div className="flex items-center gap-2 shrink-0">
+                            <ChevronRight className="w-4 h-4 text-slate-400" />
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                                <Film className="w-3.5 h-3.5" />
+                                Whiteboard Recordings
+                            </span>
+                        </div>
                     </div>
                 )
             }
@@ -2539,13 +2581,25 @@ export default function DocumentsPage() {
                         {/* System Folder: Whiteboard Recordings (Grid) - Nested inside Office Media Files */}
                         {activeTab === 'my' && isInsideOfficeMediaFolder && (
                             <div
-                                onClick={() => setActiveTab('recordings')}
-                                className="card p-4 hover:shadow-md transition-all border border-indigo-100 bg-indigo-50/40 hover:bg-indigo-50/70 relative cursor-pointer group"
+                                className={`card p-4 hover:shadow-md transition-all border border-indigo-100 bg-indigo-50/40 hover:bg-indigo-50/70 relative ${selectedFolders.has('recordings') ? 'ring-2 ring-indigo-500' : ''}`}
                             >
-                                <div className="flex items-start justify-between">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedFolders.has('recordings')}
+                                    onChange={() => toggleFolderSelection('recordings')}
+                                    className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                    aria-label="Select Whiteboard Recordings Folder"
+                                />
+                                <div
+                                    className="flex items-start justify-between cursor-pointer group"
+                                    onClick={() => setActiveTab('recordings')}
+                                >
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
-                                            <Film className="w-6 h-6" />
+                                        <div
+                                            style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}
+                                            className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                                        >
+                                            <Film style={{ width: 24, height: 24 }} className="w-6 h-6 shrink-0" />
                                         </div>
                                         <div className="overflow-hidden">
                                             <div className="flex items-center gap-1.5">
@@ -2558,9 +2612,32 @@ export default function DocumentsPage() {
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-indigo-100/60 text-xs text-indigo-600 font-medium">
-                                    <span>Browse Recordings</span>
-                                    <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                                {/* Folder Actions */}
+                                <div className="flex items-center gap-1 mt-3 pt-3 border-t border-indigo-100/70">
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
+                                        className="flex-1 p-1.5 text-xs text-indigo-700 hover:text-indigo-900 hover:bg-indigo-100/70 rounded-lg flex items-center justify-center gap-1 font-medium transition"
+                                        title="Browse Recordings"
+                                    >
+                                        <Eye className="w-4 h-4" />
+                                        <span>Open</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (recordings.length > 0) {
+                                                setShareModal(recordings[0]);
+                                            } else {
+                                                toast('No recordings to share yet');
+                                            }
+                                        }}
+                                        className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100/70 rounded-lg transition"
+                                        title="Share Recordings"
+                                    >
+                                        <Share2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
                         )}
@@ -2814,15 +2891,24 @@ export default function DocumentsPage() {
                                     {activeTab === 'my' && isInsideOfficeMediaFolder && (
                                         <tr
                                             onClick={() => setActiveTab('recordings')}
-                                            className="border-b border-indigo-50 bg-indigo-50/20 hover:bg-indigo-50/60 cursor-pointer group transition"
+                                            className={`border-b border-indigo-50 bg-indigo-50/20 hover:bg-indigo-50/60 cursor-pointer group transition ${selectedFolders.has('recordings') ? 'bg-indigo-50/80 ring-1 ring-indigo-400' : ''}`}
                                         >
-                                            <td className="p-3">
-                                                <div className="w-4 h-4 rounded border border-indigo-300 bg-indigo-100/50 flex items-center justify-center text-[10px] text-indigo-700">★</div>
+                                            <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedFolders.has('recordings')}
+                                                    onChange={() => toggleFolderSelection('recordings')}
+                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                    aria-label="Select Whiteboard Recordings Folder"
+                                                />
                                             </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs">
-                                                        <Film className="w-4 h-4" />
+                                                    <div
+                                                        style={{ width: '32px', height: '32px', minWidth: '32px', minHeight: '32px' }}
+                                                        className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs"
+                                                    >
+                                                        <Film style={{ width: 16, height: 16 }} className="w-4 h-4 shrink-0" />
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2">
@@ -2838,13 +2924,30 @@ export default function DocumentsPage() {
                                             {activeTab === 'my' && <td className="p-3 text-sm text-slate-500 hidden sm:table-cell">System</td>}
                                             <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">--</td>
                                             <td className="p-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
-                                                    className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
-                                                >
-                                                    Open Recordings
-                                                </button>
+                                                <div className="flex items-center gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
+                                                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                                                    >
+                                                        Open
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (recordings.length > 0) {
+                                                                setShareModal(recordings[0]);
+                                                            } else {
+                                                                toast('No recordings to share yet');
+                                                            }
+                                                        }}
+                                                        className="p-1 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition"
+                                                        title="Share Recordings"
+                                                    >
+                                                        <Share2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     )}
@@ -3050,13 +3153,18 @@ export default function DocumentsPage() {
                             {/* System Folder: Whiteboard Recordings (Mobile) - Nested inside Office Media Files */}
                             {activeTab === 'my' && isInsideOfficeMediaFolder && (
                                 <div
-                                    onClick={() => setActiveTab('recordings')}
-                                    className="p-4 bg-indigo-50/30 hover:bg-indigo-50/60 transition cursor-pointer"
+                                    className={`p-4 bg-indigo-50/30 hover:bg-indigo-50/60 transition ${selectedFolders.has('recordings') ? 'bg-indigo-50/80 ring-1 ring-indigo-400' : ''}`}
                                 >
                                     <div className="flex items-center justify-between gap-3">
-                                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
-                                                <Film className="w-4 h-4" />
+                                        <div
+                                            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                                            onClick={() => setActiveTab('recordings')}
+                                        >
+                                            <div
+                                                style={{ width: '32px', height: '32px', minWidth: '32px', minHeight: '32px' }}
+                                                className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0"
+                                            >
+                                                <Film style={{ width: 16, height: 16 }} className="w-4 h-4 shrink-0" />
                                             </div>
                                             <div className="min-w-0 flex-1">
                                                 <div className="flex items-center gap-1.5">
@@ -3068,7 +3176,23 @@ export default function DocumentsPage() {
                                                 </p>
                                             </div>
                                         </div>
-                                        <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0" />
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedFolders.has('recordings')}
+                                                onChange={() => toggleFolderSelection('recordings')}
+                                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                aria-label="Select Whiteboard Recordings"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('recordings')}
+                                                className="p-1 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
+                                                title="Open Recordings"
+                                            >
+                                                <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             )}

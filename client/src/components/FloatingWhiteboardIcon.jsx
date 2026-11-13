@@ -37,16 +37,18 @@ export default function FloatingWhiteboardIcon() {
     }
 
     return (
-        <div 
+        <button 
+            type="button"
             onClick={() => router.push(activeSession.url || '/live-board')}
-            className="fixed bottom-12 right-24 z-[999] w-14 h-14 bg-indigo-600 rounded-full shadow-2xl flex items-center justify-center cursor-pointer hover:bg-indigo-700 hover:scale-110 transition-all group border-4 border-indigo-400/30"
-            title="Return to Active Whiteboard"
+            className="fixed bottom-6 right-20 z-[999] p-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400 hover:scale-105 hover:border-indigo-400 hover:shadow-indigo-500/20 transition-all flex items-center gap-1.5 group cursor-pointer"
+            title={`Return to Active Whiteboard: ${activeSession.title || 'Canvas'}`}
+            aria-label="Return to Active Whiteboard"
         >
-            <Pencil className="w-6 h-6 text-white" />
-            <div className="absolute -top-10 right-0 bg-slate-900 text-white text-xs px-3 py-1.5 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-lg pointer-events-none">
+            <Pencil className="w-4 h-4" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <div className="absolute -top-9 right-0 bg-slate-900 text-white text-[11px] px-2.5 py-1 rounded-md opacity-0 group-hover:opacity-100 transition whitespace-nowrap shadow-lg pointer-events-none">
                 Return to {activeSession.title || 'Whiteboard'}
             </div>
-            <div className="absolute inset-0 rounded-full border-2 border-white/50 animate-ping opacity-20 pointer-events-none"></div>
-        </div>
+        </button>
     );
 }

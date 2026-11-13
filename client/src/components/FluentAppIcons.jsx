@@ -5,8 +5,27 @@ import React from 'react';
 // Crisp pure-vector rendering without CSS drop-shadow filter rasterization on Android/IFPD Skia
 const shadowClass = "";
 
-// Helper for Lucide polymorphism (accepts both className and size)
-const getStyle = (size, customStyle) => (size ? { width: size, height: size, ...customStyle } : customStyle);
+// Helper for Lucide polymorphism (accepts both className and size) - guards WebKit / iPadOS SVG dimension collapse
+const getStyle = (size, customStyle, className = "") => {
+    let resolvedWidth = size;
+    let resolvedHeight = size;
+    if (!resolvedWidth && typeof className === 'string') {
+        if (className.includes('w-12')) { resolvedWidth = 48; resolvedHeight = 48; }
+        else if (className.includes('w-10')) { resolvedWidth = 40; resolvedHeight = 40; }
+        else if (className.includes('w-8')) { resolvedWidth = 32; resolvedHeight = 32; }
+        else if (className.includes('w-7')) { resolvedWidth = 28; resolvedHeight = 28; }
+        else if (className.includes('w-6')) { resolvedWidth = 24; resolvedHeight = 24; }
+        else if (className.includes('w-5')) { resolvedWidth = 20; resolvedHeight = 20; }
+        else if (className.includes('w-4')) { resolvedWidth = 16; resolvedHeight = 16; }
+    }
+    return {
+        width: resolvedWidth || '100%',
+        height: resolvedHeight || '100%',
+        flexShrink: 0,
+        display: 'inline-block',
+        ...customStyle
+    };
+};
 
 // ==========================================
 // SURFACE 1: CODE PRACTICE IDE & CONSOLE
@@ -345,7 +364,7 @@ export function FluentTimetableIcon({ className = "w-5 h-5 flex-shrink-0", size,
  */
 export function FluentWordDocIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="5" y="3" width="22" height="26" rx="3" fill="#2563eb" />
             <path fill="#60a5fa" d="M10 9h12v2H10zm0 5h12v2H10zm0 5h8v2H10z" />
             <rect x="2" y="10" width="10" height="12" rx="2" fill="#1d4ed8" stroke="#3b82f6" strokeWidth="1.5" />
@@ -359,7 +378,7 @@ export function FluentWordDocIcon({ className = "w-6 h-6 flex-shrink-0", size, s
  */
 export function FluentExcelDocIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="5" y="3" width="22" height="26" rx="3" fill="#16a34a" />
             <path fill="#4ade80" d="M10 9h12v1H10zm0 4h12v1H10zm0 4h12v1H10zm0 4h12v1H10z" />
             <rect x="2" y="10" width="10" height="12" rx="2" fill="#15803d" stroke="#22c55e" strokeWidth="1.5" />
@@ -373,7 +392,7 @@ export function FluentExcelDocIcon({ className = "w-6 h-6 flex-shrink-0", size, 
  */
 export function FluentPdfDocIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="5" y="3" width="22" height="26" rx="3" fill="#dc2626" />
             <path fill="#f87171" d="M9 18h14v2H9zm0 4h10v2H9z" />
             <rect x="2" y="9" width="11" height="12" rx="2" fill="#b91c1c" stroke="#ef4444" strokeWidth="1.5" />
@@ -387,7 +406,7 @@ export function FluentPdfDocIcon({ className = "w-6 h-6 flex-shrink-0", size, st
  */
 export function FluentSlidesDocIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="4" y="5" width="24" height="18" rx="3" fill="#ea580c" />
             <rect x="7" y="8" width="18" height="12" rx="1.5" fill="#fed7aa" />
             <path fill="#ea580c" d="M9 10h6v3H9zm0 5h14v1.5H9z" />

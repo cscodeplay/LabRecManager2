@@ -80,6 +80,7 @@ import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
+import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
 import MultiSourcePdfPickerModal from '@/components/MultiSourcePdfPickerModal';
 import { saveStudioSession, loadStudioSession, clearStudioSession } from '@/lib/pdfStudioStorage';
 import { useThemeStore } from '@/lib/store';
@@ -2513,6 +2514,7 @@ export default function PdfStudioPage() {
     const titleParam = searchParams.get('title');
     const fileUrlParam = searchParams.get('fileUrl');
     const docIdParam = searchParams.get('docId') || searchParams.get('id');
+    const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam && !fileUrlParam);
 
     // Studio active tab: 'edit-merge', 'extract', 'compress', 'ocr'
     const [activeTab, setActiveTab] = useState('edit-merge');
@@ -7505,6 +7507,17 @@ return (
                     >
                         <ArrowLeft size={16} />
                     </button>
+                    <button
+                        type="button"
+                        onClick={() => setShowWelcomeHub(true)}
+                        className={`p-1.5 rounded-lg transition flex items-center gap-1 text-xs font-semibold ${
+                            isDark ? 'text-rose-300 hover:text-white hover:bg-slate-800' : 'text-rose-600 hover:text-rose-800 hover:bg-rose-50'
+                        }`}
+                        title="Open Welcome Launchpad & Templates"
+                    >
+                        <Sparkles size={14} className="text-rose-500" />
+                        <span className="hidden sm:inline">New / Templates</span>
+                    </button>
 
                     {/* Universal File Open / Import Menu */}
                     <OfficeOpenImportMenu
@@ -9226,6 +9239,41 @@ return (
                 onClose={() => setPickerModalOpen(false)}
                 initialTab={pickerInitialTab}
                 onSelectPdf={handlePickPdfFromModal}
+            />
+
+            {/* Welcome Launchpad Screen */}
+            <OfficeAppWelcomeHub
+                isOpen={showWelcomeHub}
+                onClose={() => setShowWelcomeHub(false)}
+                appName="pdf"
+                onSelectBlank={() => {
+                    setShowWelcomeHub(false);
+                    handleClearStudioSession();
+                }}
+                onSelectTemplate={(tmplId) => {
+                    setShowWelcomeHub(false);
+                    handleClearStudioSession();
+                    if (tmplId === 'sign-form') {
+                        setStudioSignatureModalOpen(true);
+                    }
+                }}
+                onOpenFile={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.pdf,application/pdf';
+                    input.onchange = (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                            setShowWelcomeHub(false);
+                            handleFilesSelect([file]);
+                        }
+                    };
+                    input.click();
+                }}
+                onOpenOfficeMedia={() => {
+                    setShowWelcomeHub(false);
+                    router.push('/documents');
+                }}
             />
         </div>
     );

@@ -828,7 +828,7 @@ export default function WhiteboardClosedCaptions({
         });
     }, [aiSolution, activeThreadId]);
 
-    // Auto-start step-synchronized narration when fresh STEM solution arrives
+    // Step narration - only starts when explicitly triggered or requested, never auto-playing unprompted
     useEffect(() => {
         if (!displayText || aiSolution?.isError || blocks.length === 0) return;
         const solutionKey = `chat::${displayText}`;
@@ -839,11 +839,11 @@ export default function WhiteboardClosedCaptions({
                 onSpeakSteps(blocks, {
                     rate: speechRate,
                     startIndex: firstContentIdx,
-                    autoPlay: aiSpeechEnabled
+                    autoPlay: false // NEVER auto-play speech unprompted! User must explicitly click play
                 });
             }
         }
-    }, [displayText, blocks, aiSolution?.isError, onSpeakSteps, speechRate, aiSpeechEnabled]);
+    }, [displayText, blocks, aiSolution?.isError, onSpeakSteps, speechRate]);
 
     // Voice Closed Captions state tracking
     useEffect(() => {
@@ -905,6 +905,26 @@ export default function WhiteboardClosedCaptions({
         audioCtxRef.current = null;
         setPlayingMusicMsgId(null);
     }, []);
+
+    // ─── Master Hard STOP Control ───
+    const handleMasterStop = useCallback(() => {
+        try {
+            if (typeof onStopGeneration === 'function') onStopGeneration();
+            if (typeof onStopSpeaking === 'function') onStopSpeaking();
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                try { window.speechSynthesis.cancel(); } catch (_) {}
+            }
+            stopMusicPlayback();
+            if (isListening && typeof onToggleListening === 'function') {
+                onToggleListening();
+            }
+            setIsLocalGenerating(false);
+            setIsAiPaused(false);
+            toast('⏹️ AI Stopped', { icon: '⏹️' });
+        } catch (err) {
+            console.error('Stop error:', err);
+        }
+    }, [onStopGeneration, onStopSpeaking, stopMusicPlayback, isListening, onToggleListening]);
 
     useEffect(() => () => stopMusicPlayback(), [stopMusicPlayback]);
 
@@ -1448,8 +1468,8 @@ export default function WhiteboardClosedCaptions({
                         onDrop={handleDropImage}
                         onPaste={handlePasteImage}
                         style={{ backgroundColor: '#0b1120' }}
-                        className={`fixed top-3 bottom-3 right-3 z-[80] flex rounded-2xl border-2 shadow-2xl overflow-hidden text-slate-100 transition-all duration-200 select-none ${
-                            isSidebarOpen ? 'w-[min(860px,95vw)]' : 'w-[min(560px,95vw)]'
+                        className={`fixed top-3 bottom-16 right-3 z-[80] flex rounded-2xl border shadow-2xl overflow-hidden text-slate-100 transition-all duration-200 select-none max-h-[calc(100vh-80px)] ${
+                            isSidebarOpen ? 'w-[min(620px,92vw)]' : 'w-[min(380px,90vw)]'
                         } ${
                             isDraggingImage ? 'border-indigo-400 ring-2 ring-indigo-500/40' : 'border-slate-700/90'
                         }`}
@@ -1586,8 +1606,22 @@ export default function WhiteboardClosedCaptions({
                                     </div>
                                 </div>
 
-                                {/* Controls: Provider, Depth, Auto-Read, Speed, Minimize, Close */}
+                                {/* Controls: Master STOP, Provider, Depth, Auto-Read, Speed, Minimize, Close */}
                                 <div className="flex items-center gap-1 shrink-0">
+                                    {/* Prominent Master Hard STOP Button */}
+                                    {(isAiThinking || isLocalGenerating || isAiSpeaking || isListening) && (
+                                        <button
+                                            type="button"
+                                            onClick={handleMasterStop}
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-md shadow-rose-600/30 animate-pulse transition shrink-0 cursor-pointer"
+                                            title="Immediately STOP AI Generation, Speech & Narration"
+                                            aria-label="Stop AI"
+                                        >
+                                            <Square className="w-2.5 h-2.5 fill-current" />
+                                            <span>STOP</span>
+                                        </button>
+                                    )}
+
                                     {/* AI Provider Selector */}
                                     <div className="relative">
                                         <button
@@ -2521,26 +2555,26 @@ export default function WhiteboardClosedCaptions({
                                 )}
 
                                 {/* Main Composer Row (+ | Mic | Prompt | Send/Stop) */}
-                                <form onSubmit={(e) => handleSendPrompt(e)} className="flex items-end gap-1.5">
+                                <form onSubmit={(e) => handleSendPrompt(e)} className="flex items-end gap-1 sm:gap-1.5">
                                     <button
                                         type="button"
                                         onClick={() => setShowPlusMenu(p => !p)}
                                         disabled={isScanningImage}
-                                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                                        className={`w-7 sm:w-8 h-7 sm:h-8 rounded-lg border flex items-center justify-center shrink-0 transition cursor-pointer ${
                                             showPlusMenu
                                                 ? 'bg-indigo-600 border-indigo-400 text-white'
                                                 : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
                                         }`}
                                         title="Attach Camera, Photos, Files, Drive, Web Images or Switch AI Mode"
                                     >
-                                        {isScanningImage ? <Loader2 className="w-4 h-4 animate-spin text-cyan-400" /> : <Plus className={`w-4 h-4 transition-transform ${showPlusMenu ? 'rotate-45' : ''}`} />}
+                                        {isScanningImage ? <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" /> : <Plus className={`w-3.5 h-3.5 transition-transform ${showPlusMenu ? 'rotate-45' : ''}`} />}
                                     </button>
 
                                     {typeof onToggleListening === 'function' && (
                                         <button
                                             type="button"
                                             onClick={onToggleListening}
-                                            className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
+                                            className={`w-7 sm:w-8 h-7 sm:h-8 rounded-lg border flex items-center justify-center shrink-0 transition cursor-pointer ${
                                                 isListening
                                                     ? 'bg-emerald-600/30 border-emerald-400 text-emerald-300 ring-2 ring-emerald-500/40 animate-pulse'
                                                     : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
@@ -2548,7 +2582,7 @@ export default function WhiteboardClosedCaptions({
                                             style={isListening && audioLevel > 0.05 ? { boxShadow: `0 0 ${Math.round(audioLevel * 18)}px rgba(16,185,129,0.65)` } : undefined}
                                             title={isListening ? 'Stop Voice Input' : 'Voice Dictation'}
                                         >
-                                            <Mic className="w-4 h-4" />
+                                            <Mic className="w-3.5 h-3.5" />
                                         </button>
                                     )}
 
@@ -2564,35 +2598,32 @@ export default function WhiteboardClosedCaptions({
                                             }
                                         }}
                                         placeholder={
-                                            activeMode === 'image' ? 'Describe the diagram or image to generate...'
-                                                : activeMode === 'web' ? 'Search the web for articles, citations & images...'
-                                                : activeMode === 'music' ? 'Describe a melody, scale, BPM or chord exercise...'
-                                                : activeMode === 'diagram' ? 'Describe the circuit, flowchart or UML diagram...'
-                                                : 'Ask anything, solve math, or paste/drop an image...'
+                                            activeMode === 'image' ? 'Describe diagram or image to generate...'
+                                                : activeMode === 'web' ? 'Search web articles, citations & images...'
+                                                : activeMode === 'music' ? 'Describe melody, scale, BPM or chord...'
+                                                : activeMode === 'diagram' ? 'Describe circuit, flowchart or UML...'
+                                                : 'Ask anything, solve math, or drop image...'
                                         }
-                                        className="flex-1 min-h-[36px] max-h-28 py-2 px-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-indigo-500 text-xs text-white placeholder-slate-400 focus:outline-none resize-none leading-snug custom-scrollbar"
+                                        className="flex-1 min-h-[30px] max-h-24 py-1.5 px-2.5 rounded-lg bg-slate-950 border border-slate-700 focus:border-indigo-500 text-xs text-white placeholder-slate-400 focus:outline-none resize-none leading-snug custom-scrollbar"
                                     />
 
-                                    {isGenerating ? (
+                                    {(isGenerating || isAiSpeaking || isListening) ? (
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                setIsLocalGenerating(false);
-                                                onStopGeneration?.();
-                                            }}
-                                            className="w-9 h-9 rounded-xl bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shrink-0 transition cursor-pointer"
-                                            title="Stop generation"
+                                            onClick={handleMasterStop}
+                                            className="w-7 sm:w-8 h-7 sm:h-8 rounded-lg bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shrink-0 transition cursor-pointer shadow-md shadow-rose-600/30 animate-pulse"
+                                            title="Stop AI Immediately"
                                         >
-                                            <Square className="w-3.5 h-3.5 fill-current" />
+                                            <Square className="w-3 h-3 fill-current" />
                                         </button>
                                     ) : (
                                         <button
                                             type="submit"
                                             disabled={!composerText.trim() && !scannedPreviewUrl && !attachedDocFile}
-                                            className="w-9 h-9 rounded-xl bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
+                                            className="w-7 sm:w-8 h-7 sm:h-8 rounded-lg bg-yellow-400 hover:bg-yellow-300 disabled:opacity-40 text-slate-950 flex items-center justify-center shrink-0 transition cursor-pointer shadow-sm"
                                             title="Send prompt"
                                         >
-                                            <Send className="w-4 h-4" />
+                                            <Send className="w-3.5 h-3.5" />
                                         </button>
                                     )}
                                 </form>

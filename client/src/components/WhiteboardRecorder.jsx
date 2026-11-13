@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play, GripVertical, ChevronUp, ChevronDown, Check, Camera } from 'lucide-react';
+import { Video, VideoOff, Mic, MicOff, Circle, Square, Pause, Play, GripVertical, ChevronUp, ChevronDown, Check, Camera, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import api from '@/lib/api';
 import fixWebmDuration from 'fix-webm-duration';
@@ -24,7 +24,8 @@ const WhiteboardRecorder = ({
     gradientAngle = 45,
     gradientType = 'linear',
     onRecordingComplete,
-    isVisible = false
+    isVisible = false,
+    onClose = null
 }) => {
     const [isRecording, setIsRecording] = useState(false);
     const [hasCamera, setHasCamera] = useState(false);
@@ -1344,7 +1345,7 @@ const WhiteboardRecorder = ({
                                                         className={`w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition truncate flex items-center justify-between gap-1.5 ${isSelected ? 'bg-indigo-600 text-white font-medium shadow-sm' : 'text-slate-200 hover:bg-slate-800 hover:text-white'}`}
                                                     >
                                                         <div className="flex items-center gap-2 min-w-0 truncate">
-                                                            <Camera className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                                                            <Video className="w-3.5 h-3.5 shrink-0 opacity-80" />
                                                             <span className="truncate">{c.label || `Camera ${idx + 1}`}</span>
                                                         </div>
                                                         {isSelected && <Check className="w-3.5 h-3.5 shrink-0 text-white" />}
@@ -1389,6 +1390,29 @@ const WhiteboardRecorder = ({
                         <Circle className="w-4 h-4 fill-red-500 text-red-500 group-hover:scale-110 transition-transform" />
                     </button>
                 )}
+
+                {/* Close Recording Bar Button */}
+                <div className="w-px h-5 bg-slate-700 mx-1"></div>
+                <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        if (isRecording) {
+                            if (window.confirm('Recording is in progress. Stop and close recording studio?')) {
+                                stopRecording();
+                                if (onClose) onClose();
+                            }
+                        } else {
+                            if (onClose) onClose();
+                        }
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/20 rounded-full transition-colors"
+                    title="Close Recording Bar"
+                    aria-label="Close Recording Bar"
+                >
+                    <X className="w-4 h-4" />
+                </button>
             </div>
             );
         })()}

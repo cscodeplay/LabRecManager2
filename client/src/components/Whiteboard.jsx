@@ -849,6 +849,8 @@ export default function Whiteboard({
     const lastPointRef = useRef(null);
     const currentPathPointsRef = useRef([]);
     const preStrokeCanvasRef = useRef(null);
+    const activeAiAbortControllerRef = useRef(null);
+    const [tabletPointerPos, setTabletPointerPos] = useState(null);
 
     const clearLiveStrokeCanvas = useCallback(() => {
         const liveCanvas = liveStrokeCanvasRef.current;
@@ -10026,6 +10028,10 @@ export default function Whiteboard({
             currentPressureRef.current = e.pressure || 0.5;
         }
 
+        if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            setTabletPointerPos({ x: e.clientX, y: e.clientY });
+        }
+
         const movePos = getPosition(e);
         if (movePos && !isNaN(movePos.x) && !isNaN(movePos.y)) {
             lastPointerCanvasPosRef.current = movePos;
@@ -10087,6 +10093,7 @@ export default function Whiteboard({
     }, [draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool, currentZoom]);
 
     const handlePointerUp = useCallback((e) => {
+        setTabletPointerPos(null);
         if (e.cancelable) {
             e.preventDefault();
         }
@@ -10157,6 +10164,7 @@ export default function Whiteboard({
     }, [stopDrawing]);
 
     const handlePointerLeave = useCallback((e) => {
+        setTabletPointerPos(null);
         if (tool === 'laser') {
             setLaserPos(null);
             setLaserTrail([]);
@@ -16284,12 +16292,27 @@ export default function Whiteboard({
         return refined.length > 0 ? refined : [trimmed];
     };
 
-    // Stop in-flight AI Generation
+    // Stop in-flight AI Generation, Narration & Voice Listening
     const handleStopAiGeneration = useCallback(() => {
         setIsAiThinking(false);
-        setVoiceFeedback('⏹️ AI generation stopped');
-        toast('Generation stopped', { icon: '⏹️' });
-    }, []);
+        if (activeAiAbortControllerRef.current) {
+            try { activeAiAbortControllerRef.current.abort(); } catch (_) {}
+            activeAiAbortControllerRef.current = null;
+        }
+        if (stopAiSpeech) stopAiSpeech();
+        if (typeof window !== 'undefined' && window.speechSynthesis) {
+            try { window.speechSynthesis.cancel(); } catch (_) {}
+        }
+        if (isVoiceListeningRef.current) {
+            try { voiceRecognitionRef.current?.stop(); } catch (_) {}
+            setIsVoiceListening(false);
+            isVoiceListeningRef.current = false;
+            stopMicAudioAnalyzer();
+            setInterimVoiceTranscript('');
+        }
+        setVoiceFeedback('⏹️ AI stopped');
+        toast('AI generation & speech stopped', { icon: '⏹️' });
+    }, [stopAiSpeech, stopMicAudioAnalyzer]);
 
     // Select and restore a previous AI conversation/solution from chat history
     const handleSelectChatHistoryItem = useCallback((item) => {
@@ -21869,14 +21892,14 @@ export default function Whiteboard({
                     <ChevronDown className={`w-3.5 h-3.5 text-slate-400 group-hover:text-white transition-transform ${isCurtainActive ? 'rotate-180' : ''}`} aria-hidden="true" />
                 </button>
 
-                {/* Active Tool Floating HUD Indicator (vital for iPad / Apple Pencil where CSS cursor is hidden) */}
-                <div className="absolute top-2.5 left-24 sm:left-32 z-30 pointer-events-none select-none flex items-center gap-1.5 bg-slate-900/90 text-white px-2.5 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs font-semibold backdrop-blur-md animate-in fade-in">
+                {/* Active Tool Floating HUD Indicator (Icon-Only, No Label) */}
+                <div
+                    className="absolute top-2.5 left-24 sm:left-32 z-30 pointer-events-none select-none flex items-center gap-1.5 bg-slate-900/90 text-white px-2 py-1.5 rounded-xl border border-slate-700/80 shadow-lg text-xs font-semibold backdrop-blur-md animate-in fade-in"
+                    title={tool === 'pen' ? (penMode === 'sparkle' ? 'Sparkle Pen' : 'Pen') : tool}
+                >
                     <div className="w-4 h-4 flex items-center justify-center shrink-0">
                         {React.createElement(getCustomToolbarIcon(tool, ArgonPenIcon), { className: 'w-4 h-4' })}
                     </div>
-                    <span className="capitalize text-[11px] tracking-wide text-slate-100">
-                        {tool === 'pen' ? (penMode === 'sparkle' ? 'Sparkle Pen' : 'Pen') : tool}
-                    </span>
                     {['pen', 'highlighter', 'line', 'arrow', 'shape', 'fill'].includes(tool) && (
                         <span
                             className="w-2.5 h-2.5 rounded-full border border-slate-700 shadow-2xs shrink-0"
@@ -21884,6 +21907,29 @@ export default function Whiteboard({
                         />
                     )}
                 </div>
+
+                {/* Tablet Selected Tool Pointer (replaces default pointer/dot on touch & Apple Pencil) */}
+                {tabletPointerPos && (
+                    <div
+                        className="pointer-events-none fixed z-[60] -translate-x-1 -translate-y-full transition-none select-none drop-shadow-md"
+                        style={{
+                            left: `${tabletPointerPos.x}px`,
+                            top: `${tabletPointerPos.y}px`
+                        }}
+                    >
+                        <div className="flex items-center gap-1 bg-slate-900/90 text-white p-1 rounded-lg border border-slate-700/80 shadow-md">
+                            <div className="w-3.5 h-3.5 flex items-center justify-center">
+                                {React.createElement(getCustomToolbarIcon(tool, ArgonPenIcon), { className: 'w-3.5 h-3.5' })}
+                            </div>
+                            {['pen', 'highlighter', 'line', 'arrow', 'shape', 'fill'].includes(tool) && (
+                                <span
+                                    className="w-2 h-2 rounded-full border border-slate-700 shrink-0"
+                                    style={{ backgroundColor: tool === 'highlighter' ? highlighterColor : (tool === 'fill' ? (fillColor || color) : color) }}
+                                />
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Floating Live Date & Time HUD Overlay */}
                 {showDateTimeOverlay && (
@@ -23870,14 +23916,38 @@ export default function Whiteboard({
                         )}
                     </div>
 
-                    {/* Unified AI Voice Bot & Microphone Tool with Selector & CC */}
+                    {/* Dedicated AI Chatbot Co-Pilot Main Toolbar Button */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setShowClosedCaptions(prev => {
+                                const next = !prev;
+                                if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', String(next));
+                                return next;
+                            });
+                        }}
+                        className={`relative p-2 rounded-xl transition-all flex items-center justify-center ${
+                            showClosedCaptions
+                                ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400/50 scale-105'
+                                : isAiThinking
+                                ? 'bg-amber-500 text-white shadow-lg animate-pulse'
+                                : isAiSpeaking
+                                ? 'bg-purple-600 text-white shadow-lg animate-bounce'
+                                : 'text-slate-300 hover:text-white hover:bg-slate-700/70'
+                        }`}
+                        title="AI Chatbot Co-Pilot (STEM Solver, Diagrams, AI Draw & Narration)"
+                        aria-label="Toggle AI Chatbot Co-Pilot"
+                    >
+                        <Bot className="w-4 h-4" />
+                        {showClosedCaptions && (
+                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
+                        )}
+                    </button>
+
+                    {/* Unified Voice Microphone Tool with Device Selector */}
                     <div className="relative flex items-center">
                         <div className={`flex items-center rounded-full p-0.5 border shadow-inner transition-all ${
-                            isAiSpeaking
-                                ? 'bg-purple-950/90 border-purple-500/70 shadow-purple-500/30 ring-1 ring-purple-400/50'
-                                : isAiThinking
-                                ? 'bg-amber-950/90 border-amber-500/70 shadow-amber-500/30'
-                                : isVoiceListening
+                            isVoiceListening
                                 ? 'bg-rose-950/80 border-rose-500/70 shadow-rose-500/30 ring-1 ring-rose-400/50'
                                 : 'bg-slate-800/80 border-slate-700/60'
                         }`}>
@@ -23887,18 +23957,12 @@ export default function Whiteboard({
                                 className={`p-1.5 rounded-full transition-all flex items-center justify-center ${
                                     isVoiceListening 
                                         ? 'bg-rose-500 text-white shadow-lg animate-pulse ring-2 ring-rose-400/70' 
-                                        : isAiSpeaking
-                                        ? 'bg-purple-600 text-white shadow-lg animate-bounce'
-                                        : isAiThinking
-                                        ? 'bg-amber-500 text-white shadow-lg'
                                         : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                                 }`}
-                                title={isVoiceListening ? 'AI Voice Bot Active (Listening...) — Click to Stop' : 'AI Voice Bot & Microphone (Click to toggle voice, ▾ for AI Bot Co-Pilot & Audio Settings)'}
+                                title={isVoiceListening ? 'Voice Listening Active — Click to Stop' : 'Voice Commands & Speech Recognition (Click to toggle voice, ▾ for audio devices)'}
                             >
                                 {isVoiceListening ? (
                                     <MicOff className="w-3.5 h-3.5" />
-                                ) : isAiSpeaking ? (
-                                    <Volume2 className="w-3.5 h-3.5" />
                                 ) : (
                                     <Mic className="w-3.5 h-3.5" />
                                 )}
@@ -23910,7 +23974,7 @@ export default function Whiteboard({
                                 className={`p-0.5 pr-1 rounded-full text-slate-400 hover:text-white hover:bg-slate-700/60 transition ${
                                     showMicSelector ? 'text-indigo-400 bg-slate-700' : ''
                                 }`}
-                                title="Audio Settings & AI Bot Co-Pilot Hub"
+                                title="Microphone Devices & Audio Settings"
                             >
                                 <ChevronDown className="w-2.5 h-2.5" />
                             </button>
@@ -31544,6 +31608,7 @@ export default function Whiteboard({
                     onRecordingComplete={(data) => {
                         console.log('Recording complete:', data);
                     }}
+                    onClose={() => setShowRecorder(false)}
                 />
             )}
 
