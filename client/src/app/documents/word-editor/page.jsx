@@ -62,6 +62,7 @@ import api from '@/lib/api';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import OfficeTabBar from '@/components/OfficeTabBar';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
@@ -159,6 +160,56 @@ export default function WordEditorPage() {
     const [title, setTitle] = useState(searchParams.get('title') || 'Untitled Document');
     const [isDriveFile, setIsDriveFile] = useState(Boolean(driveFileIdParam));
     const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam && !fileUrlParam);
+
+    // Multi-document Tab state
+    const [tabs, setTabs] = useState(() => [
+        { id: docIdParam || 'doc_initial', title: searchParams.get('title') || 'Untitled Document', html: '', isDirty: false }
+    ]);
+    const [activeTabId, setActiveTabId] = useState(docIdParam || 'doc_initial');
+
+    const handleSelectTab = (tabId) => {
+        if (tabId === activeTabId) return;
+        const currentHtml = editorRef.current?.innerHTML || '';
+        setTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, html: currentHtml, title } : t));
+        const target = tabs.find(t => t.id === tabId);
+        if (target) {
+            setActiveTabId(tabId);
+            setTitle(target.title || 'Untitled Document');
+            setDocId(tabId.startsWith('doc_') ? null : tabId);
+            if (editorRef.current) {
+                editorRef.current.innerHTML = target.html || '';
+            }
+        }
+    };
+
+    const handleAddTab = () => {
+        const currentHtml = editorRef.current?.innerHTML || '';
+        const newId = `doc_${Date.now()}`;
+        const newTitle = `Untitled Document ${tabs.length + 1}`;
+        const newTab = { id: newId, title: newTitle, html: '', isDirty: false };
+        setTabs(prev => [
+            ...prev.map(t => t.id === activeTabId ? { ...t, html: currentHtml, title } : t),
+            newTab
+        ]);
+        setActiveTabId(newId);
+        setTitle(newTitle);
+        setDocId(null);
+        if (editorRef.current) editorRef.current.innerHTML = '';
+    };
+
+    const handleCloseTab = (tabId, e) => {
+        if (e) e.stopPropagation();
+        if (tabs.length <= 1) return;
+        const newTabs = tabs.filter(t => t.id !== tabId);
+        setTabs(newTabs);
+        if (activeTabId === tabId) {
+            const nextTab = newTabs[newTabs.length - 1];
+            setActiveTabId(nextTab.id);
+            setTitle(nextTab.title || 'Untitled Document');
+            setDocId(nextTab.id.startsWith('doc_') ? null : nextTab.id);
+            if (editorRef.current) editorRef.current.innerHTML = nextTab.html || '';
+        }
+    };
     const [saveStatus, setSaveStatus] = useState('saved'); // 'saving', 'saved', 'offline'
     const [lastSavedTime, setLastSavedTime] = useState(null);
     const [wordCount, setWordCount] = useState(0);
@@ -1598,6 +1649,16 @@ export default function WordEditorPage() {
                     </div>
                 </div>
             </header>
+
+            {/* Multi-Document Office Tab Bar */}
+            <OfficeTabBar
+                tabs={tabs}
+                activeTabId={activeTabId}
+                appType="word"
+                onSelectTab={handleSelectTab}
+                onAddTab={handleAddTab}
+                onCloseTab={handleCloseTab}
+            />
 
             {/* Main Document Workspace */}
             <div className="flex-1 flex overflow-hidden">

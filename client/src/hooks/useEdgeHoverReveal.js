@@ -112,22 +112,32 @@ export function useEdgeHoverReveal({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, isPinned, clearCloseTimer]);
 
+    // Tap / click outside dismissal for touch / tablet devices
+    const containerElRef = useRef(null);
+    useEffect(() => {
+        if (!isOpen || isPinned) return;
+        const handleOutsidePointer = (e) => {
+            if (containerElRef.current && !containerElRef.current.contains(e.target)) {
+                clearCloseTimer();
+                pointerInsideRef.current = false;
+                setHasFocusWithin(false);
+                setIsOpen(false);
+            }
+        };
+        // Capture phase to catch all taps on iPad / mobile outside the sidebar
+        window.addEventListener('pointerdown', handleOutsidePointer, true);
+        return () => window.removeEventListener('pointerdown', handleOutsidePointer, true);
+    }, [isOpen, isPinned, clearCloseTimer]);
+
     useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
 
     const handlePointerEnter = useCallback((e) => {
-        // Trigger instantaneously (0ms) for mouse or stylus/pen hover
-        const pType = e?.pointerType;
-        if (pType && pType !== 'mouse' && pType !== 'pen') return;
-
         pointerInsideRef.current = true;
         clearCloseTimer();
         setIsOpen(true);
     }, [clearCloseTimer]);
 
     const handlePointerLeave = useCallback((e) => {
-        const pType = e?.pointerType;
-        if (pType && pType !== 'mouse' && pType !== 'pen') return;
-
         pointerInsideRef.current = false;
         scheduleAutoHide();
     }, [scheduleAutoHide]);
@@ -177,8 +187,16 @@ export function useEdgeHoverReveal({
 
     const toggleOpen = useCallback(() => {
         clearCloseTimer();
-        setIsOpen((prev) => !prev);
-    }, [clearCloseTimer]);
+        setIsOpen((prev) => {
+            const next = !prev;
+            if (next && !isPinned) {
+                closeTimerRef.current = setTimeout(() => {
+                    setIsOpen(false);
+                }, autoHideMs || 3500);
+            }
+            return next;
+        });
+    }, [clearCloseTimer, isPinned, autoHideMs]);
 
     return {
         isVisible: isPinned || isOpen || isLocked || hasFocusWithin,
@@ -194,6 +212,7 @@ export function useEdgeHoverReveal({
             onPointerLeave: handlePointerLeave,
         },
         containerProps: {
+            ref: containerElRef,
             onPointerEnter: handlePointerEnter,
             onPointerLeave: handlePointerLeave,
             onFocusCapture: handleFocusCapture,

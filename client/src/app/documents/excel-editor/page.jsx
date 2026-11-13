@@ -67,6 +67,7 @@ import * as xlsx from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import OfficeTabBar from '@/components/OfficeTabBar';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
@@ -417,6 +418,65 @@ export default function ExcelEditorPage() {
     const [isDriveFile, setIsDriveFile] = useState(Boolean(driveFileIdParam));
     const [saveStatus, setSaveStatus] = useState('saved');
     const [showWelcomeHub, setShowWelcomeHub] = useState(!docIdParam && !driveFileIdParam);
+
+    // Multi-workbook Document Tabs
+    const [workbookTabs, setWorkbookTabs] = useState(() => [
+        { id: docIdParam || 'wb_initial', title: searchParams.get('title') || 'Untitled Spreadsheet', sheets: null, isDirty: false }
+    ]);
+    const [activeWorkbookId, setActiveWorkbookId] = useState(docIdParam || 'wb_initial');
+
+    const handleSelectWorkbook = (wbId) => {
+        if (wbId === activeWorkbookId) return;
+        setWorkbookTabs(prev => prev.map(w => w.id === activeWorkbookId ? { ...w, sheets, title, activeSheetIndex } : w));
+        const target = workbookTabs.find(w => w.id === wbId);
+        if (target) {
+            setActiveWorkbookId(wbId);
+            setTitle(target.title || 'Untitled Spreadsheet');
+            setDocId(wbId.startsWith('wb_') ? null : wbId);
+            if (target.sheets) {
+                setSheets(target.sheets);
+                setActiveSheetIndex(target.activeSheetIndex || 0);
+            }
+        }
+    };
+
+    const handleAddWorkbook = () => {
+        const newId = `wb_${Date.now()}`;
+        const newTitle = `Untitled Spreadsheet ${workbookTabs.length + 1}`;
+        const initialSheets = [
+            {
+                name: 'Sheet1',
+                cells: {}
+            }
+        ];
+        const newWb = { id: newId, title: newTitle, sheets: initialSheets, isDirty: false, activeSheetIndex: 0 };
+        setWorkbookTabs(prev => [
+            ...prev.map(w => w.id === activeWorkbookId ? { ...w, sheets, title, activeSheetIndex } : w),
+            newWb
+        ]);
+        setActiveWorkbookId(newId);
+        setTitle(newTitle);
+        setDocId(null);
+        setSheets(initialSheets);
+        setActiveSheetIndex(0);
+    };
+
+    const handleCloseWorkbook = (wbId, e) => {
+        if (e) e.stopPropagation();
+        if (workbookTabs.length <= 1) return;
+        const newTabs = workbookTabs.filter(w => w.id !== wbId);
+        setWorkbookTabs(newTabs);
+        if (activeWorkbookId === wbId) {
+            const nextWb = newTabs[newTabs.length - 1];
+            setActiveWorkbookId(nextWb.id);
+            setTitle(nextWb.title || 'Untitled Spreadsheet');
+            setDocId(nextWb.id.startsWith('wb_') ? null : nextWb.id);
+            if (nextWb.sheets) {
+                setSheets(nextWb.sheets);
+                setActiveSheetIndex(nextWb.activeSheetIndex || 0);
+            }
+        }
+    };
 
     // Grid state
     const [rowCount, setRowCount] = useState(1000);
@@ -4170,6 +4230,16 @@ export default function ExcelEditorPage() {
                     />
                 </div>
             </header>
+
+            {/* Multi-Workbook Office Tab Bar */}
+            <OfficeTabBar
+                tabs={workbookTabs}
+                activeTabId={activeWorkbookId}
+                appType="excel"
+                onSelectTab={handleSelectWorkbook}
+                onAddTab={handleAddWorkbook}
+                onCloseTab={handleCloseWorkbook}
+            />
 
             {/* Main Application Layout: Full Viewport Grid + Right Chart Inspector */}
             <div className={`flex-1 flex overflow-hidden ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'}`}>

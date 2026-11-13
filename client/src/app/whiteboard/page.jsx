@@ -639,19 +639,7 @@ export default function WhiteboardPage() {
                                             </div>
                                         )}
 
-                                        {/* Icon-Only Grid Layout View & Reorder Pages */}
-                                        <button
-                                            type="button"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setGridModalFile(file);
-                                            }}
-                                            className="absolute top-2 right-2 z-20 w-7 h-7 rounded-lg bg-slate-900/70 hover:bg-slate-900 text-white shadow-md flex items-center justify-center transition-all opacity-85 hover:opacity-100 hover:scale-105"
-                                            title="Grid Layout View & Reorder Pages"
-                                            aria-label="Grid Layout View and Reorder Pages"
-                                        >
-                                            <LayoutGrid className="w-3.5 h-3.5" />
-                                        </button>
+
 
                                         {/* Multi-page Left Arrow */}
                                         {totalPagesCount > 1 && (
@@ -954,18 +942,6 @@ export default function WhiteboardPage() {
                                                     ) : (
                                                         <div className="flex items-center justify-end gap-1 text-slate-500">
                                                             <button 
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setGridModalFile(file);
-                                                                }}
-                                                                className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
-                                                                title="Grid Layout View & Reorder Pages"
-                                                                aria-label="Grid Layout View and Reorder Pages"
-                                                            >
-                                                                <LayoutGrid className="w-4 h-4" />
-                                                            </button>
-                                                            <button 
                                                                 onClick={() => setActiveFileId(file.id)}
                                                                 className="p-1.5 hover:text-primary-600 hover:bg-primary-50 rounded-md transition-colors"
                                                                 title="Open Whiteboard"
@@ -1005,22 +981,6 @@ export default function WhiteboardPage() {
                     </div>
                 )}
             </main>
-
-            {/* Icon-Only Grid Layout View & Reorder Pages Modal */}
-            <WhiteboardPagesGridModal
-                isOpen={Boolean(gridModalFile)}
-                file={gridModalFile}
-                onClose={() => setGridModalFile(null)}
-                onSelectPage={(fileId, pageIdx) => {
-                    setInitialPage(pageIdx);
-                    setActiveFileId(fileId);
-                    setGridModalFile(null);
-                }}
-                onFileUpdated={(updatedFile) => {
-                    setFiles(prev => prev.map(f => f.id === updatedFile.id ? { ...f, ...updatedFile } : f));
-                    setGridModalFile(updatedFile);
-                }}
-            />
         </div>
     );
 }

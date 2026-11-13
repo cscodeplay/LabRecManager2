@@ -17,10 +17,19 @@ const getStyle = (size, customStyle, className = "") => {
         else if (className.includes('w-6')) { resolvedWidth = 24; resolvedHeight = 24; }
         else if (className.includes('w-5')) { resolvedWidth = 20; resolvedHeight = 20; }
         else if (className.includes('w-4')) { resolvedWidth = 16; resolvedHeight = 16; }
+        else if (className.includes('w-3.5')) { resolvedWidth = 14; resolvedHeight = 14; }
+        else if (className.includes('w-3')) { resolvedWidth = 12; resolvedHeight = 12; }
     }
+    // Strict fallback: never return unconstrained '100%' as WebKit collapses or blows up SVGs in flex containers
+    const finalWidth = resolvedWidth || 16;
+    const finalHeight = resolvedHeight || 16;
     return {
-        width: resolvedWidth || '100%',
-        height: resolvedHeight || '100%',
+        width: finalWidth,
+        height: finalHeight,
+        minWidth: finalWidth,
+        minHeight: finalHeight,
+        maxWidth: finalWidth,
+        maxHeight: finalHeight,
         flexShrink: 0,
         display: 'inline-block',
         ...customStyle
@@ -36,7 +45,7 @@ const getStyle = (size, customStyle, className = "") => {
  */
 export function FluentPythonIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 128 128" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 128 128" fill="none" {...props}>
             <path fill="#387eb8" d="M63.58 3.5c-30.82 0-28.9 13.37-28.9 13.37l.03 13.85h29.35v4.18H23.51S3.5 32.55 3.5 63.56c0 31.02 17.43 29.9 17.43 29.9h10.4V78.85s-.56-17.43 17.15-17.43h29.07s16.6 0 16.6-16.03V16.87S96.27 3.5 63.58 3.5M47.7 12.63a4.7 4.7 0 1 1 0 9.4a4.7 4.7 0 0 1 0-9.4" />
             <path fill="#ffe052" d="M64.42 124.5c30.82 0 28.9-13.37 28.9-13.37l-.03-13.85H63.94v-4.18h40.55s20.01 2.35 20.01-28.66c0-31.02-17.43-29.9-17.43-29.9h-10.4v14.61s.56 17.43-17.15 17.43H30.85s-16.6 0-16.6 16.03v28.52s-2.12 13.37 30.57 13.37m15.88-9.13a4.7 4.7 0 1 1 0-9.4a4.7 4.7 0 0 1 0 9.4" />
         </svg>
@@ -48,7 +57,7 @@ export function FluentPythonIcon({ className = "w-4 h-4 flex-shrink-0", size, st
  */
 export function FluentSqlIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <ellipse cx="16" cy="7" rx="12" ry="4" fill="#38bdf8" />
             <path d="M4 7v6c0 2.21 5.37 4 12 4s12-1.79 12-4V7" fill="#0284c7" />
             <ellipse cx="16" cy="13" rx="12" ry="3.5" fill="#38bdf8" opacity="0.6" />
@@ -65,7 +74,7 @@ export function FluentSqlIcon({ className = "w-4 h-4 flex-shrink-0", size, style
  */
 export function FluentCppIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <polygon points="16,2 29,9.5 29,24.5 16,32 3,24.5 3,9.5" fill="#0284c7" />
             <polygon points="16,4 27,10.5 27,23.5 16,30 5,10.5" fill="#0369a1" />
             <path d="M15 11a5 5 0 1 0 0 10h2" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
@@ -79,7 +88,7 @@ export function FluentCppIcon({ className = "w-4 h-4 flex-shrink-0", size, style
  */
 export function FluentDebuggerIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <path fill="#f43f5e" d="M16 6a6 6 0 0 0-6 6v2h12v-2a6 6 0 0 0-6-6" />
             <rect x="8" y="16" width="16" height="12" rx="6" fill="#e11d48" />
             <path stroke="#fb7185" strokeWidth="2" strokeLinecap="round" d="M4 14l6 2m0 0l-6 6m24-8l-6 2m0 0l6 6M8 8L5 5m19 3l3-3" />
@@ -95,7 +104,7 @@ export function FluentDebuggerIcon({ className = "w-4 h-4 flex-shrink-0", size, 
  */
 export function FluentTerminalIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="3" y="5" width="26" height="22" rx="4" fill="#1e293b" stroke="#334155" strokeWidth="1.5" />
             <rect x="3" y="5" width="26" height="6" rx="4" fill="#0f172a" />
             <circle cx="6.5" cy="8" r="1" fill="#ef4444" />
@@ -111,7 +120,7 @@ export function FluentTerminalIcon({ className = "w-4 h-4 flex-shrink-0", size, 
  */
 export function FluentFlowchartIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="4" y="4" width="10" height="7" rx="2" fill="#3b82f6" />
             <polygon points="22 13 28 17.5 22 22 16 17.5" fill="#f59e0b" />
             <rect x="4" y="21" width="10" height="7" rx="2" fill="#10b981" />
@@ -127,7 +136,7 @@ export function FluentFlowchartIcon({ className = "w-4 h-4 flex-shrink-0", size,
  */
 export function FluentAICopilotIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_ai_copilot_grad" x1="2" y1="2" x2="30" y2="30" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#38bdf8" />
@@ -146,7 +155,7 @@ export function FluentAICopilotIcon({ className = "w-4 h-4 flex-shrink-0", size,
  */
 export function FluentConsoleClearIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 48 48" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 48 48" fill="none" {...props}>
             <path fill="#f87171" d="M12 12h24l-2 28a4 4 0 0 1-4 4H18a4 4 0 0 1-4-4z" />
             <path fill="#dc2626" d="M9 8h30a2 2 0 0 1 2 2v2H7v-2a2 2 0 0 1 2-2z" />
             <rect x="19" y="4" width="10" height="4" rx="2" fill="#991b1b" />
@@ -161,7 +170,7 @@ export function FluentConsoleClearIcon({ className = "w-4 h-4 flex-shrink-0", si
  */
 export function FluentConsoleExportIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 48 48" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 48 48" fill="none" {...props}>
             <path fill="#38bdf8" d="M6 34v6a4 4 0 0 0 4 4h28a4 4 0 0 0 4-4v-6" stroke="#0284c7" strokeWidth="3" strokeLinecap="round" />
             <path d="M24 6v24m-8-8l8 8l8-8" stroke="#0284c7" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -177,7 +186,7 @@ export function FluentConsoleExportIcon({ className = "w-4 h-4 flex-shrink-0", s
  */
 export function FluentAcademicSessionIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <path fill="#3b82f6" d="M16 4l14 7l-14 7L2 11z" />
             <path fill="#1d4ed8" d="M6 14.5v6.5c0 4 4.5 7 10 7s10-3 10-7v-6.5l-10 5z" />
             <path stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" d="M28 12v9a2 2 0 1 0 4 0v-9z" />
@@ -191,7 +200,7 @@ export function FluentAcademicSessionIcon({ className = "w-4 h-4 flex-shrink-0",
  */
 export function FluentNotificationBellIcon({ className = "w-5 h-5 flex-shrink-0", size, style, hasUnread = false, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <path fill="#fbbf24" d="M16 3a3 3 0 0 0-3 3v1.1A10 10 0 0 0 6 17v4l-2 2v2h24v-2l-2-2v-4a10 10 0 0 0-7-9.9V6a3 3 0 0 0-3-3" />
             <path fill="#d97706" d="M16 29a4 4 0 0 0 4-4h-8a4 4 0 0 0 4 4" />
             {hasUnread && (
@@ -206,7 +215,7 @@ export function FluentNotificationBellIcon({ className = "w-5 h-5 flex-shrink-0"
  */
 export function FluentUserProfileIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <circle cx="16" cy="16" r="14" fill="#3b82f6" />
             <circle cx="16" cy="11" r="5" fill="#ffffff" />
             <path d="M7 26c0-4.5 4-7.5 9-7.5s9 3 9 7.5" fill="#ffffff" />
@@ -219,7 +228,7 @@ export function FluentUserProfileIcon({ className = "w-4 h-4 flex-shrink-0", siz
  */
 export function FluentSecurityLockIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="5" y="13" width="22" height="16" rx="4" fill="#f59e0b" stroke="#d97706" strokeWidth="1.5" />
             <path d="M10 13V9a6 6 0 0 1 12 0v4" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" fill="none" />
             <circle cx="16" cy="20" r="2" fill="#78350f" />
@@ -233,7 +242,7 @@ export function FluentSecurityLockIcon({ className = "w-4 h-4 flex-shrink-0", si
  */
 export function FluentSignOutIcon({ className = "w-4 h-4 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <path fill="#fee2e2" d="M6 5h12a3 3 0 0 1 3 3v3h-4V8H8v16h9v-3h4v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3" />
             <path fill="#ef4444" d="M21 11l6 5l-6 5v-3H12v-4h9z" />
         </svg>
@@ -249,7 +258,7 @@ export function FluentSignOutIcon({ className = "w-4 h-4 flex-shrink-0", size, s
  */
 export function FluentAssignedWorkIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_dispatch_bg_app" x1="3" y1="5" x2="29" y2="27" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#0d9488" />
@@ -272,7 +281,7 @@ export function FluentAssignedWorkIcon({ className = "w-5 h-5 flex-shrink-0", si
  */
 export function FluentReviewSubmissionsIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_tray_grad_app" x1="4" y1="12" x2="28" y2="28" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#4f46e5" />
@@ -296,7 +305,7 @@ export function FluentReviewSubmissionsIcon({ className = "w-5 h-5 flex-shrink-0
  */
 export function FluentAssignmentLedgerIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="5" y="4" width="22" height="25" rx="3" fill="#6366f1" />
             <path fill="#818cf8" d="M5 4h22v6H5z" />
             <rect x="9" y="14" width="14" height="2" rx="1" fill="#c7d2fe" />
@@ -312,7 +321,7 @@ export function FluentAssignmentLedgerIcon({ className = "w-5 h-5 flex-shrink-0"
  */
 export function FluentWorkstationIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="3" y="5" width="26" height="16" rx="2" fill="#0284c7" stroke="#38bdf8" strokeWidth="1.5" />
             <rect x="5" y="7" width="22" height="12" fill="#0f172a" />
             <path fill="#38bdf8" d="M12 21h8v3h-8zM8 24h16v2H8z" />
@@ -326,7 +335,7 @@ export function FluentWorkstationIcon({ className = "w-5 h-5 flex-shrink-0", siz
  */
 export function FluentTrophyIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <path fill="#f59e0b" d="M8 5h16v9a8 8 0 0 1-16 0z" />
             <path fill="#d97706" d="M4 7h4v4a4 4 0 0 1-4-4zm24 0h-4v4a4 4 0 0 0 4-4z" />
             <path fill="#b45309" d="M14 21h4v4h-4z" />
@@ -341,7 +350,7 @@ export function FluentTrophyIcon({ className = "w-5 h-5 flex-shrink-0", size, st
  */
 export function FluentTimetableIcon({ className = "w-5 h-5 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <rect x="4" y="6" width="24" height="22" rx="4" fill="#0d9488" />
             <rect x="4" y="6" width="24" height="7" rx="3" fill="#14b8a6" />
             <circle cx="9" cy="4" r="1.5" fill="#f8fafc" />
@@ -421,7 +430,7 @@ export function FluentSlidesDocIcon({ className = "w-6 h-6 flex-shrink-0", size,
  */
 export function FluentLiveCollabIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_collab_bg_app" x1="4" y1="5" x2="26" y2="22" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#8B5CF6" />
@@ -450,7 +459,7 @@ export function FluentLiveCollabIcon({ className = "w-6 h-6 flex-shrink-0", size
  */
 export function FluentLabSuiteIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_lab_screen_app" x1="5" y1="5" x2="23" y2="20" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#3B82F6" />
@@ -478,7 +487,7 @@ export function FluentLabSuiteIcon({ className = "w-6 h-6 flex-shrink-0", size, 
  */
 export function FluentStudentProgressIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_prog_dossier_app" x1="5" y1="4" x2="26" y2="28" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#0EA5E9" />
@@ -506,7 +515,7 @@ export function FluentStudentProgressIcon({ className = "w-6 h-6 flex-shrink-0",
  */
 export function FluentExamHubIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_exam_sheet_app" x1="6" y1="4" x2="26" y2="28" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#F43F5E" />
@@ -538,7 +547,7 @@ export function FluentExamHubIcon({ className = "w-6 h-6 flex-shrink-0", size, s
  */
 export function FluentInstituteOpsIcon({ className = "w-6 h-6 flex-shrink-0", size, style, ...props }) {
     return (
-        <svg style={getStyle(size, style)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
+        <svg style={getStyle(size, style, className)} className={`${className} ${shadowClass}`} viewBox="0 0 32 32" fill="none" {...props}>
             <defs>
                 <linearGradient id="fluent_ops_shield_app" x1="8" y1="4" x2="24" y2="28" gradientUnits="userSpaceOnUse">
                     <stop stopColor="#475569" />

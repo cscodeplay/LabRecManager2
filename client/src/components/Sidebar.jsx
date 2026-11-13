@@ -221,6 +221,13 @@ export default function Sidebar() {
         isLocked: confirmingLogout,
     });
 
+    // Auto-close unpinned dock whenever route changes
+    useEffect(() => {
+        if (!dockReveal.isPinned) {
+            dockReveal.closeNow();
+        }
+    }, [pathname, dockReveal.isPinned]);
+
     // Sync school info from user session and backend
     useEffect(() => {
         if (user?.school?.logoUrl || user?.school?.name) {

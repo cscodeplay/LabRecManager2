@@ -14,7 +14,8 @@ export default function WhiteboardPagesGridModal({
     file,
     onClose,
     onSelectPage,
-    onFileUpdated
+    onFileUpdated,
+    onReorderLivePage
 }) {
     const [loading, setLoading] = useState(false);
     const [canvasState, setCanvasState] = useState(null);
@@ -28,6 +29,16 @@ export default function WhiteboardPagesGridModal({
             setCanvasState(null);
             setDraggedIndex(null);
             setDragOverIndex(null);
+            return;
+        }
+
+        // Live in-memory whiteboard session
+        if (file.isLiveSession) {
+            setCanvasState({
+                totalPages: file.pageCount || file.totalPages || 1,
+                pages: file.pages || Array(file.pageCount || 1).fill(null),
+                pageThumbnails: file.pageThumbnails || []
+            });
             return;
         }
 
@@ -107,6 +118,14 @@ export default function WhiteboardPagesGridModal({
         setCanvasState(updatedState);
         setDraggedIndex(null);
         setDragOverIndex(null);
+
+        if (onReorderLivePage) {
+            onReorderLivePage(fromIdx, toIdx);
+            toast.success(`Page ${fromIdx + 1} moved to position ${toIdx + 1}`);
+            if (file.isLiveSession || !file.id || file.id === 'live_session') {
+                return;
+            }
+        }
 
         try {
             setIsSaving(true);

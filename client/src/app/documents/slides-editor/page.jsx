@@ -46,6 +46,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import OfficeTabBar from '@/components/OfficeTabBar';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
 import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
@@ -146,6 +147,59 @@ export default function SlidesEditorPage() {
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [slides, setSlides] = useState(DEFAULT_SLIDES);
     const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+
+    // Multi-presentation Document Tabs
+    const [presentationTabs, setPresentationTabs] = useState(() => [
+        { id: docIdParam || 'pres_initial', title: searchParams.get('title') || 'Untitled Presentation', slides: DEFAULT_SLIDES, isDirty: false, currentSlideIndex: 0 }
+    ]);
+    const [activePresentationId, setActivePresentationId] = useState(docIdParam || 'pres_initial');
+
+    const handleSelectPresentation = (presId) => {
+        if (presId === activePresentationId) return;
+        setPresentationTabs(prev => prev.map(p => p.id === activePresentationId ? { ...p, slides, title, currentSlideIndex } : p));
+        const target = presentationTabs.find(p => p.id === presId);
+        if (target) {
+            setActivePresentationId(presId);
+            setTitle(target.title || 'Untitled Presentation');
+            setDocId(presId.startsWith('pres_') ? null : presId);
+            if (target.slides) {
+                setSlides(target.slides);
+                setCurrentSlideIndex(target.currentSlideIndex || 0);
+            }
+        }
+    };
+
+    const handleAddPresentation = () => {
+        const newId = `pres_${Date.now()}`;
+        const newTitle = `Untitled Presentation ${presentationTabs.length + 1}`;
+        const newPres = { id: newId, title: newTitle, slides: DEFAULT_SLIDES, isDirty: false, currentSlideIndex: 0 };
+        setPresentationTabs(prev => [
+            ...prev.map(p => p.id === activePresentationId ? { ...p, slides, title, currentSlideIndex } : p),
+            newPres
+        ]);
+        setActivePresentationId(newId);
+        setTitle(newTitle);
+        setDocId(null);
+        setSlides(DEFAULT_SLIDES);
+        setCurrentSlideIndex(0);
+    };
+
+    const handleClosePresentation = (presId, e) => {
+        if (e) e.stopPropagation();
+        if (presentationTabs.length <= 1) return;
+        const newTabs = presentationTabs.filter(p => p.id !== presId);
+        setPresentationTabs(newTabs);
+        if (activePresentationId === presId) {
+            const nextPres = newTabs[newTabs.length - 1];
+            setActivePresentationId(nextPres.id);
+            setTitle(nextPres.title || 'Untitled Presentation');
+            setDocId(nextPres.id.startsWith('pres_') ? null : nextPres.id);
+            if (nextPres.slides) {
+                setSlides(nextPres.slides);
+                setCurrentSlideIndex(nextPres.currentSlideIndex || 0);
+            }
+        }
+    };
 
     // Presentation mode (F5)
     const [isPresenting, setIsPresenting] = useState(false);
@@ -1040,6 +1094,16 @@ export default function SlidesEditorPage() {
                     </div>
                 </div>
             </header>
+
+            {/* Multi-Presentation Office Tab Bar */}
+            <OfficeTabBar
+                tabs={presentationTabs}
+                activeTabId={activePresentationId}
+                appType="slides"
+                onSelectTab={handleSelectPresentation}
+                onAddTab={handleAddPresentation}
+                onCloseTab={handleClosePresentation}
+            />
 
             {/* Main Application Body: Slide Thumbnails + Canvas */}
             <div className="flex-1 flex overflow-hidden">

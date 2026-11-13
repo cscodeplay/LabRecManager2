@@ -96,19 +96,21 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                 onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
                 className={`flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                     variant === 'pill'
-                        ? 'px-3 py-1.5 rounded-full border text-xs font-semibold'
+                        ? 'h-8 max-h-8 px-3 rounded-full border text-xs font-semibold'
                         : 'gap-2 px-3 py-2 rounded-lg border'
                 } ${isReadOnlyMode
                         ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-primary-300'
                     }`}
             >
-                <FluentAcademicSessionIcon className="w-4 h-4 shrink-0" />
+                <span className="w-4 h-4 min-w-[16px] max-w-[16px] h-4 max-h-[16px] flex items-center justify-center shrink-0">
+                    <FluentAcademicSessionIcon className="w-4 h-4 shrink-0" size={16} />
+                </span>
                 <span className={variant === 'pill' ? 'text-xs font-semibold whitespace-nowrap' : 'text-sm font-medium'}>
                     {selectedSession?.yearLabel || 'Select Session'}
                 </span>
-                {isReadOnlyMode && <Lock className="w-3 h-3 text-amber-600" />}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                {isReadOnlyMode && <Lock className="w-3 h-3 text-amber-600 shrink-0" />}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Dropdown */}

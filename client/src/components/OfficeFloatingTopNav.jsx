@@ -233,11 +233,11 @@ export default function OfficeFloatingTopNav() {
 
     return (
         <>
-            {/* Top Navigation Bar: Fully Opaque, Stable Layout without Accidental Timeouts */}
+            {/* Top Navigation Bar: Fully Opaque, Stable Layout without Accidental Timeouts - Positioned cleanly below Global Search Bar */}
             <div
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[60] select-none transition-all duration-200"
+                className="fixed top-16 left-1/2 -translate-x-1/2 z-[60] select-none transition-all duration-200"
             >
                 {isCollapsed ? (
                     /* 4-Square Collapsed Icon */

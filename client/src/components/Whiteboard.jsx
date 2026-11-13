@@ -71,6 +71,7 @@ import WhiteboardDocumentObject, { detectDocumentType } from './WhiteboardDocume
 import { GeometryInstrumentsOverlay, clampPointToInstrumentOuterEdge } from './geometryTools';
 import EstimatorCalculator from './EstimatorCalculator';
 import WhiteboardFlashcards from './WhiteboardFlashcards';
+import WhiteboardPagesGridModal from './WhiteboardPagesGridModal';
 import { FluentQuizIcon } from './FluentNavIcons';
 import {
     getCustomToolbarIcon,
@@ -851,6 +852,7 @@ export default function Whiteboard({
     const preStrokeCanvasRef = useRef(null);
     const activeAiAbortControllerRef = useRef(null);
     const [tabletPointerPos, setTabletPointerPos] = useState(null);
+    const tabletPointerFadeTimerRef = useRef(null);
 
     const clearLiveStrokeCanvas = useCallback(() => {
         const liveCanvas = liveStrokeCanvasRef.current;
@@ -1647,6 +1649,7 @@ export default function Whiteboard({
     const [pdfInputUrl, setPdfInputUrl] = useState('');
     const [pdfInputTitle, setPdfInputTitle] = useState('');
     const [showPageNavMenu, setShowPageNavMenu] = useState(false);
+    const [showPagesGridModal, setShowPagesGridModal] = useState(false);
     const [pageJumpInput, setPageJumpInput] = useState('');
 
     // ─── Direct Audio / Video Capture to Canvas State ───
@@ -10029,6 +10032,7 @@ export default function Whiteboard({
         }
 
         if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+            if (tabletPointerFadeTimerRef.current) clearTimeout(tabletPointerFadeTimerRef.current);
             setTabletPointerPos({ x: e.clientX, y: e.clientY });
         }
 
@@ -10093,7 +10097,10 @@ export default function Whiteboard({
     }, [draw, pressureSensitivity, socket, sessionId, getPosition, isInstructor, user, userName, userIdentifier, tool, currentZoom]);
 
     const handlePointerUp = useCallback((e) => {
-        setTabletPointerPos(null);
+        if (tabletPointerFadeTimerRef.current) clearTimeout(tabletPointerFadeTimerRef.current);
+        tabletPointerFadeTimerRef.current = setTimeout(() => {
+            setTabletPointerPos(null);
+        }, 1200);
         if (e.cancelable) {
             e.preventDefault();
         }
@@ -10164,7 +10171,10 @@ export default function Whiteboard({
     }, [stopDrawing]);
 
     const handlePointerLeave = useCallback((e) => {
-        setTabletPointerPos(null);
+        if (tabletPointerFadeTimerRef.current) clearTimeout(tabletPointerFadeTimerRef.current);
+        tabletPointerFadeTimerRef.current = setTimeout(() => {
+            setTabletPointerPos(null);
+        }, 600);
         if (tool === 'laser') {
             setLaserPos(null);
             setLaserTrail([]);
@@ -12212,26 +12222,40 @@ export default function Whiteboard({
         { id: 'image', icon: ImageIcon, label: 'Insert Image' },
     ];
 
-    // Get cursor based on tool
+    // WebKit-compliant SVG cursor builder (encodes SVG for Safari/iPadOS compatibility)
+    const buildSvgCursor = (svgString, hotX, hotY, fallback = 'crosshair') => {
+        const encoded = encodeURIComponent(svgString);
+        return `url("data:image/svg+xml;charset=utf-8,${encoded}") ${hotX} ${hotY}, ${fallback}`;
+    };
+
+    // Get cursor based on tool with authentic WebKit/iPadOS support
     const getCursor = () => {
         if (tool === 'grab' || tool === 'pan' || isSpacePressedRef.current) return isGrabbing ? 'grabbing' : 'grab';
         if (tool === 'select') return 'default';
         if (tool === 'fill') {
-            const activeFill = encodeURIComponent(
-                fillMode === 'solid'
-                    ? (color || '#3b82f6')
-                    : (fillMode === 'pattern' ? (patternFgColor || '#ffffff') : (gradientFrom || '#ff512f'))
-            );
-            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" fill="%23ffffff" stroke="%230f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m5 2 5 5" stroke="%230f172a" stroke-width="2" stroke-linecap="round"/><path d="M2 13h15" stroke="%230f172a" stroke-width="2"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" fill="${activeFill}" stroke="%230f172a" stroke-width="1.5"/></svg>') 2 13, crosshair`;
+            const activeFill = fillMode === 'solid'
+                ? (color || '#3b82f6')
+                : (fillMode === 'pattern' ? (patternFgColor || '#ffffff') : (gradientFrom || '#ff512f'));
+            const fillSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z" fill="#ffffff" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m5 2 5 5" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/><path d="M2 13h15" stroke="#0f172a" stroke-width="2"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4Z" fill="${activeFill}" stroke="#0f172a" stroke-width="1.5"/></svg>`;
+            return buildSvgCursor(fillSvg, 2, 13, 'crosshair');
         }
-        if (tool === 'eraser') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="${eraserSize}" height="${eraserSize}" viewBox="0 0 ${eraserSize} ${eraserSize}"><rect width="${eraserSize}" height="${eraserSize}" fill="white" stroke="black" stroke-width="1"/></svg>') ${eraserSize / 2} ${eraserSize / 2}, auto`;
+        if (tool === 'eraser') {
+            const sz = Math.max(16, Math.min(48, Number(eraserSize) || 24));
+            const eraserSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}"><rect x="1" y="1" width="${sz - 2}" height="${sz - 2}" rx="3" fill="#ffffff" stroke="#0f172a" stroke-width="2"/><line x1="${sz * 0.4}" y1="2" x2="${sz * 0.4}" y2="${sz - 2}" stroke="#cbd5e1" stroke-width="1.5"/></svg>`;
+            return buildSvgCursor(eraserSvg, Math.round(sz / 2), Math.round(sz / 2), 'auto');
+        }
         if (tool === 'text') return 'text';
         if (tool === 'laser') return 'none';
-        if (tool === 'highlighter') return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="${encodeURIComponent(highlighterColor)}" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>') 2 22, auto`;
+        if (tool === 'highlighter') {
+            const hlColor = highlighterColor || '#ffff00';
+            const hlSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="m9 11-6 6v3h9l3-3" fill="${hlColor}" stroke="#0f172a" stroke-width="1.5"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" fill="#ffffff" stroke="#0f172a" stroke-width="1.5"/><line x1="3" y1="20" x2="6" y2="20" stroke="#0f172a" stroke-width="2"/></svg>`;
+            return buildSvgCursor(hlSvg, 3, 20, 'auto');
+        }
         // Pen cursor - crisp angled fountain pen with nib color matching active stroke
         if (tool === 'pen') {
-            const penColor = encodeURIComponent(color || '#000000');
-            return `url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" fill="%23ffffff" stroke="%230f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m14 6 4 4" stroke="%230f172a" stroke-width="2" stroke-linecap="round"/><polygon points="2,22 6.5,20.5 3.5,17.5" fill="${penColor}" stroke="%230f172a" stroke-width="1"/><circle cx="2" cy="22" r="1.2" fill="%230f172a"/></svg>') 2 22, crosshair`;
+            const penInk = color || '#000000';
+            const penSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M22 4a3 3 0 0 1 4 4L11 23l-7 2 2-7L22 4z" fill="#ffffff" stroke="#0f172a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="m18 8 4 4" stroke="#0f172a" stroke-width="2"/><polygon points="4,25 9,23.5 5.5,20" fill="${penInk}" stroke="#0f172a" stroke-width="1"/><circle cx="4" cy="25" r="1.5" fill="#0f172a"/></svg>`;
+            return buildSvgCursor(penSvg, 4, 25, 'crosshair');
         }
         if (tool === 'arrow') return 'crosshair';
         return 'crosshair';
@@ -23920,14 +23944,17 @@ export default function Whiteboard({
                     <button
                         type="button"
                         onClick={() => {
-                            setShowClosedCaptions(prev => {
+                            setShowAiAssistantModal(prev => {
                                 const next = !prev;
-                                if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', String(next));
+                                if (next) {
+                                    setShowClosedCaptions(true);
+                                    if (typeof window !== 'undefined') localStorage.setItem('wb_show_cc', 'true');
+                                }
                                 return next;
                             });
                         }}
                         className={`relative p-2 rounded-xl transition-all flex items-center justify-center ${
-                            showClosedCaptions
+                            showAiAssistantModal
                                 ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-600/30 ring-1 ring-purple-400/50 scale-105'
                                 : isAiThinking
                                 ? 'bg-amber-500 text-white shadow-lg animate-pulse'
@@ -23935,11 +23962,11 @@ export default function Whiteboard({
                                 ? 'bg-purple-600 text-white shadow-lg animate-bounce'
                                 : 'text-slate-300 hover:text-white hover:bg-slate-700/70'
                         }`}
-                        title="AI Chatbot Co-Pilot (STEM Solver, Diagrams, AI Draw & Narration)"
+                        title="AI Chatbot Co-Pilot (Click to toggle AI Assistant Window)"
                         aria-label="Toggle AI Chatbot Co-Pilot"
                     >
                         <Bot className="w-4 h-4" />
-                        {showClosedCaptions && (
+                        {showAiAssistantModal && (
                             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-slate-900 animate-pulse" />
                         )}
                     </button>
@@ -24203,6 +24230,19 @@ export default function Whiteboard({
                             >
                                 <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
                             </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    saveCurrentPage();
+                                    setShowPagesGridModal(true);
+                                    setShowPageNavMenu(false);
+                                }}
+                                className="p-1 hover:bg-slate-700 rounded-md transition text-slate-300 hover:text-white"
+                                title="Grid Layout View & Reorder Pages"
+                                aria-label="Grid Layout View and Reorder Pages"
+                            >
+                                <LayoutGrid className="w-3.5 h-3.5 text-indigo-400 hover:text-indigo-300" />
+                            </button>
                         </div>
 
                         {/* Interactive Page Switcher & Manager Dropdown Menu with Vertical Scroll Previews */}
@@ -24216,15 +24256,30 @@ export default function Whiteboard({
                                         <ArgonLayersIcon className="w-4 h-4 text-indigo-400" />
                                         <span>Pages ({totalPages})</span>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPageNavMenu(false)}
-                                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
-                                        title="Close page manager"
-                                        aria-label="Close Page Manager"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                saveCurrentPage();
+                                                setShowPagesGridModal(true);
+                                                setShowPageNavMenu(false);
+                                            }}
+                                            className="p-1 hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 rounded-lg transition"
+                                            title="Grid Layout View & Reorder Pages"
+                                            aria-label="Grid Layout View and Reorder Pages"
+                                        >
+                                            <LayoutGrid className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPageNavMenu(false)}
+                                            className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+                                            title="Close page manager"
+                                            aria-label="Close Page Manager"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Direct Jump to Page Input */}
@@ -31611,6 +31666,28 @@ export default function Whiteboard({
                     onClose={() => setShowRecorder(false)}
                 />
             )}
+
+            {/* Whiteboard Toolbar Pages Grid Layout View & Reorder Modal */}
+            <WhiteboardPagesGridModal
+                isOpen={showPagesGridModal}
+                file={{
+                    id: whiteboardId || 'live_whiteboard',
+                    title: 'Current Whiteboard',
+                    pageCount: totalPages,
+                    totalPages: totalPages,
+                    pageThumbnails: Array.from({ length: totalPages }, (_, idx) => renderPageThumbnail(idx)),
+                    pages: pages,
+                    isLiveSession: true
+                }}
+                onClose={() => setShowPagesGridModal(false)}
+                onSelectPage={(_, pageIdx) => {
+                    loadPage(pageIdx);
+                    setShowPagesGridModal(false);
+                }}
+                onReorderLivePage={(fromIdx, toIdx) => {
+                    reorderPage(fromIdx, toIdx);
+                }}
+            />
 
             {/* Screenshot Modal */}
             {screenshotPreview && (

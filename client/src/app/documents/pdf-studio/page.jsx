@@ -78,6 +78,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import OfficeTabBar from '@/components/OfficeTabBar';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
 import OfficeAppWelcomeHub from '@/components/OfficeAppWelcomeHub';
@@ -2556,6 +2557,38 @@ export default function PdfStudioPage() {
     const [pages, setPages] = useState([]); // [{ id, docIndex, originalPageNum, pageIndex, rotation: 0 }]
     const [loading, setLoading] = useState(false);
     const [processing, setProcessing] = useState(false);
+    const [activePdfDocId, setActivePdfDocId] = useState(null);
+
+    const pdfTabs = useMemo(() => {
+        if (sourceDocs.length === 0) {
+            return [{ id: 'pdf_empty', title: 'Document.pdf', isDirty: false }];
+        }
+        return sourceDocs.map(doc => ({
+            id: doc.id,
+            title: doc.name || 'Document.pdf',
+            isDirty: false
+        }));
+    }, [sourceDocs]);
+
+    const handleSelectPdfTab = (docId) => {
+        setActivePdfDocId(docId);
+        const firstPageIdx = pages.findIndex(p => sourceDocs[p.docIndex]?.id === docId);
+        if (firstPageIdx >= 0) {
+            setCurrentPageIndex?.(firstPageIdx);
+            const el = document.getElementById(`pdf-page-wrapper-${firstPageIdx}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    const handleClosePdfTab = (docId, e) => {
+        if (e) e.stopPropagation();
+        const docIdx = sourceDocs.findIndex(d => d.id === docId);
+        if (docIdx >= 0) {
+            setPages(prev => prev.filter(p => p.docIndex !== docIdx));
+            setSourceDocs(prev => prev.filter(d => d.id !== docId));
+            toast.success('Document tab closed');
+        }
+    };
 
     // View Mode (Grid Overview vs Continuous Scroll)
     const [viewMode, setViewMode] = useState('scroll'); // 'grid' | 'scroll' - default to continuous scroll
@@ -7676,6 +7709,16 @@ return (
                     <OfficeThemeToggle />
                 </div>
             </header>
+
+            {/* Multi-Document PDF Tab Bar */}
+            <OfficeTabBar
+                tabs={pdfTabs}
+                activeTabId={activePdfDocId || sourceDocs[0]?.id || 'pdf_empty'}
+                appType="pdf"
+                onSelectTab={handleSelectPdfTab}
+                onAddTab={() => handleOpenPicker('pdf-folder')}
+                onCloseTab={handleClosePdfTab}
+            />
 
             {/* MAIN VIEWPORT (flex-1 overflow-hidden flex, Only inner area scrolls!) */}
             <div className={`flex-1 flex overflow-hidden relative ${
