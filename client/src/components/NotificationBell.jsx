@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     Bell, BellOff, Check, X, Clock, BookOpen, Award, Video, MessageCircle,
-    Trash2, Sparkles, Filter, CheckCheck, Volume2, Volume1, VolumeX, Sliders, Play
+    Trash2, Sparkles, Filter, CheckCheck, Volume2, Volume1, VolumeX
 } from 'lucide-react';
 import { FluentNotificationBellIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
@@ -31,9 +31,13 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
     const [viewTab, setViewTab] = useState('important'); // 'important' or 'all'
     const [isMuted, setIsMuted] = useState(false);
     const [volume, setVolume] = useState(0.7);
-    const [showVolumeControl, setShowVolumeControl] = useState(false);
+    const [isHoldingBell, setIsHoldingBell] = useState(false);
     const dropdownRef = useRef(null);
     const prevUnreadCountRef = useRef(0);
+    const longPressTimerRef = useRef(null);
+    const isLongPressTriggeredRef = useRef(false);
+    const pointerStartPosRef = useRef({ x: 0, y: 0 });
+    const volumeDirectionRef = useRef('up');
 
     useEffect(() => {
         setIsMuted(isNotificationSoundMuted());
@@ -230,6 +234,164 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
         return formatRelativeTime(dateString);
     };
 
+    // Cleanup long press timer on unmount
+    useEffect(() => {
+        return () => {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Toggle mute/unmute with clear feedback toast and haptics
+    const toggleMuteWithFeedback = useCallback(() => {
+        const nextMute = toggleNotificationSoundMuted();
+        setIsMuted(nextMute);
+
+        if (nextMute) {
+            toast('🔕 Notification chime muted (Silent)', { id: 'bell-mute-toast' });
+        } else {
+            const cur = getNotificationVolume();
+            if (cur === 0) {
+                setVolume(0.5);
+                setNotificationVolume(0.5);
+                playNotificationSound({ force: true, testVolume: 0.5 });
+                toast('🔔 Notification chime active (50%)', { id: 'bell-mute-toast' });
+            } else {
+                playNotificationSound({ force: true, testVolume: cur });
+                toast(`🔔 Notification chime active (${Math.round(cur * 100)}%)`, { id: 'bell-mute-toast' });
+            }
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            navigator.vibrate(60);
+        }
+    }, []);
+
+    // Cycle volume: 0% -> 25% -> 50% -> 75% -> 100% -> 75% -> 50% -> 25% -> 0% (where 0 is mute)
+    const VOLUME_STEPS = [0, 0.25, 0.50, 0.75, 1.0];
+
+    const cycleVolume = useCallback(() => {
+        const currentEffective = isMuted ? 0 : volume;
+
+        let currentIndex = 0;
+        let minDiff = 999;
+        VOLUME_STEPS.forEach((step, idx) => {
+            const diff = Math.abs(step - currentEffective);
+            if (diff < minDiff) {
+                minDiff = diff;
+                currentIndex = idx;
+            }
+        });
+
+        let dir = volumeDirectionRef.current;
+        let nextIndex = currentIndex;
+
+        if (dir === 'up') {
+            if (currentIndex >= VOLUME_STEPS.length - 1) {
+                dir = 'down';
+                nextIndex = VOLUME_STEPS.length - 2;
+            } else {
+                nextIndex = currentIndex + 1;
+                if (nextIndex === VOLUME_STEPS.length - 1) {
+                    dir = 'down';
+                }
+            }
+        } else {
+            if (currentIndex <= 0) {
+                dir = 'up';
+                nextIndex = 1;
+            } else {
+                nextIndex = currentIndex - 1;
+                if (nextIndex === 0) {
+                    dir = 'up';
+                }
+            }
+        }
+
+        volumeDirectionRef.current = dir;
+        const targetVol = VOLUME_STEPS[nextIndex];
+
+        if (targetVol === 0) {
+            setIsMuted(true);
+            setNotificationSoundMuted(true);
+            setVolume(0);
+            setNotificationVolume(0);
+            toast('🔕 Notification chime: Muted (0%)', { id: 'bell-vol-toast' });
+        } else {
+            setIsMuted(false);
+            setNotificationSoundMuted(false);
+            setVolume(targetVol);
+            setNotificationVolume(targetVol);
+            playNotificationSound({ force: true, testVolume: targetVol });
+            const arrow = dir === 'up' ? '▲' : '▼';
+            toast(`🔔 Notification sound: ${Math.round(targetVol * 100)}% ${arrow}`, { id: 'bell-vol-toast' });
+        }
+    }, [isMuted, volume]);
+
+    // Long-press (2s) handlers for the notification bell
+    const handlePointerDown = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        isLongPressTriggeredRef.current = false;
+        pointerStartPosRef.current = { x: e.clientX, y: e.clientY };
+        setIsHoldingBell(true);
+
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+        }
+
+        longPressTimerRef.current = setTimeout(() => {
+            isLongPressTriggeredRef.current = true;
+            setIsHoldingBell(false);
+            toggleMuteWithFeedback();
+        }, 2000);
+    };
+
+    const handlePointerMove = (e) => {
+        if (!isHoldingBell) return;
+        const dist = Math.hypot(
+            e.clientX - pointerStartPosRef.current.x,
+            e.clientY - pointerStartPosRef.current.y
+        );
+        if (dist > 12) {
+            if (longPressTimerRef.current) {
+                clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+            }
+            setIsHoldingBell(false);
+        }
+    };
+
+    const handlePointerUp = () => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+        setIsHoldingBell(false);
+    };
+
+    const handlePointerCancel = () => {
+        if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+        }
+        setIsHoldingBell(false);
+    };
+
+    const handleBellClick = (e) => {
+        e.stopPropagation();
+        if (isLongPressTriggeredRef.current) {
+            isLongPressTriggeredRef.current = false;
+            return;
+        }
+        setIsOpen(prev => !prev);
+    };
+
+    const handleBellDoubleClick = (e) => {
+        e.stopPropagation();
+        cycleVolume();
+    };
+
     if (!isAuthenticated) return null;
 
     const hasReadNotifications = notifications.some(n => n.isRead);
@@ -238,18 +400,24 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
 
     return (
         <div className="relative" ref={dropdownRef}>
-            {/* Bell Button */}
+            {/* Bell Button (Supports Click to Open, Double-Click to Cycle Volume, and 2s Long-Press to Mute/Unmute) */}
             <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                onClick={handleBellClick}
+                onDoubleClick={handleBellDoubleClick}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerCancel}
+                onPointerLeave={handlePointerCancel}
                 className={
                     isCircle
-                        ? `relative w-11 h-11 rounded-full ${
+                        ? `relative w-11 h-11 rounded-full select-none ${
                             isMuted
                                 ? 'bg-rose-600 hover:bg-rose-700 border-rose-500 shadow-lg shadow-rose-600/30 text-white'
                                 : `bg-white/95 dark:bg-slate-900/95 ${lowMemory ? '' : 'backdrop-blur-sm'} border-slate-200 dark:border-slate-700 shadow-lg text-slate-700 dark:text-slate-200`
                         } border hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer`
-                        : `relative p-2 rounded-lg ${
+                        : `relative p-2 rounded-lg select-none ${
                             isMuted
                                 ? 'bg-rose-600 hover:bg-rose-700 text-white'
                                 : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
@@ -258,15 +426,25 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                 title={
                     isMuted
                         ? unreadCount > 0
-                            ? `Notifications (${unreadCount} unread, Chime Muted/Silent)`
-                            : 'Notifications (Chime Muted/Silent)'
+                            ? `Notifications (${unreadCount} unread, Chime Muted/Silent) • Hold 2s to Unmute`
+                            : 'Notifications (Chime Muted/Silent) • Hold 2s to Unmute'
                         : unreadCount > 0
-                            ? `Notifications (${unreadCount} unread)`
-                            : 'Notifications'
+                            ? `Notifications (${unreadCount} unread) • Hold 2s to Mute`
+                            : 'Notifications • Hold 2s to Mute'
                 }
                 aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
                 aria-expanded={isOpen}
             >
+                {/* Visual Feedback for 2s Long-Press Hold */}
+                {isHoldingBell && (
+                    <>
+                        <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-slate-900/95 dark:bg-slate-100 text-[10px] font-bold text-white dark:text-slate-900 whitespace-nowrap shadow-lg pointer-events-none z-50">
+                            {isMuted ? 'Hold 2s to unmute...' : 'Hold 2s to mute...'}
+                        </span>
+                        <span className="absolute inset-0 rounded-full border-2 border-amber-400 dark:border-amber-300 pointer-events-none animate-ping opacity-60" />
+                    </>
+                )}
+
                 {isMuted ? (
                     <BellOff className="w-5 h-5 text-white shrink-0" />
                 ) : (
@@ -305,32 +483,36 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                             )}
                         </div>
                         <div className="flex items-center gap-1.5">
-                            {/* Notification Volume & Audio Control Button */}
+                            {/* Quick Volume Stepper Button: Clicking multiple times changes volume from 0 to max then max to 0 (where 0 is mute) */}
                             <button
                                 type="button"
                                 onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    setShowVolumeControl(prev => !prev);
+                                    cycleVolume();
                                 }}
-                                className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                                    showVolumeControl
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                        : isMuted
-                                        ? 'bg-slate-100 dark:bg-slate-800 text-rose-500 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
-                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-bold transition active:scale-95 cursor-pointer shadow-2xs ${
+                                    isMuted || volume === 0
+                                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/60 hover:bg-rose-100'
+                                        : volume >= 0.95
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100'
+                                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600'
                                 }`}
-                                title="Adjust Notification Sound Volume & Chime Settings"
+                                title={`Click to cycle volume: 0% → 100% → 0% (Current: ${isMuted || volume === 0 ? 'Muted (0%)' : Math.round(volume * 100) + '%'})`}
+                                aria-label="Cycle notification chime volume"
                             >
-                                {isMuted ? (
-                                    <VolumeX className="w-3.5 h-3.5 text-rose-500" />
+                                {isMuted || volume === 0 ? (
+                                    <VolumeX className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                                 ) : volume < 0.4 ? (
-                                    <Volume1 className="w-3.5 h-3.5 text-indigo-500" />
+                                    <Volume1 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                 ) : (
-                                    <Volume2 className="w-3.5 h-3.5 text-indigo-500" />
+                                    <Volume2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                                 )}
-                                <span className="text-[11px] font-bold">
-                                    {isMuted ? 'Muted' : `${Math.round(volume * 100)}%`}
+                                <span className="text-[11px] font-extrabold tracking-tight">
+                                    {isMuted || volume === 0 ? 'Muted (0%)' : `${Math.round(volume * 100)}%`}
+                                </span>
+                                <span className="text-[9px] font-mono opacity-60">
+                                    {isMuted || volume === 0 ? '▲' : volume >= 0.95 ? '▼' : volumeDirectionRef.current === 'up' ? '▲' : '▼'}
                                 </span>
                             </button>
 
@@ -356,125 +538,6 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                             )}
                         </div>
                     </div>
-
-                    {/* Notification Sound & Volume Control Panel */}
-                    {showVolumeControl && (
-                        <div
-                            onPointerDown={(e) => e.stopPropagation()}
-                            className="p-3.5 bg-slate-50 dark:bg-slate-850/90 border-b border-slate-200 dark:border-slate-800 space-y-2.5 animate-in fade-in duration-150"
-                        >
-                            <div className="flex items-center justify-between text-xs">
-                                <span className="font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                                    <Sliders className="w-3.5 h-3.5 text-indigo-500" />
-                                    Notification Sound Volume
-                                </span>
-                                <span className="font-mono text-[11px] font-extrabold px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-indigo-600 dark:text-indigo-400">
-                                    {isMuted ? 'Muted (0%)' : `${Math.round(volume * 100)}%`}
-                                </span>
-                            </div>
-
-                            {/* Volume Slider Row */}
-                            <div className="flex items-center gap-2.5">
-                                <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        const nextMute = toggleNotificationSoundMuted();
-                                        setIsMuted(nextMute);
-                                        if (!nextMute && volume === 0) {
-                                            setVolume(0.5);
-                                            setNotificationVolume(0.5);
-                                        }
-                                        toast(nextMute ? 'Chime muted' : 'Chime unmuted');
-                                    }}
-                                    className="p-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-indigo-600 cursor-pointer shrink-0"
-                                    title={isMuted ? 'Unmute' : 'Mute'}
-                                >
-                                    {isMuted ? (
-                                        <VolumeX className="w-4 h-4 text-rose-500" />
-                                    ) : volume < 0.4 ? (
-                                        <Volume1 className="w-4 h-4 text-indigo-500" />
-                                    ) : (
-                                        <Volume2 className="w-4 h-4 text-indigo-500" />
-                                    )}
-                                </button>
-
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    step="5"
-                                    value={isMuted ? 0 : Math.round(volume * 100)}
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onChange={(e) => {
-                                        const v = Number(e.target.value) / 100;
-                                        setVolume(v);
-                                        setNotificationVolume(v);
-                                        if (v > 0 && isMuted) {
-                                            setIsMuted(false);
-                                            setNotificationSoundMuted(false);
-                                        }
-                                    }}
-                                    className="flex-1 accent-indigo-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none"
-                                />
-
-                                <button
-                                    type="button"
-                                    onPointerDown={(e) => e.stopPropagation()}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        playNotificationSound({ force: true, testVolume: isMuted ? 0.6 : volume });
-                                    }}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[11px] font-bold shadow-xs cursor-pointer shrink-0 transition"
-                                    title="Test notification chime sound at current volume"
-                                >
-                                    <Play className="w-3 h-3 fill-current" />
-                                    Test
-                                </button>
-                            </div>
-
-                            {/* Preset Quick-Buttons */}
-                            <div className="flex items-center gap-1.5 pt-0.5">
-                                <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Presets:</span>
-                                {[
-                                    { label: 'Mute', val: 0 },
-                                    { label: '30%', val: 0.3 },
-                                    { label: '60%', val: 0.6 },
-                                    { label: '100%', val: 1.0 }
-                                ].map((p) => {
-                                    const isActive = p.val === 0 ? isMuted : (!isMuted && Math.abs(volume - p.val) < 0.1);
-                                    return (
-                                        <button
-                                            key={p.label}
-                                            type="button"
-                                            onPointerDown={(e) => e.stopPropagation()}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (p.val === 0) {
-                                                    setIsMuted(true);
-                                                    setNotificationSoundMuted(true);
-                                                } else {
-                                                    setIsMuted(false);
-                                                    setNotificationSoundMuted(false);
-                                                    setVolume(p.val);
-                                                    setNotificationVolume(p.val);
-                                                    playNotificationSound({ force: true, testVolume: p.val });
-                                                }
-                                            }}
-                                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
-                                                isActive
-                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-                                            }`}
-                                        >
-                                            {p.label}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
 
                     {/* Filter Tabs (Important vs All) */}
                     <div className="p-2 bg-slate-100/70 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex gap-1">
