@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
     Bell, Check, X, Clock, BookOpen, Award, Video, MessageCircle,
-    Trash2, Sparkles, Filter, CheckCheck
+    Trash2, Sparkles, Filter, CheckCheck, Volume2, VolumeX
 } from 'lucide-react';
 import { FluentNotificationBellIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
@@ -12,6 +12,11 @@ import api from '@/lib/api';
 import Link from 'next/link';
 import { formatRelativeTime } from '@/lib/dateUtils';
 import toast from 'react-hot-toast';
+import {
+    playNotificationSound,
+    isNotificationSoundMuted,
+    toggleNotificationSoundMuted
+} from '@/lib/notificationSound';
 
 export default function NotificationBell({ variant = 'default', onOpenChange, lowMemory = false }) {
     const router = useRouter();
@@ -21,7 +26,28 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [viewTab, setViewTab] = useState('important'); // 'important' or 'all'
+    const [isMuted, setIsMuted] = useState(false);
     const dropdownRef = useRef(null);
+    const prevUnreadCountRef = useRef(0);
+
+    useEffect(() => {
+        setIsMuted(isNotificationSoundMuted());
+        const handleMuteChange = (e) => {
+            setIsMuted(Boolean(e?.detail?.muted));
+        };
+        window.addEventListener('notification-sound-muted-changed', handleMuteChange);
+        return () => window.removeEventListener('notification-sound-muted-changed', handleMuteChange);
+    }, []);
+
+    // Listen to real-time notification events across the app and play chime
+    useEffect(() => {
+        const handleIslandNotification = () => {
+            playNotificationSound();
+            loadNotifications();
+        };
+        window.addEventListener('app:island-notification', handleIslandNotification);
+        return () => window.removeEventListener('app:island-notification', handleIslandNotification);
+    }, []);
 
     useEffect(() => {
         onOpenChange?.(isOpen);
@@ -58,8 +84,13 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
         try {
             const { data } = await api.get('/notifications?limit=40');
             const notifs = data.data?.notifications || [];
+            const newUnread = notifs.filter(n => !n.isRead).length;
+            if (newUnread > prevUnreadCountRef.current && prevUnreadCountRef.current > 0) {
+                playNotificationSound();
+            }
+            prevUnreadCountRef.current = newUnread;
             setNotifications(notifs);
-            setUnreadCount(notifs.filter(n => !n.isRead).length);
+            setUnreadCount(newUnread);
         } catch (error) {
             console.error('Failed to load notifications:', error);
             setNotifications([]);
@@ -213,7 +244,12 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
 
             {/* Dropdown */}
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-80 md:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[100] overflow-hidden animate-in fade-in">
+                <div
+                    data-popover="true"
+                    data-dropdown="true"
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-0 top-full mt-2 w-80 md:w-96 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-[100] overflow-hidden animate-in fade-in notif-menu"
+                >
                     {/* Header */}
                     <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -225,6 +261,29 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                             )}
                         </div>
                         <div className="flex items-center gap-2">
+                            {/* Chime Sound Mute / Unmute Toggle */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const next = toggleNotificationSoundMuted();
+                                    setIsMuted(next);
+                                    toast(next ? 'Notification sound muted' : 'Notification chime enabled', {
+                                        icon: next ? '🔇' : '🔔'
+                                    });
+                                    if (!next) {
+                                        playNotificationSound({ force: true });
+                                    }
+                                }}
+                                className={`p-1 rounded-lg border transition ${
+                                    isMuted
+                                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 border-slate-300 dark:border-slate-700'
+                                        : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800'
+                                }`}
+                                title={isMuted ? "Unmute Notification Chime" : "Mute Notification Chime"}
+                            >
+                                {isMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                            </button>
+
                             {unreadCount > 0 && (
                                 <button
                                     onClick={markAllAsRead}

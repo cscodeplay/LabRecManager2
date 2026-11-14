@@ -228,6 +228,23 @@ export default function Sidebar() {
         }
     }, [pathname, dockReveal.isPinned]);
 
+    // Touch inactivity auto-hide for iPad & touch devices
+    const touchTimeoutRef = useRef(null);
+    const bumpTouchInactivity = useCallback(() => {
+        if (dockReveal.isPinned || confirmingLogout) return;
+        clearTimeout(touchTimeoutRef.current);
+        touchTimeoutRef.current = setTimeout(() => {
+            dockReveal.closeNow();
+        }, 3200);
+    }, [dockReveal, confirmingLogout]);
+
+    useEffect(() => {
+        if (dockReveal.isOpen && !dockReveal.isPinned) {
+            bumpTouchInactivity();
+        }
+        return () => clearTimeout(touchTimeoutRef.current);
+    }, [dockReveal.isOpen, dockReveal.isPinned, bumpTouchInactivity]);
+
     // Sync school info from user session and backend
     useEffect(() => {
         if (user?.school?.logoUrl || user?.school?.name) {
@@ -378,6 +395,9 @@ export default function Sidebar() {
             {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
             <aside
                 {...dockReveal.containerProps}
+                onTouchStart={bumpTouchInactivity}
+                onTouchMove={bumpTouchInactivity}
+                onPointerDown={bumpTouchInactivity}
                 aria-label="Primary Navigation Dock"
                 style={{ willChange: dockReveal.isVisible ? 'transform, opacity' : 'auto' }}
                 className={`fixed top-14 left-3 bottom-3 w-16 z-[75] rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl flex flex-col items-center py-2.5 ${glassSurface} transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${

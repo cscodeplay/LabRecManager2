@@ -118,14 +118,20 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                 <>
                     {/* Backdrop */}
                     <div
+                        data-popover="true"
                         className="fixed inset-0 z-[90]"
-                        onClick={() => setIsOpen(false)}
+                        onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
                     />
 
                     {/* Dropdown Menu */}
-                    <div className="absolute top-full mt-2 right-0 w-64 bg-white rounded-xl shadow-lg border border-slate-200 z-[100] overflow-hidden">
-                        <div className="p-2 border-b border-slate-100 bg-slate-50">
-                            <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+                    <div
+                        data-popover="true"
+                        data-dropdown="true"
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute top-full mt-2 right-0 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-800 z-[100] overflow-hidden session-menu"
+                    >
+                        <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850">
+                            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                                 Academic Session
                             </p>
                         </div>
@@ -140,13 +146,13 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                                     <button
                                         key={session.id}
                                         onClick={() => handleSelectSession(session)}
-                                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition ${selectedSession?.id === session.id ? 'bg-primary-50' : ''
+                                        className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition ${selectedSession?.id === session.id ? 'bg-primary-50 dark:bg-primary-950/40' : ''
                                             }`}
                                     >
                                         <div className="flex items-center gap-3">
                                             <FluentAcademicSessionIcon className="w-4 h-4 shrink-0" />
                                             <div className="text-left">
-                                                <p className="text-sm font-medium text-slate-900">
+                                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                                                     {session.yearLabel}
                                                 </p>
                                                 <p className="text-xs text-slate-500">
@@ -157,7 +163,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
 
                                         <div className="flex items-center gap-2">
                                             {session.isCurrent && (
-                                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-medium">
+                                                <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-xs rounded-full font-medium">
                                                     Current
                                                 </span>
                                             )}
@@ -171,7 +177,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                         </div>
 
                         {/* Info Footer */}
-                        <div className="p-3 border-t border-slate-100 bg-slate-50">
+                        <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850">
                             <div className="flex items-start gap-2 text-xs text-slate-500">
                                 <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                                 <span>Historical sessions are read-only. Switch to current session to make changes.</span>

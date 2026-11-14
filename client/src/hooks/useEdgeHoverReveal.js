@@ -101,7 +101,7 @@ export function useEdgeHoverReveal({
     useEffect(() => {
         if (!isOpen || isPinned) return;
         const handleKeyDown = (e) => {
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && !isLocked) {
                 clearCloseTimer();
                 pointerInsideRef.current = false;
                 setHasFocusWithin(false);
@@ -110,32 +110,50 @@ export function useEdgeHoverReveal({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, isPinned, clearCloseTimer]);
+    }, [isOpen, isPinned, isLocked, clearCloseTimer]);
 
     // Tap / click outside dismissal for touch / tablet devices
     const containerElRef = useRef(null);
     useEffect(() => {
         if (!isOpen || isPinned) return;
         const handleOutsidePointer = (e) => {
+            // Guard: Do not dismiss if a menu, modal, or dropdown is currently locked open
+            if (isLocked) return;
+
+            // Check if pointer event was inside the primary container
             if (containerElRef.current && !containerElRef.current.contains(e.target)) {
+                // Also check if target is inside an attached dropdown, popover or portal menu
+                if (e.target && typeof e.target.closest === 'function') {
+                    if (e.target.closest('[data-popover], [role="menu"], [role="dialog"], [data-dropdown], .session-menu, .notif-menu')) {
+                        return;
+                    }
+                }
                 clearCloseTimer();
                 pointerInsideRef.current = false;
                 setHasFocusWithin(false);
                 setIsOpen(false);
             }
         };
-        // Capture phase to catch all taps on iPad / mobile outside the sidebar
+        // Capture phase to catch all taps on iPad / mobile outside the sidebar/bar
         window.addEventListener('pointerdown', handleOutsidePointer, true);
         return () => window.removeEventListener('pointerdown', handleOutsidePointer, true);
-    }, [isOpen, isPinned, clearCloseTimer]);
+    }, [isOpen, isPinned, isLocked, clearCloseTimer]);
 
     useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
 
     const handlePointerEnter = useCallback((e) => {
+        // Guard against iOS/iPadOS touch emulation where pointerleave is never synthesized
+        if (e?.pointerType === 'touch') {
+            pointerInsideRef.current = false;
+            clearCloseTimer();
+            setIsOpen(true);
+            scheduleAutoHide();
+            return;
+        }
         pointerInsideRef.current = true;
         clearCloseTimer();
         setIsOpen(true);
-    }, [clearCloseTimer]);
+    }, [clearCloseTimer, scheduleAutoHide]);
 
     const handlePointerLeave = useCallback((e) => {
         pointerInsideRef.current = false;
