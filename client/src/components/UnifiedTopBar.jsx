@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
-    Search, X, Pin, PinOff, Calendar, Bell, ChevronDown,
+    Search, X, Pin, PinOff, Calendar, ChevronDown, ChevronUp,
     FileText, Folder, BookOpen, Users, GraduationCap,
     Sparkles, HelpCircle, Ticket, Wrench, Video, ArrowRight,
     CornerDownLeft, Clock, RotateCcw
@@ -11,6 +11,7 @@ import {
 import api from '@/lib/api';
 import SessionSelector from './SessionSelector';
 import { useAuthStore } from '@/lib/store';
+import { useEdgeHoverReveal } from '@/hooks/useEdgeHoverReveal';
 
 const CATEGORIES = [
     { key: 'all', label: 'All' },
@@ -58,9 +59,8 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
     const pathname = usePathname();
     const { selectedSession } = useAuthStore();
 
-    const [isExpanded, setIsExpanded] = useState(false);
-    const [isPinned, setIsPinned] = useState(false);
     const [query, setQuery] = useState('');
+    const [isFocused, setIsFocused] = useState(false);
     const [activeCategory, setActiveCategory] = useState('all');
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState({
@@ -90,22 +90,20 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
     const containerRef = useRef(null);
     const inputRef = useRef(null);
     const debounceTimerRef = useRef(null);
-    const autohideTimerRef = useRef(null);
 
-    // Load recent searches & pin preference from localStorage
+    // Auto-hide edge reveal controller
+    const topBarReveal = useEdgeHoverReveal({
+        autoHideMs: 2500,
+        initialPeekMs: 2500,
+        storageKey: 'topHoverBarPinned',
+        isLocked: sessionMenuOpen || isFocused || query.trim().length > 0,
+    });
+
+    // Load recent searches from localStorage
     useEffect(() => {
         try {
             const savedRecent = localStorage.getItem('labrec_recent_searches');
             if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
-
-            const savedPinned = localStorage.getItem('topHoverBarPinned');
-            if (savedPinned !== null) {
-                const parsed = JSON.parse(savedPinned);
-                if (typeof parsed === 'boolean') {
-                    setIsPinned(parsed);
-                    if (parsed) setIsExpanded(true);
-                }
-            }
         } catch {
             // ignore
         }
@@ -116,26 +114,26 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
         const handleKeyDown = (e) => {
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
                 e.preventDefault();
-                setIsExpanded(prev => {
-                    const next = !prev;
-                    if (next) {
-                        setTimeout(() => inputRef.current?.focus(), 60);
-                    }
-                    return next;
-                });
+                topBarReveal.openNow();
+                setIsFocused(true);
+                setTimeout(() => inputRef.current?.focus(), 60);
             } else if (e.key === 'Escape') {
                 if (!sessionMenuOpenRef.current && !sessionMenuOpen) {
                     if (query) {
                         setQuery('');
-                    } else if (!isPinned) {
-                        setIsExpanded(false);
+                    } else {
+                        setIsFocused(false);
+                        if (!topBarReveal.isPinned) {
+                            topBarReveal.closeNow();
+                        }
                     }
                 }
             }
         };
 
         const handleCustomOpen = (e) => {
-            setIsExpanded(true);
+            topBarReveal.openNow();
+            setIsFocused(true);
             const initial = e?.detail?.query;
             if (typeof initial === 'string' && initial.length > 0) {
                 setQuery(initial);
@@ -149,20 +147,14 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('open-global-search', handleCustomOpen);
         };
-    }, [isPinned, query, sessionMenuOpen]);
+    }, [topBarReveal, query, sessionMenuOpen]);
 
-    // Click outside to collapse (Guarded against Session & attached menus)
+    // Click outside search results flyout to unfocus
     useEffect(() => {
-        if (!isExpanded || isPinned) return;
-
         const handleOutsideClick = (e) => {
-            // Never dismiss if session menu is currently open
             if (sessionMenuOpenRef.current || sessionMenuOpen) return;
-
-            // If target element was unmounted during click (e.g. clicking menu item that closes dropdown), do not collapse
             if (!e.target || !e.target.isConnected) return;
 
-            // Check if click was inside container or any attached menu
             if (containerRef.current && containerRef.current.contains(e.target)) {
                 return;
             }
@@ -173,13 +165,12 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                 }
             }
 
-            setIsExpanded(false);
+            setIsFocused(false);
         };
 
-        // Use bubbling listener so inside handlers run first
         window.addEventListener('pointerdown', handleOutsideClick);
         return () => window.removeEventListener('pointerdown', handleOutsideClick);
-    }, [isExpanded, isPinned, sessionMenuOpen]);
+    }, [sessionMenuOpen]);
 
     // Live search debounced fetch
     useEffect(() => {
@@ -206,31 +197,34 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
 
         debounceTimerRef.current = setTimeout(async () => {
             try {
-                const res = await api.get('/search', { params: { q: query.trim() } });
-                if (res.data?.data?.results) {
-                    setResults(res.data.data.results);
+                const categoryParam = activeCategory === 'all' ? '' : `&category=${activeCategory}`;
+                const sessionParam = selectedSession?.id ? `&sessionId=${selectedSession.id}` : '';
+                const res = await api.get(`/search?q=${encodeURIComponent(query.trim())}${categoryParam}${sessionParam}`);
+
+                if (res.data?.success && res.data?.data) {
+                    setResults(res.data.data);
                 }
             } catch (err) {
-                console.error('Unified top bar search error:', err);
+                console.error('[UnifiedTopBar] search failed:', err);
             } finally {
                 setLoading(false);
             }
         }, 220);
 
         return () => clearTimeout(debounceTimerRef.current);
-    }, [query]);
+    }, [query, activeCategory, selectedSession]);
 
-    // Format results filtered by category
+    // Flatten results for selected category
     const flattenedResults = useMemo(() => {
         const items = [];
 
+        // Labs
         if (activeCategory === 'all' || activeCategory === 'labs') {
-            results.labs?.forEach(item => items.push({
-                type: 'lab',
-                categoryLabel: 'Lab',
-                id: item.id,
-                title: item.name || item.nameHindi,
-                subtitle: `Room: ${item.roomNumber || 'N/A'} • Capacity: ${item.capacity || 30}`,
+            (results.labs || []).forEach(item => items.push({
+                ...item,
+                type: 'labs',
+                title: item.name || item.labName || 'Lab Room',
+                subtitle: item.roomNumber ? `Room ${item.roomNumber} • ${item.capacity || 0} PCs` : 'Lab Facility',
                 badge: 'LAB',
                 badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
                 icon: Wrench,
@@ -238,125 +232,111 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
             }));
         }
 
+        // Assignments
         if (activeCategory === 'all' || activeCategory === 'assignments') {
-            results.assignments?.forEach(item => items.push({
-                type: 'assignment',
-                categoryLabel: 'Assignment',
-                id: item.id,
-                title: item.title || item.titleHindi,
-                subtitle: item.description || (item.subject?.name ? `Subject: ${item.subject.name}` : ''),
-                badge: (item.assignmentType || 'Assignment').toUpperCase(),
-                badgeColor: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
+            (results.assignments || []).forEach(item => items.push({
+                ...item,
+                type: 'assignments',
+                title: item.title,
+                subtitle: item.class?.name ? `Class: ${item.class.name}` : (item.course || 'Assignment'),
+                badge: 'ASSIGNMENT',
+                badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
                 icon: FileText,
                 url: `/assignments/${item.id}`
             }));
         }
 
+        // Classes
         if (activeCategory === 'all' || activeCategory === 'classes') {
-            results.classes?.forEach(item => items.push({
-                type: 'class',
-                categoryLabel: 'Class',
-                id: item.id,
-                title: item.name || item.nameHindi,
-                subtitle: `Grade: ${item.gradeLevel || 'N/A'} ${item.section ? `• Sec ${item.section}` : ''}`,
+            (results.classes || []).forEach(item => items.push({
+                ...item,
+                type: 'classes',
+                title: item.name,
+                subtitle: `${item.branch || 'General'} • Sem ${item.semester || 1}`,
                 badge: 'CLASS',
-                badgeColor: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300',
+                badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
                 icon: GraduationCap,
                 url: `/classes/${item.id}`
             }));
         }
 
+        // Documents
         if (activeCategory === 'all' || activeCategory === 'documents') {
-            results.documents?.forEach(item => items.push({
-                type: 'document',
-                categoryLabel: 'Document',
-                id: item.id,
-                title: item.name || item.fileName || item.title || item.originalName,
-                subtitle: item.description || 'Document Repository',
+            (results.documents || []).forEach(item => items.push({
+                ...item,
+                type: 'documents',
+                title: item.title || item.name,
+                subtitle: `${(item.fileType || item.mimeType || 'DOC').toUpperCase()} Document`,
                 badge: (item.fileType || 'DOC').toUpperCase(),
                 badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
                 icon: Folder,
-                url: `/documents?search=${encodeURIComponent(item.name || item.fileName || item.title || '')}`
+                url: `/documents`
             }));
         }
 
+        // Quizzes
         if (activeCategory === 'all' || activeCategory === 'quizzes') {
-            results.quizzes?.forEach(item => items.push({
-                type: 'quiz',
-                categoryLabel: 'Quiz',
-                id: item.id,
+            (results.quizzes || []).forEach(item => items.push({
+                ...item,
+                type: 'quizzes',
                 title: item.title,
-                subtitle: `Code: ${item.code} • ${item.totalQuestions || 0} Questions`,
-                badge: (item.difficulty || 'QUIZ').toUpperCase(),
-                badgeColor: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300',
-                icon: HelpCircle,
+                subtitle: `${item.questionsCount || item.questions?.length || 0} Questions`,
+                badge: 'QUIZ',
+                badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
+                icon: Sparkles,
                 url: `/quiz`
             }));
         }
 
+        // Training
         if (activeCategory === 'all' || activeCategory === 'training') {
-            results.training?.forEach(item => items.push({
+            (results.training || []).forEach(item => items.push({
+                ...item,
                 type: 'training',
-                categoryLabel: 'Training',
-                id: item.id,
-                title: item.title || item.titleHindi,
-                subtitle: item.description || `Language: ${item.language || 'Python'}`,
-                badge: `${item.totalUnits || 0} UNITS`,
-                badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
-                icon: Sparkles,
-                url: `/training/${item.id}`
-            }));
-        }
-
-        if (activeCategory === 'all' || activeCategory === 'users') {
-            results.users?.forEach(item => items.push({
-                type: 'user',
-                categoryLabel: 'User',
-                id: item.id,
-                title: `${item.firstName} ${item.lastName || ''}`.trim(),
-                subtitle: item.email || item.studentId || item.admissionNumber,
-                badge: (item.role || 'USER').toUpperCase(),
-                badgeColor: 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
-                icon: Users,
-                url: `/users?search=${encodeURIComponent(item.email || item.firstName)}`
-            }));
-        }
-
-        if (activeCategory === 'all' || activeCategory === 'meetings') {
-            results.meetings?.forEach(item => items.push({
-                type: 'meeting',
-                categoryLabel: 'Meeting',
-                id: item.id,
-                title: item.title || item.roomCode,
-                subtitle: `Room: ${item.roomCode || item.code || ''}`,
-                badge: 'VIVA',
-                badgeColor: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300',
-                icon: Video,
-                url: `/meetings`
-            }));
-        }
-
-        if (activeCategory === 'all' || activeCategory === 'notes') {
-            results.notes?.forEach(item => items.push({
-                type: 'note',
-                categoryLabel: 'Note',
-                id: item.id,
-                title: item.title,
-                subtitle: item.content ? item.content.replace(/<[^>]*>?/gm, '').slice(0, 80) : '',
-                badge: 'NOTE',
-                badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+                title: item.title || item.name,
+                subtitle: `${item.level || 'Interactive'} Module`,
+                badge: 'TRAINING',
+                badgeColor: 'bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300',
                 icon: BookOpen,
-                url: `/admin/notes`
+                url: `/training`
             }));
         }
 
-        if (activeCategory === 'all' || activeCategory === 'tickets') {
-            results.tickets?.forEach(item => items.push({
-                type: 'ticket',
-                categoryLabel: 'Ticket',
-                id: item.id,
+        // Users
+        if (activeCategory === 'all' || activeCategory === 'users') {
+            (results.users || []).forEach(item => items.push({
+                ...item,
+                type: 'users',
+                title: item.name || `${item.firstName || ''} ${item.lastName || ''}`.trim(),
+                subtitle: `${(item.role || 'Member').toUpperCase()} • ${item.email || ''}`,
+                badge: (item.role || 'USER').toUpperCase(),
+                badgeColor: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300',
+                icon: Users,
+                url: `/users`
+            }));
+        }
+
+        // Meetings
+        if (activeCategory === 'all' || activeCategory === 'meetings') {
+            (results.meetings || []).forEach(item => items.push({
+                ...item,
+                type: 'meetings',
                 title: item.title,
-                subtitle: item.ticketNumber ? `#${item.ticketNumber}` : item.description,
+                subtitle: item.meetingCode ? `Code: ${item.meetingCode}` : 'Collab Session',
+                badge: 'MEETING',
+                badgeColor: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300',
+                icon: Video,
+                url: item.meetingCode ? `/meeting/${item.meetingCode}` : `/meetings`
+            }));
+        }
+
+        // Tickets
+        if (activeCategory === 'all' || activeCategory === 'tickets') {
+            (results.tickets || []).forEach(item => items.push({
+                ...item,
+                type: 'tickets',
+                title: item.subject || item.title || `Ticket #${item.id}`,
+                subtitle: `Priority: ${(item.priority || 'NORMAL').toUpperCase()}`,
                 badge: (item.status || 'OPEN').toUpperCase(),
                 badgeColor: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
                 icon: Ticket,
@@ -368,7 +348,6 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
     }, [results, activeCategory]);
 
     const handleSelectResult = (item) => {
-        // Save to recent searches
         try {
             const updatedRecent = [
                 { query: item.title, timestamp: Date.now() },
@@ -378,220 +357,208 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
             localStorage.setItem('labrec_recent_searches', JSON.stringify(updatedRecent));
         } catch {}
 
-        if (!isPinned) {
-            setIsExpanded(false);
-        }
+        setIsFocused(false);
         setQuery('');
+        if (!topBarReveal.isPinned) {
+            topBarReveal.closeNow();
+        }
         router.push(item.url);
-    };
-
-    const togglePin = () => {
-        setIsPinned(prev => {
-            const next = !prev;
-            try {
-                localStorage.setItem('topHoverBarPinned', JSON.stringify(next));
-            } catch {}
-            if (next) setIsExpanded(true);
-            return next;
-        });
     };
 
     const surfaceClass = isLowMemory
         ? 'bg-white/95 dark:bg-slate-900/95'
         : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md';
 
+    const showFlyout = isFocused || query.trim().length > 0;
+
     return (
-        <div ref={containerRef} onPointerDown={(e) => e.stopPropagation()} className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[80] select-none transition-all">
-            {/* COLLAPSED STATE: Search Icon Button (Single Element) */}
-            {!isExpanded && (
+        <>
+            {/* Top-Edge Mouse & Pen Hover Hot-Zone (0ms reveal for Minimal Search Bar) */}
+            <div
+                {...topBarReveal.triggerProps}
+                className="fixed top-0 left-20 right-20 h-3.5 z-[78] flex justify-center"
+                aria-hidden="true"
+            >
+                {!topBarReveal.isVisible && (
+                    <span className="mt-1 h-1 w-20 rounded-full bg-slate-400/40 dark:bg-slate-500/40 transition-opacity" />
+                )}
+            </div>
+
+            {/* Touch Pull / Toggle Handle (Visible when bar auto-hides) */}
+            {!topBarReveal.isVisible && (
                 <button
                     type="button"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => {
-                        setIsExpanded(true);
-                        setTimeout(() => inputRef.current?.focus(), 60);
-                    }}
-                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full ${surfaceClass} border border-slate-200/90 dark:border-slate-700/80 shadow-lg text-slate-700 dark:text-slate-200 hover:scale-105 active:scale-95 transition-all cursor-pointer`}
-                    title="Open Search with Session & Category Filters (⌘K)"
-                    aria-label="Open Search with Session & Category Filters"
+                    onClick={topBarReveal.toggleOpen}
+                    className={`fixed top-2.5 left-1/2 -translate-x-1/2 z-[78] px-3.5 h-9 rounded-full ${surfaceClass} border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-md flex items-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 transition-all`}
+                    aria-label="Show search and session bar"
+                    title="Open Search & Session Bar"
                 >
-                    <Search className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span className="text-xs font-semibold">Search</span>
-                    <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-400">
-                        ⌘K
-                    </kbd>
+                    <Search className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Search</span>
+                    <ChevronDown className="w-3.5 h-3.5" />
                 </button>
             )}
 
-            {/* EXPANDED SEARCH BAR WITH INTEGRATED SESSION & FILTER PILLS */}
-            {isExpanded && (
-                <div
+            {/* Centered Minimal Search Bar with Session Selector and Pin Button */}
+            <div
+                ref={containerRef}
+                {...topBarReveal.containerProps}
+                style={{ willChange: topBarReveal.isVisible ? 'transform, opacity' : 'auto' }}
+                className={`fixed top-2.5 left-1/2 -translate-x-1/2 z-[80] w-[min(580px,calc(100vw-140px))] transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
+                    topBarReveal.isVisible
+                        ? 'translate-y-0 opacity-100 pointer-events-auto'
+                        : '-translate-y-[140%] opacity-0 pointer-events-none'
+                }`}
+            >
+                {/* Minimal Search Capsule Bar (Search Input + Academic Session Selector + Right-End Icon Pin) */}
+                <header
+                    role="banner"
                     onPointerDown={(e) => e.stopPropagation()}
-                    className={`w-[min(680px,calc(100vw-32px))] rounded-3xl ${surfaceClass} border border-slate-200/90 dark:border-slate-700/90 shadow-2xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150`}
+                    className={`w-full rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl px-2.5 py-1.5 flex items-center gap-2 ${surfaceClass}`}
                 >
-                    {/* Top Row: Search Input + Academic Session Selector + Pin + Close */}
-                    <div className="flex items-center gap-2">
-                        {/* Search Input Box */}
-                        <div className="flex-1 flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 min-w-0">
-                            <Search className="w-4 h-4 text-indigo-500 shrink-0" />
-                            <input
-                                ref={inputRef}
-                                type="text"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Search labs, assignments, classes, documents, users..."
-                                className="w-full bg-transparent border-0 outline-none text-xs sm:text-sm font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 min-w-0"
-                            />
-                            {query && (
-                                <button
-                                    type="button"
-                                    onClick={() => setQuery('')}
-                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Academic Session Selector */}
-                        <div className="shrink-0" onPointerDown={(e) => e.stopPropagation()}>
-                            <SessionSelector variant="pill" onOpenChange={handleSessionOpenChange} />
-                        </div>
-
-                        {/* Pin Button */}
-                        <button
-                            type="button"
-                            onClick={togglePin}
-                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
-                                isPinned
-                                    ? 'bg-indigo-600 text-white border-indigo-600'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-600'
-                            }`}
-                            title={isPinned ? 'Unpin top bar' : 'Pin top bar open'}
-                        >
-                            {isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-                        </button>
-
-                        {/* Close Button */}
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsExpanded(false);
-                                setQuery('');
-                            }}
-                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-500 flex items-center justify-center shrink-0 transition cursor-pointer"
-                            title="Close Search Bar (Esc)"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    {/* Filter Options Row (Feature from older search bar) */}
-                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none px-1">
-                        {CATEGORIES.map((cat) => (
+                    {/* Search Input Box */}
+                    <div className="flex-1 flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 min-w-0">
+                        <Search className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            onFocus={() => setIsFocused(true)}
+                            placeholder="Search labs, docs, assignments, users..."
+                            aria-label="Global search with category filters"
+                            className="w-full bg-transparent border-0 outline-none text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 min-w-0"
+                        />
+                        {query && (
                             <button
-                                key={cat.key}
                                 type="button"
-                                onClick={() => setActiveCategory(cat.key)}
-                                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all ${
-                                    activeCategory === cat.key
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                }`}
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={() => {
+                                    setQuery('');
+                                    inputRef.current?.focus();
+                                }}
+                                className="p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                             >
-                                {cat.label}
+                                <X className="w-3.5 h-3.5" />
                             </button>
-                        ))}
+                        )}
+                        <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-[10px] font-mono font-semibold text-slate-400 shrink-0">
+                            ⌘K
+                        </kbd>
                     </div>
 
-                    {/* LIVE SEARCH RESULTS DROPDOWN (Directly attached beneath the bar) */}
-                    {query.trim().length >= 2 && (
-                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 max-h-[380px] overflow-y-auto space-y-1">
-                            {loading ? (
-                                <div className="p-6 text-center text-xs text-slate-400">
-                                    <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                                    <span>Searching across institutional records...</span>
-                                </div>
-                            ) : flattenedResults.length === 0 ? (
-                                <div className="p-6 text-center text-xs text-slate-400">
-                                    <p className="font-semibold text-slate-600 dark:text-slate-300">No matching records found</p>
-                                    <p className="text-[11px] mt-1">Try switching to the "All" category filter or using another search term.</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                                        <span>Results ({flattenedResults.length})</span>
-                                        <span className="font-mono lowercase text-[10px]">tab: {activeCategory}</span>
-                                    </div>
-                                    {flattenedResults.map((item, idx) => {
-                                        const Icon = item.icon;
-                                        return (
-                                            <button
-                                                key={`${item.type}-${item.id}-${idx}`}
-                                                type="button"
-                                                onClick={() => handleSelectResult(item)}
-                                                className="w-full text-left p-2.5 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800/80 transition flex items-center gap-3 group"
-                                            >
-                                                <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 text-indigo-500">
-                                                    <Icon className="w-4 h-4" />
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                                                            <HighlightText text={item.title} query={query} />
-                                                        </span>
-                                                        <span className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold uppercase font-mono ${item.badgeColor}`}>
-                                                            {item.badge}
-                                                        </span>
-                                                    </div>
-                                                    {item.subtitle && (
-                                                        <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                                            <HighlightText text={item.subtitle} query={query} />
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition shrink-0" />
-                                            </button>
-                                        );
-                                    })}
-                                </>
-                            )}
-                        </div>
-                    )}
+                    {/* Academic Session Selector */}
+                    <div className="shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+                        <SessionSelector variant="pill" onOpenChange={handleSessionOpenChange} />
+                    </div>
 
-                    {/* RECENT SEARCHES (When query is empty) */}
-                    {query.trim().length < 2 && recentSearches.length > 0 && (
-                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 px-1">
-                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                                <span>Recent Searches</span>
+                    {/* Small Icon-Only Pin at Right End of Minimal Search Bar */}
+                    <button
+                        type="button"
+                        onClick={topBarReveal.togglePinned}
+                        aria-label={topBarReveal.isPinned ? 'Unpin top bar' : 'Pin top bar open'}
+                        aria-pressed={topBarReveal.isPinned}
+                        title={topBarReveal.isPinned ? 'Unpin Top Bar (Auto-Hide)' : 'Pin Top Bar Open'}
+                        className={`w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors active:scale-95 cursor-pointer ${
+                            topBarReveal.isPinned
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                    >
+                        {topBarReveal.isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                    </button>
+                </header>
+
+                {/* Attached Categories & Search Results Panel (Directly underneath the minimal search bar) */}
+                {showFlyout && (
+                    <div
+                        onPointerDown={(e) => e.stopPropagation()}
+                        className={`mt-2 rounded-3xl ${surfaceClass} border border-slate-200/90 dark:border-slate-700/90 shadow-2xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150`}
+                    >
+                        {/* Category Filter Pills (Older search bar features directly integrated) */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none px-1">
+                            {CATEGORIES.map((cat) => (
+                                <button
+                                    key={cat.key}
+                                    type="button"
+                                    onClick={() => setActiveCategory(cat.key)}
+                                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                                        activeCategory === cat.key
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    {cat.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* LIVE SEARCH RESULTS DROPDOWN */}
+                        {query.trim().length >= 2 ? (
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 max-h-[380px] overflow-y-auto space-y-1">
+                                {loading ? (
+                                    <div className="p-6 text-center text-xs text-slate-400">
+                                        <div className="w-5 h-5 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                                        <span>Searching across institutional records...</span>
+                                    </div>
+                                ) : flattenedResults.length === 0 ? (
+                                    <div className="p-6 text-center text-xs text-slate-400">
+                                        <p className="font-semibold text-slate-600 dark:text-slate-300">No matching records found</p>
+                                        <p className="text-[11px] mt-1">Try switching to the "All" category filter or using another search term.</p>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                                            <span>Results ({flattenedResults.length})</span>
+                                            <span className="font-mono lowercase text-[10px]">tab: {activeCategory}</span>
+                                        </div>
+                                        {flattenedResults.map((item, idx) => {
+                                            const Icon = item.icon;
+                                            return (
+                                                <button
+                                                    key={`${item.type}-${item.id}-${idx}`}
+                                                    type="button"
+                                                    onClick={() => handleSelectResult(item)}
+                                                    className="w-full text-left p-2.5 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800/80 transition flex items-center gap-3 group cursor-pointer"
+                                                >
+                                                    <div className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 text-indigo-500">
+                                                        <Icon className="w-4 h-4" />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate group-hover:text-indigo-600 transition">
+                                                                <HighlightText text={item.title} query={query} />
+                                                            </span>
+                                                            <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full uppercase ${item.badgeColor}`}>
+                                                                {item.badge}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                                            {item.subtitle}
+                                                        </p>
+                                                    </div>
+                                                    <ArrowRight className="w-3.5 h-3.5 text-slate-300 opacity-0 group-hover:opacity-100 group-hover:text-indigo-500 transition-all shrink-0" />
+                                                </button>
+                                            );
+                                        })}
+                                    </>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="p-3 text-xs text-slate-400 flex items-center justify-between">
+                                <span>Type 2 or more characters to search instantly</span>
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        setRecentSearches([]);
-                                        localStorage.removeItem('labrec_recent_searches');
-                                    }}
-                                    className="text-slate-400 hover:text-rose-500"
+                                    onClick={() => setIsFocused(false)}
+                                    className="text-indigo-500 hover:underline cursor-pointer"
                                 >
-                                    Clear
+                                    Dismiss
                                 </button>
                             </div>
-                            <div className="flex flex-wrap gap-1.5">
-                                {recentSearches.map((r, i) => (
-                                    <button
-                                        key={i}
-                                        type="button"
-                                        onClick={() => setQuery(r.query)}
-                                        className="px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1.5 transition"
-                                    >
-                                        <Clock className="w-3 h-3 text-slate-400" />
-                                        <span>{r.query}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </>
     );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
-    Bell, Check, X, Clock, BookOpen, Award, Video, MessageCircle,
+    Bell, BellOff, Check, X, Clock, BookOpen, Award, Video, MessageCircle,
     Trash2, Sparkles, Filter, CheckCheck, Volume2, Volume1, VolumeX, Sliders, Play
 } from 'lucide-react';
 import { FluentNotificationBellIcon } from '@/components/FluentAppIcons';
@@ -247,11 +247,26 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                         ? `relative w-11 h-11 rounded-full bg-white/95 dark:bg-slate-900/95 ${lowMemory ? '' : 'backdrop-blur-sm'} border border-slate-200 dark:border-slate-700 shadow-lg hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer`
                         : 'relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer'
                 }
-                title="Notifications"
+                title={
+                    isMuted
+                        ? unreadCount > 0
+                            ? `Notifications (${unreadCount} unread, Chime Muted/Silent)`
+                            : 'Notifications (Chime Muted/Silent)'
+                        : unreadCount > 0
+                            ? `Notifications (${unreadCount} unread)`
+                            : 'Notifications'
+                }
                 aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
                 aria-expanded={isOpen}
             >
-                <FluentNotificationBellIcon className="w-5 h-5 shrink-0" hasUnread={unreadCount > 0} />
+                {isMuted ? (
+                    <div className="relative flex items-center justify-center">
+                        <BellOff className="w-5 h-5 text-slate-500 dark:text-slate-400 shrink-0" />
+                        <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border border-white dark:border-slate-900 shadow-xs" title="Chime Muted" />
+                    </div>
+                ) : (
+                    <FluentNotificationBellIcon className="w-5 h-5 shrink-0" hasUnread={unreadCount > 0} />
+                )}
                 {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center animate-pulse shadow-sm">
                         {unreadCount > 9 ? '9+' : unreadCount}

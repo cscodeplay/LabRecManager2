@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
-import { LogOut, GraduationCap, Menu, X } from 'lucide-react';
+import { LogOut, GraduationCap, Menu, X, Pin, PinOff } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useEdgeHoverReveal, useLowMemoryDevice } from '@/hooks/useEdgeHoverReveal';
@@ -381,16 +381,18 @@ export default function Sidebar() {
                 )}
             </div>
 
-            {/* Touch-Only Pull Pill (Devices without hover capability) */}
-            <button
-                type="button"
-                onClick={dockReveal.toggleOpen}
-                className={`[@media(hover:none)]:flex hidden fixed left-2 top-1/2 -translate-y-1/2 z-[74] w-11 h-11 rounded-full ${glassSurface} border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 shadow-lg items-center justify-center cursor-pointer active:scale-95 transition-transform`}
-                aria-label={dockReveal.isVisible ? 'Close navigation dock' : 'Open navigation dock'}
-                aria-expanded={dockReveal.isVisible}
-            >
-                {dockReveal.isVisible ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+            {/* Floating Hamburger Toggle Button (Shown whenever sidebar is hidden/closed) */}
+            {!dockReveal.isVisible && (
+                <button
+                    type="button"
+                    onClick={dockReveal.toggleOpen}
+                    className={`fixed top-2.5 left-3.5 z-[76] w-10 h-10 rounded-full ${glassSurface} border border-slate-200/90 dark:border-slate-700/80 text-slate-700 dark:text-slate-200 shadow-md flex items-center justify-center cursor-pointer hover:scale-105 active:scale-95 transition-all`}
+                    aria-label="Open navigation sidebar"
+                    title="Open Navigation Dock (Menu)"
+                >
+                    <Menu className="w-5 h-5" />
+                </button>
+            )}
 
             {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
             <aside
@@ -406,33 +408,9 @@ export default function Sidebar() {
                         : '-translate-x-[calc(100%+24px)] opacity-0 pointer-events-none'
                 }`}
             >
-                {/* Round Brand / Pin Crest */}
-                <div className="w-full px-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 flex flex-col items-center shrink-0">
-                    <button
-                        type="button"
-                        onClick={dockReveal.togglePinned}
-                        onPointerEnter={(e) => {
-                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                                showPillFor(
-                                    e.currentTarget,
-                                    dockReveal.isPinned ? 'Unpin Dock (Auto-Hide)' : `${schoolInfo.name || 'ULRMS'} • Pin Dock`
-                                );
-                            }
-                        }}
-                        onPointerLeave={schedulePillHide}
-                        onFocus={(e) => showPillFor(
-                            e.currentTarget,
-                            dockReveal.isPinned ? 'Unpin Dock (Auto-Hide)' : `${schoolInfo.name || 'ULRMS'} • Pin Dock`
-                        )}
-                        onBlur={schedulePillHide}
-                        aria-label={dockReveal.isPinned ? 'Unpin navigation dock' : 'Pin navigation dock open'}
-                        aria-pressed={dockReveal.isPinned}
-                        className={`w-11 h-11 rounded-full p-1 flex items-center justify-center overflow-hidden shadow-sm border transition-transform active:scale-95 cursor-pointer ${
-                            dockReveal.isPinned
-                                ? 'bg-primary-50 dark:bg-primary-950/70 border-primary-500 ring-2 ring-primary-500/30'
-                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:scale-105'
-                        }`}
-                    >
+                {/* Round Brand Logo & Dock Header Controls (Pin & Close) */}
+                <div className="w-full px-2 pb-2 border-b border-slate-200/80 dark:border-slate-800 flex flex-col items-center gap-1.5 shrink-0">
+                    <div className="w-10 h-10 rounded-full p-1 flex items-center justify-center overflow-hidden shadow-xs border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
                         {schoolInfo.logoUrl && !logoError ? (
                             <img
                                 src={schoolInfo.logoUrl}
@@ -445,7 +423,34 @@ export default function Sidebar() {
                                 <GraduationCap className="w-5 h-5" />
                             </div>
                         )}
-                    </button>
+                    </div>
+
+                    {/* Compact Pin & Close Actions */}
+                    <div className="flex items-center gap-1">
+                        <button
+                            type="button"
+                            onClick={dockReveal.togglePinned}
+                            className={`w-6 h-6 rounded-md border flex items-center justify-center transition cursor-pointer ${
+                                dockReveal.isPinned
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                    : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:text-slate-900'
+                            }`}
+                            title={dockReveal.isPinned ? 'Unpin Dock (Auto-Hide)' : 'Pin Dock Open'}
+                            aria-label={dockReveal.isPinned ? 'Unpin dock' : 'Pin dock'}
+                        >
+                            {dockReveal.isPinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={dockReveal.closeNow}
+                            className="w-6 h-6 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-500 flex items-center justify-center transition cursor-pointer"
+                            title="Close Sidebar (Esc)"
+                            aria-label="Close sidebar"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Scrollable Icon-Only Navigation Rail (Round Icon Backgrounds) */}
