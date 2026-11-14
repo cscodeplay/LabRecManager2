@@ -219,11 +219,11 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
         return formatRelativeTime(dateString);
     };
 
-    // Cleanup long press timer on unmount
+    // Cleanup click timeout on unmount
     useEffect(() => {
         return () => {
-            if (longPressTimerRef.current) {
-                clearTimeout(longPressTimerRef.current);
+            if (clickTimeoutRef.current) {
+                clearTimeout(clickTimeoutRef.current);
             }
         };
     }, []);

@@ -14,6 +14,7 @@ import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI } from '@/lib/api';
 import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -51,7 +52,6 @@ export default function ProcurementPage() {
     const [vendors, setVendors] = useState([]);
     const [staffList, setStaffList] = useState([]);
     const [activeTab, setActiveTab] = useState('requests'); // requests, vendors
-    const [sessionFilterMode, setSessionFilterMode] = useState('selected'); // 'selected' | 'all'
     const [showCommitteeModal, setShowCommitteeModal] = useState(false);
     const [selectedStaffId, setSelectedStaffId] = useState('');
     const [committeeRole, setCommitteeRole] = useState('member');
@@ -509,15 +509,13 @@ export default function ProcurementPage() {
         if (_hasHydrated && user?.school?.id) {
             loadData();
         }
-    }, [_hasHydrated, user?.school?.id, selectedSessionId, sessionFilterMode]);
+    }, [_hasHydrated, user?.school?.id, selectedSessionId]);
 
     const loadData = async () => {
         try {
             console.log('Loading procurement data...');
             const reqQuery = {};
-            if (sessionFilterMode === 'all') {
-                reqQuery.all = 'true';
-            } else if (selectedSessionId) {
+            if (selectedSessionId) {
                 reqQuery.academicYearId = selectedSessionId;
             }
 
@@ -1699,71 +1697,19 @@ export default function ProcurementPage() {
             <header className="bg-white shadow-sm border-b sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <Link href="/admin/labs" className="text-slate-500 hover:text-slate-700">
+                        <Link href="/dashboard" className="text-slate-500 hover:text-slate-700">
                             <ArrowLeft className="w-5 h-5" />
                         </Link>
                         <div className="flex items-center gap-2">
                             <ClipboardList className="w-6 h-6 text-indigo-600" />
-                            <h1 className="text-xl font-semibold">Procurement Management</h1>
+                            <h1 className="text-xl font-semibold text-slate-900">Procurement Management</h1>
                         </div>
-                    </div>
-                    <div className="flex gap-2">
-                        <button onClick={() => setShowVendorModal(true)} className="btn btn-secondary">
-                            <Building className="w-4 h-4" /> Add Vendor
-                        </button>
-                        <button 
-                            onClick={startNewRequest} 
-                            className={`btn ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'btn-primary'}`}
-                            title={isReadOnlyMode ? 'Procurement requests are locked in historical session' : 'New Request'}
-                        >
-                            <Plus className="w-4 h-4" /> New Request
-                        </button>
                     </div>
                 </div>
             </header>
+            <LabInfrastructureTabs activeTab="procurement" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
-                {/* Academic Session Banner */}
-                {selectedSession && (
-                    <div className={`rounded-xl p-3 mb-6 flex flex-wrap items-center justify-between gap-3 ${isReadOnlyMode
-                        ? 'bg-amber-50 border border-amber-200'
-                        : 'bg-primary-50/60 border border-primary-100'
-                        }`}>
-                        <div className="flex items-center gap-2">
-                            <Calendar className={`w-4 h-4 ${isReadOnlyMode ? 'text-amber-600' : 'text-primary-600'}`} />
-                            <span className="text-sm font-semibold text-slate-800">
-                                Academic Session: {selectedSession.yearLabel}
-                            </span>
-                            {selectedSession.isCurrent ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">
-                                    Current Session
-                                </span>
-                            ) : (
-                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-bold flex items-center gap-1">
-                                    <Lock className="w-3 h-3" /> Historical (Read-Only)
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">Filter Scope:</span>
-                            <button
-                                type="button"
-                                onClick={() => setSessionFilterMode('selected')}
-                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'selected' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                This Session Only
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSessionFilterMode('all')}
-                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'all' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                All Sessions
-                            </button>
-                        </div>
-                    </div>
-                )}
-
                 {/* Tabs */}
                 <div className="flex gap-2 mb-6">
                     <button
@@ -1783,6 +1729,19 @@ export default function ProcurementPage() {
                 {/* Requests Tab */}
                 {activeTab === 'requests' && (
                     <div className="space-y-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-xs border border-slate-100">
+                            <div>
+                                <h3 className="font-semibold text-slate-800">Procurement Requests</h3>
+                                <p className="text-xs text-slate-500">Track and manage institution purchase workflows</p>
+                            </div>
+                            <button 
+                                onClick={startNewRequest} 
+                                className={`btn ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'btn-primary'}`}
+                                title={isReadOnlyMode ? 'Procurement requests are locked in historical session' : 'New Request'}
+                            >
+                                <Plus className="w-4 h-4" /> New Request
+                            </button>
+                        </div>
                         {loading ? (
                             <div className="text-center py-8 text-slate-500">Loading...</div>
                         ) : requests.length === 0 ? (
@@ -1894,34 +1853,121 @@ export default function ProcurementPage() {
                 )}
 
                 {/* Vendors Tab */}
-                {activeTab === 'vendors' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {vendors.length === 0 ? (
-                            <div className="col-span-full text-center py-12 bg-white rounded-xl shadow-sm">
-                                <Building className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-                                <p className="text-slate-500">No vendors added yet</p>
+                {activeTab === 'vendors' && (() => {
+                    const vendorsWithCosts = vendors.map(vendor => {
+                        let cost = parseFloat(vendor.totalCost || 0);
+                        if (cost === 0 && requests?.length > 0) {
+                            requests.forEach(r => {
+                                (r.items || []).forEach(item => {
+                                    if (item.approvedVendorId === vendor.id) {
+                                        const price = parseFloat(item.approvedUnitPrice || 0);
+                                        const qty = item.quantity || 1;
+                                        cost += (price * qty);
+                                    }
+                                });
+                            });
+                        }
+                        return {
+                            ...vendor,
+                            computedCost: cost
+                        };
+                    });
+                    const grandTotalCost = vendorsWithCosts.reduce((sum, v) => sum + (v.computedCost || 0), 0);
+
+                    return (
+                        <div className="space-y-4">
+                            {/* Vendor action bar */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-xs border border-slate-100">
+                                <div>
+                                    <h3 className="font-semibold text-slate-800">Vendors & Suppliers</h3>
+                                    <p className="text-xs text-slate-500">Manage suppliers, rate contracts, and procurement costs</p>
+                                </div>
+                                <button onClick={() => { setEditingVendor(null); setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false }); setShowVendorModal(true); }} className="btn btn-primary">
+                                    <Building className="w-4 h-4" /> Add Vendor
+                                </button>
                             </div>
-                        ) : (
-                            vendors.map(vendor => (
-                                <div key={vendor.id} className="bg-white rounded-xl shadow-sm p-4">
-                                    <div className="flex items-start justify-between">
-                                        <h3 className="font-semibold">{vendor.name}</h3>
-                                        <button
-                                            onClick={() => { setEditingVendor(vendor); setVendorForm(vendor); setShowVendorModal(true); }}
-                                            className="text-slate-400 hover:text-slate-600"
-                                        >
-                                            <Edit2 className="w-4 h-4" />
+
+                            {/* Financial Summary KPI Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+                                <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white p-5 rounded-xl shadow-sm">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs uppercase tracking-wider font-semibold text-indigo-100">Grand Total Procurement Cost</span>
+                                        <Receipt className="w-5 h-5 text-indigo-200" />
+                                    </div>
+                                    <div className="text-2xl font-bold tracking-tight">
+                                        ₹{grandTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    <p className="text-xs text-indigo-200 mt-1">Total financial cost across all registered vendors</p>
+                                </div>
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">Registered Vendors</span>
+                                        <Users className="w-5 h-5 text-blue-500" />
+                                    </div>
+                                    <div className="text-2xl font-bold text-slate-800">{vendors.length}</div>
+                                    <p className="text-xs text-slate-400 mt-1">Active vendors in supplier directory</p>
+                                </div>
+                                <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">Average Spend / Vendor</span>
+                                        <CreditCard className="w-5 h-5 text-emerald-500" />
+                                    </div>
+                                    <div className="text-2xl font-bold text-slate-800">
+                                        ₹{(vendors.length > 0 ? grandTotalCost / vendors.length : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    <p className="text-xs text-slate-400 mt-1">Average procurement spend per supplier</p>
+                                </div>
+                            </div>
+
+                            {/* Vendors Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {vendorsWithCosts.length === 0 ? (
+                                    <div className="col-span-full text-center py-12 bg-white rounded-xl shadow-sm">
+                                        <Building className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                                        <p className="text-slate-500">No vendors added yet</p>
+                                        <button onClick={() => { setEditingVendor(null); setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false }); setShowVendorModal(true); }} className="btn btn-primary mt-3">
+                                            <Building className="w-4 h-4" /> Add First Vendor
                                         </button>
                                     </div>
-                                    <p className="text-sm text-slate-500">{vendor.contactPerson}</p>
-                                    <p className="text-sm text-slate-500">{vendor.email}</p>
-                                    <p className="text-sm text-slate-500">{vendor.phone}</p>
-                                    {vendor.gstin && <p className="text-xs text-slate-400">GSTIN: {vendor.gstin}</p>}
-                                </div>
-                            ))
-                        )}
-                    </div>
-                )}
+                                ) : (
+                                    vendorsWithCosts.map(vendor => (
+                                        <div key={vendor.id} className="bg-white rounded-xl shadow-sm p-4 border border-slate-100 hover:shadow-md transition">
+                                            <div className="flex items-start justify-between">
+                                                <div>
+                                                    <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
+                                                    {vendor.isLocal && (
+                                                        <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                            Local Vendor
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => { setEditingVendor(vendor); setVendorForm(vendor); setShowVendorModal(true); }}
+                                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                                    title="Edit Vendor"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                            <div className="mt-2 space-y-1 text-sm text-slate-500">
+                                                {vendor.contactPerson && <p className="flex items-center gap-1.5 text-xs"><span className="text-slate-400">Contact:</span> {vendor.contactPerson}</p>}
+                                                {vendor.email && <p className="text-xs truncate">{vendor.email}</p>}
+                                                {vendor.phone && <p className="text-xs">{vendor.phone}</p>}
+                                                {vendor.gstin && <p className="text-[11px] text-slate-400 font-mono">GSTIN: {vendor.gstin}</p>}
+                                            </div>
+                                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                <span className="text-xs text-slate-500 font-medium">Financial Cost:</span>
+                                                <span className="text-sm font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                                                    ₹{vendor.computedCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
             </main>
 
             {/* Create Request Modal */}

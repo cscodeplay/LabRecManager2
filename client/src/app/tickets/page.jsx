@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ticketsAPI, labsAPI, dashboardAPI } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from 'react-hot-toast';
@@ -59,7 +60,8 @@ const categoryLabels = {
 };
 
 export default function TicketsPage() {
-    const { user, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
+    const router = useRouter();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -78,7 +80,6 @@ export default function TicketsPage() {
     const [priorityFilter, setPriorityFilter] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
     const [myTicketsOnly, setMyTicketsOnly] = useState(false);
-    const [sessionFilterMode, setSessionFilterMode] = useState('selected'); // 'selected' | 'all'
 
     // Create form
     const [form, setForm] = useState({
@@ -93,6 +94,11 @@ export default function TicketsPage() {
     });
 
     useEffect(() => {
+        if (!_hasHydrated) return;
+        if (!isAuthenticated) {
+            router.push('/login');
+            return;
+        }
         loadTickets();
         loadLabs();
         loadIssueTypes();
@@ -100,7 +106,7 @@ export default function TicketsPage() {
         if (user?.role === 'student') {
             loadStudentProfile();
         }
-    }, [statusFilter, priorityFilter, myTicketsOnly, selectedSessionId, sessionFilterMode]);
+    }, [_hasHydrated, isAuthenticated, statusFilter, priorityFilter, myTicketsOnly, selectedSessionId]);
 
     const loadStudentProfile = async () => {
         try {
@@ -125,16 +131,15 @@ export default function TicketsPage() {
             if (statusFilter !== 'all') params.status = statusFilter;
             if (priorityFilter) params.priority = priorityFilter;
             if (myTicketsOnly) params.myTickets = 'true';
-            if (sessionFilterMode === 'all') {
-                params.all = 'true';
-            } else if (selectedSessionId) {
+            if (selectedSessionId) {
                 params.academicYearId = selectedSessionId;
             }
 
             const res = await ticketsAPI.getAll(params);
             setTickets(res.data?.data?.tickets || res.data?.tickets || []);
         } catch (error) {
-            toast.error('Failed to load tickets');
+            console.error('Error loading tickets:', error);
+            toast.error(error.response?.data?.message || 'Failed to load tickets');
         } finally {
             setLoading(false);
         }
@@ -297,46 +302,6 @@ export default function TicketsPage() {
             <LabInfrastructureTabs activeTab="tickets" className="mb-6 -mt-6" />
 
             <div className="max-w-7xl mx-auto px-4">
-                {/* Academic Session Scope Banner */}
-                {selectedSession && (
-                    <div className={`rounded-xl p-3 mb-4 flex flex-wrap items-center justify-between gap-3 ${isReadOnlyMode
-                        ? 'bg-amber-50 border border-amber-200'
-                        : 'bg-primary-50/60 border border-primary-100'
-                        }`}>
-                        <div className="flex items-center gap-2">
-                            <Calendar className={`w-4 h-4 ${isReadOnlyMode ? 'text-amber-600' : 'text-primary-600'}`} />
-                            <span className="text-sm font-semibold text-slate-800">
-                                Academic Session: {selectedSession.yearLabel}
-                            </span>
-                            {selectedSession.isCurrent ? (
-                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-bold">
-                                    Current Session
-                                </span>
-                            ) : (
-                                <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-bold flex items-center gap-1">
-                                    <Lock className="w-3 h-3" /> Historical (Read-Only)
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">Filter Scope:</span>
-                            <button
-                                type="button"
-                                onClick={() => setSessionFilterMode('selected')}
-                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'selected' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                This Session Only
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSessionFilterMode('all')}
-                                className={`px-2.5 py-1 text-xs rounded-lg font-medium transition ${sessionFilterMode === 'all' ? 'bg-white shadow-xs text-primary-700 border border-primary-200' : 'text-slate-600 hover:text-slate-900'}`}
-                            >
-                                All Sessions
-                            </button>
-                        </div>
-                    </div>
-                )}
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">

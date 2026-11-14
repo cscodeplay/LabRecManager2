@@ -3,12 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, Search, ArrowLeft, Building, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, BarChart3, History, ArrowRightLeft, Camera, Network, Volume2, User, Wrench, CheckCircle, AlertTriangle, Clock, Laptop, Barcode, ClipboardList, PackagePlus, UserPlus, UserMinus, ShoppingCart } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, Search, ArrowLeft, Building, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, BarChart3, History, ArrowRightLeft, Camera, Network, Volume2, User, Wrench, CheckCircle, AlertTriangle, Clock, Laptop, Barcode, ClipboardList, PackagePlus, UserPlus, UserMinus, ShoppingCart, LayoutGrid, List } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, usersAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import ConfirmDialog from '@/components/ConfirmDialog';
-import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
@@ -34,6 +33,7 @@ export default function LabsPage() {
     const [labs, setLabs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
 
     // Modal state
     const [showModal, setShowModal] = useState(false);
@@ -206,15 +206,6 @@ export default function LabsPage() {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Link href="/admin/barcode-generator" className="btn btn-secondary">
-                            <Barcode className="w-4 h-4" /> Barcodes
-                        </Link>
-                        <Link href="/admin/procurement" className="btn btn-secondary">
-                            <ClipboardList className="w-4 h-4" /> Procurement
-                        </Link>
-                        <Link href="/admin/laptop-issuances" className="btn btn-secondary">
-                            <Laptop className="w-4 h-4" /> Device Issuance
-                        </Link>
                         <Link href="/admin/labs/shift-requests" className="btn btn-secondary">
                             <ArrowRightLeft className="w-4 h-4" /> Shift Requests
                         </Link>
@@ -224,31 +215,12 @@ export default function LabsPage() {
                         <Link href="/admin/labs/inventory-reports" className="btn btn-secondary">
                             <BarChart3 className="w-4 h-4" /> Reports
                         </Link>
-                        <button onClick={() => { setEditingLab(null); setFormData({ name: '', nameHindi: '', roomNumber: '', capacity: 30, inchargeId: '' }); setShowModal(true); }} className="btn btn-primary">
-                            <Plus className="w-4 h-4" /> Add Lab
-                        </button>
                     </div>
                 </div>
             </header>
             <LabInfrastructureTabs activeTab="labs" />
 
             <main className="max-w-7xl mx-auto px-4 py-6">
-                {/* AI Lab Health & Maintenance Copilot */}
-                <AICardCopilot
-                    type="lab_maintenance"
-                    context={{
-                        labsCount: labs.length,
-                        totalItems: labs.reduce((sum, l) => sum + (l.items?.length || 0), 0),
-                        labNames: labs.map(l => `${l.name} (${l.items?.length || 0} systems)`).join(', ')
-                    }}
-                    onInsert={(aiData) => {
-                        if (aiData?.summary || aiData?.recommendedActionPlan) {
-                            navigator.clipboard.writeText(`Lab Health Summary:\n${aiData.summary || ''}\n\nAction Plan:\n${aiData.recommendedActionPlan || ''}`);
-                            toast.success('Maintenance report copied to clipboard!');
-                        }
-                    }}
-                />
-
                 {/* Search */}
                 <div className="card p-4 mb-6">
                     <div className="relative">
@@ -263,7 +235,39 @@ export default function LabsPage() {
                     </div>
                 </div>
 
-                {/* Labs Grid */}
+                {/* View Toolbar: Lab count, Add Lab button & Grid/List View Toggle */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
+                        <span>{filteredLabs.length} {filteredLabs.length === 1 ? 'Computer Lab' : 'Computer Labs'}</span>
+                        {searchQuery && <span className="text-xs text-slate-400">• Filtering by "{searchQuery}"</span>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {/* Grid / List Toggle */}
+                        <div className="flex items-center bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                            <button
+                                onClick={() => setViewMode('grid')}
+                                className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-primary-50 text-primary-600 font-medium shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="Grid View"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                            </button>
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-primary-50 text-primary-600 font-medium shadow-xs' : 'text-slate-400 hover:text-slate-600'}`}
+                                title="List View"
+                            >
+                                <List className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        {/* Add Lab Button */}
+                        <button onClick={() => { setEditingLab(null); setFormData({ name: '', nameHindi: '', roomNumber: '', capacity: 30, inchargeId: '' }); setShowModal(true); }} className="btn btn-primary">
+                            <Plus className="w-4 h-4" /> Add Lab
+                        </button>
+                    </div>
+                </div>
+
+                {/* Labs Display */}
                 {filteredLabs.length === 0 ? (
                     <div className="card p-12 text-center">
                         <Building className="w-16 h-16 mx-auto text-slate-300 mb-4" />
@@ -273,7 +277,7 @@ export default function LabsPage() {
                             <Plus className="w-4 h-4" /> Add Lab
                         </button>
                     </div>
-                ) : (
+                ) : viewMode === 'grid' ? (
                     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredLabs.map((lab) => (
                             <div key={lab.id} className={`card p-6 hover:shadow-lg transition ${lab.status === 'maintenance' ? 'border-l-4 border-amber-500 bg-amber-50/50' : lab.status === 'closed' ? 'border-l-4 border-red-500 bg-red-50/50' : ''}`}>
@@ -344,9 +348,101 @@ export default function LabsPage() {
                             </div>
                         ))}
                     </div>
-                )
-                }
-            </main >
+                ) : (
+                    /* List View */
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm text-slate-600">
+                                <thead className="bg-slate-50/80 text-xs uppercase text-slate-400 font-semibold border-b border-slate-100">
+                                    <tr>
+                                        <th className="px-6 py-3.5">Lab Name & Room</th>
+                                        <th className="px-4 py-3.5">Incharge</th>
+                                        <th className="px-4 py-3.5">Capacity</th>
+                                        <th className="px-4 py-3.5">Items / Inventory</th>
+                                        <th className="px-4 py-3.5">Status</th>
+                                        <th className="px-6 py-3.5 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredLabs.map((lab) => (
+                                        <tr key={lab.id} className="hover:bg-slate-50/60 transition">
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                                        <Monitor className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-semibold text-slate-900">{lab.name}</div>
+                                                        <div className="text-xs text-slate-400 flex items-center gap-2">
+                                                            {lab.roomNumber && <span>Room: {lab.roomNumber}</span>}
+                                                            {lab.nameHindi && <span>• {lab.nameHindi}</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                {lab.incharge ? (
+                                                    <div className="flex items-center gap-1.5 text-xs text-slate-700">
+                                                        <User className="w-3.5 h-3.5 text-slate-400" />
+                                                        <span>{lab.incharge.firstName} {lab.incharge.lastName}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400 italic">Not Assigned</span>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-4 text-xs font-medium text-slate-700">
+                                                {lab.capacity} seats
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-slate-800">{lab.totalItems || 0}</span>
+                                                    <Link
+                                                        href={`/admin/labs/${lab.id}/pcs`}
+                                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+                                                    >
+                                                        Manage →
+                                                    </Link>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4">
+                                                {lab.status === 'maintenance' ? (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                                                        <Wrench className="w-3 h-3" /> Maintenance
+                                                    </span>
+                                                ) : lab.status === 'closed' ? (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                                        <AlertTriangle className="w-3 h-3" /> Closed
+                                                    </span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                                                        <CheckCircle className="w-3 h-3" /> Active
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <button onClick={() => handleMaintenanceToggle(lab)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded" title="Set Maintenance">
+                                                        <Wrench className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => loadMaintenanceHistory(lab)} className="p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded" title="View History">
+                                                        <Clock className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => handleEdit(lab)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Lab">
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(lab)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete Lab">
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </main>
 
             {/* Create/Edit Modal */}
             {
