@@ -4,16 +4,47 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
+import { ChevronRight, CalendarDays, PlusCircle, ArrowUpRight } from 'lucide-react';
 import {
-    FileText, Upload, Award, Video, Users,
-    ChevronRight, TrendingUp, Clock, CheckCircle, BookOpen, Monitor, Pencil, Ticket, GraduationCap, Layers, CalendarDays, Activity,
-    Truck, ShoppingBag, Folder, StickyNote, Database, BarChart3, Code2, QrCode, Laptop, History, Sparkles, PlusCircle
-} from 'lucide-react';
+    FluentDashboardIcon,
+    FluentClassesIcon,
+    FluentManageUsersIcon,
+    FluentCodePracticeIcon,
+    FluentLabsIcon,
+    FluentLabSuiteIcon,
+    FluentAssignmentsIcon,
+    FluentAssignedWorkIcon,
+    FluentReviewSubmissionsIcon,
+    FluentTrainingIcon,
+    FluentDocumentsIcon,
+    FluentStorageIcon,
+    FluentGradesIcon,
+    FluentLiveCollabIcon,
+    FluentMeetingsIcon,
+    FluentWhiteboardIcon,
+    FluentQuizIcon,
+    FluentTicketsIcon,
+    FluentBuildingIcon,
+    FluentTimetableIcon,
+    FluentCalendarIcon,
+    FluentReportsIcon,
+    FluentStudentProgressIcon,
+    FluentNotesIcon,
+    FluentInstituteOpsIcon,
+    FluentRolesIcon,
+    FluentPlansIcon,
+    FluentSettingsIcon,
+    FluentTeachingIcon,
+    FluentLecturePlansIcon
+} from '@/components/FluentNavIcons';
 import {
-    FluentAssignmentLedgerIcon,
+    FluentWordDocIcon,
+    FluentExcelDocIcon,
+    FluentPdfDocIcon,
+    FluentSlidesDocIcon,
     FluentWorkstationIcon,
     FluentTrophyIcon,
-    FluentTimetableIcon
+    FluentAssignmentLedgerIcon
 } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 import { dashboardAPI } from '@/lib/api';
@@ -33,49 +64,48 @@ export default function DashboardPage() {
     const [activeCategory, setActiveCategory] = useState('all');
 
     const studentShortcuts = [
-        { title: t('dashboard.viewAssignments', 'Assignments'), href: '/assignments', icon: FluentAssignmentLedgerIcon, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
-        { title: t('dashboard.mySubmissions', 'Submissions'), href: '/submissions', icon: Upload, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
-        { title: t('dashboard.viewGrades', 'Grades & Marks'), href: '/grades', icon: FluentTrophyIcon, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
-        { title: 'Class Timetable', href: '/timetable', icon: FluentTimetableIcon, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
-        { title: 'Coding Training', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
-        { title: 'Live Meeting / Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
-        { title: t('nav.liveBoard', 'Live Whiteboard'), href: '/live-board', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
-        { title: 'Study Documents', href: '/documents', icon: Folder, category: 'live', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
-        { title: t('dashboard.reportIssue', 'Report Issue'), href: '/tickets', icon: Ticket, category: 'ops', color: 'text-orange-600 bg-orange-50 group-hover:bg-orange-100' },
+        { title: t('dashboard.viewAssignments', 'Assignments'), desc: 'Tasks & deadlines', href: '/assignments', icon: FluentAssignmentsIcon, category: 'academics' },
+        { title: t('dashboard.mySubmissions', 'Submissions'), desc: 'Uploaded files', href: '/submissions', icon: FluentReviewSubmissionsIcon, category: 'academics' },
+        { title: t('dashboard.viewGrades', 'Grades & Marks'), desc: 'Scores & ledger', href: '/grades', icon: FluentGradesIcon, category: 'academics' },
+        { title: 'Class Timetable', desc: 'Weekly schedule', href: '/timetable', icon: FluentTimetableIcon, category: 'academics' },
+        { title: 'Coding Training', desc: 'Interactive units', href: '/training', icon: FluentCodePracticeIcon, category: 'academics' },
+        { title: 'Live Meeting / Viva', desc: 'Real-time oral exam', href: '/meetings', icon: FluentLiveCollabIcon, category: 'live' },
+        { title: t('nav.liveBoard', 'Live Whiteboard'), desc: 'Shared canvas', href: '/live-board', icon: FluentWhiteboardIcon, category: 'live' },
+        { title: 'Study Documents', desc: 'Course materials', href: '/documents', icon: FluentDocumentsIcon, category: 'live' },
+        { title: t('dashboard.reportIssue', 'Report Issue'), desc: 'Help & support', href: '/tickets', icon: FluentTicketsIcon, category: 'ops' },
     ];
 
     const staffShortcuts = [
         // Academics & Teaching
-        { title: t('dashboard.createAssignment', 'Create Assignment'), href: '/assignments/create', icon: PlusCircle, category: 'academics', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
-        { title: t('dashboard.reviewPending', 'Review Submissions'), href: '/submissions', icon: Clock, category: 'academics', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
-        { title: t('dashboard.manageClasses', 'Manage Classes'), href: '/classes', icon: Users, category: 'academics', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
-        { title: 'Teaching & Lecture Plans', href: '/teaching/plans', icon: BookOpen, category: 'academics', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
-        { title: 'Timetable Schedules', href: '/timetable', icon: FluentTimetableIcon, category: 'academics', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
-        { title: 'Training & Coding Modules', href: '/training', icon: Code2, category: 'academics', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
-        { title: 'Grades & Evaluation', href: '/grades', icon: FluentTrophyIcon, category: 'academics', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
+        { title: t('dashboard.createAssignment', 'Create Assignment'), desc: 'Curriculum task', href: '/assignments/create', icon: FluentAssignmentsIcon, category: 'academics' },
+        { title: t('dashboard.reviewPending', 'Review Submissions'), desc: 'Pending grading', href: '/submissions', icon: FluentReviewSubmissionsIcon, category: 'academics' },
+        { title: t('dashboard.manageClasses', 'Manage Classes'), desc: 'Batches & students', href: '/classes', icon: FluentClassesIcon, category: 'academics' },
+        { title: 'Teaching & Lecture Plans', desc: 'Syllabus coverage', href: '/teaching/plans', icon: FluentLecturePlansIcon, category: 'academics' },
+        { title: 'Timetable Schedules', desc: 'Lab & class slots', href: '/timetable', icon: FluentTimetableIcon, category: 'academics' },
+        { title: 'Training & Coding Modules', desc: 'Interactive practice', href: '/training', icon: FluentTrainingIcon, category: 'academics' },
+        { title: 'Grades & Evaluation', desc: 'Ledger & marksheets', href: '/grades', icon: FluentGradesIcon, category: 'academics' },
 
         // Lab & Hardware
-        { title: 'Lab Inventory & Hardware', href: '/admin/labs', icon: FluentWorkstationIcon, category: 'labs', color: 'text-sky-600 bg-sky-50 group-hover:bg-sky-100' },
-        { title: 'Equipment Shift Requests', href: '/admin/labs/shift-requests', icon: Truck, category: 'labs', color: 'text-cyan-600 bg-cyan-50 group-hover:bg-cyan-100' },
-        { title: 'Hardware Audit Reports', href: '/admin/labs/inventory-reports', icon: BarChart3, category: 'labs', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
-        { title: 'Device Issuance', href: '/admin/laptop-issuances', icon: Laptop, category: 'labs', color: 'text-blue-600 bg-blue-50 group-hover:bg-blue-100' },
-        { title: 'Barcode & QR Labels', href: '/admin/barcode-generator', icon: QrCode, category: 'labs', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
+        { title: 'Lab Inventory & Hardware', desc: 'Workstations & PCs', href: '/admin/labs', icon: FluentLabSuiteIcon, category: 'labs' },
+        { title: 'Equipment Shift Requests', desc: 'Hardware movement', href: '/admin/labs/shift-requests', icon: FluentLabsIcon, category: 'labs' },
+        { title: 'Hardware Audit Reports', desc: 'System inspection', href: '/admin/labs/inventory-reports', icon: FluentReportsIcon, category: 'labs' },
+        { title: 'Device Issuance', desc: 'Laptops & peripherals', href: '/admin/laptop-issuances', icon: FluentWorkstationIcon, category: 'labs' },
+        { title: 'Barcode & QR Labels', desc: 'Asset tags generator', href: '/admin/barcode-generator', icon: FluentPlansIcon, category: 'labs' },
 
         // Live & Collaboration
-        { title: 'Live Meetings & Viva', href: '/meetings', icon: Video, category: 'live', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' },
-        { title: t('nav.whiteboard', 'Interactive Whiteboard'), href: '/whiteboard', icon: Pencil, category: 'live', color: 'text-purple-600 bg-purple-50 group-hover:bg-purple-100' },
-        { title: 'Session Recordings', href: (user?.role === 'admin' || user?.role === 'principal') ? '/admin/documents?tab=recordings' : '/documents?tab=recordings', icon: Layers, category: 'live', color: 'text-fuchsia-600 bg-fuchsia-50 group-hover:bg-fuchsia-100' },
-        { title: 'Documents Hub & Share', href: '/documents', icon: Folder, category: 'live', color: 'text-violet-600 bg-violet-50 group-hover:bg-violet-100' },
+        { title: 'Live Meetings & Viva', desc: 'Voice & video rooms', href: '/meetings', icon: FluentLiveCollabIcon, category: 'live' },
+        { title: t('nav.whiteboard', 'Interactive Whiteboard'), desc: 'Drawing & formulas', href: '/whiteboard', icon: FluentWhiteboardIcon, category: 'live' },
+        { title: 'Documents Hub & Share', desc: 'Cloud office library', href: '/documents', icon: FluentDocumentsIcon, category: 'live' },
 
         // Operations & Admin
-        { title: 'IT & Support Tickets', href: '/tickets', icon: Ticket, category: 'ops', color: 'text-orange-600 bg-orange-50 group-hover:bg-orange-100' },
-        { title: 'Procurement & RFQ', href: '/admin/procurement', icon: ShoppingBag, category: 'ops', color: 'text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100' },
-        { title: 'Academic Calendar', href: '/admin/calendar', icon: CalendarDays, category: 'ops', color: 'text-teal-600 bg-teal-50 group-hover:bg-teal-100' },
-        { title: 'Sticky Notes & Memos', href: '/admin/notes', icon: StickyNote, category: 'ops', color: 'text-amber-600 bg-amber-50 group-hover:bg-amber-100' },
-        { title: 'Reports & Certificates', href: '/reports', icon: FileText, category: 'ops', color: 'text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100' },
-        { title: 'Activity Logs & Audit', href: '/activity-logs', icon: History, category: 'ops', color: 'text-slate-600 bg-slate-100 group-hover:bg-slate-200' },
+        { title: 'IT & Support Tickets', desc: 'Issues & inquiries', href: '/tickets', icon: FluentTicketsIcon, category: 'ops' },
+        { title: 'Procurement & RFQ', desc: 'Hardware purchasing', href: '/admin/procurement', icon: FluentStorageIcon, category: 'ops' },
+        { title: 'Academic Calendar', desc: 'Terms & holidays', href: '/admin/calendar', icon: FluentCalendarIcon, category: 'ops' },
+        { title: 'Sticky Notes & Memos', desc: 'Desk scratchpad', href: '/admin/notes', icon: FluentNotesIcon, category: 'ops' },
+        { title: 'Reports & Certificates', desc: 'Analytics & export', href: '/reports', icon: FluentReportsIcon, category: 'ops' },
+        { title: 'Activity Logs & Audit', desc: 'Security trail', href: '/activity-logs', icon: FluentInstituteOpsIcon, category: 'ops' },
         ...(user?.role === 'admin' || user?.role === 'principal' ? [
-            { title: 'Database SQL Console', href: '/admin/sql-console', icon: Database, category: 'ops', color: 'text-rose-600 bg-rose-50 group-hover:bg-rose-100' }
+            { title: 'Database SQL Console', desc: 'Live SQL queries', href: '/admin/sql-console', icon: FluentSettingsIcon, category: 'ops' }
         ] : [])
     ];
 
@@ -185,23 +215,23 @@ export default function DashboardPage() {
                                 <>
                                     <Link
                                         href="/assignments/create"
-                                        className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 transition active:scale-95"
+                                        className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-500/20 transition active:scale-95"
                                     >
-                                        <PlusCircle className="w-4 h-4" />
+                                        <FluentAssignmentsIcon className="w-5 h-5 flex-shrink-0" />
                                         {t('dashboard.createAssignment', 'Create Assignment')}
                                     </Link>
                                     <Link
                                         href="/whiteboard"
-                                        className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
+                                        className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
                                     >
-                                        <Pencil className="w-4 h-4 text-purple-300" />
+                                        <FluentWhiteboardIcon className="w-5 h-5 flex-shrink-0" />
                                         Interactive Whiteboard
                                     </Link>
                                     <Link
                                         href="/admin/labs"
-                                        className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
+                                        className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
                                     >
-                                        <FluentWorkstationIcon className="w-4 h-4 text-sky-300" />
+                                        <FluentLabSuiteIcon className="w-5 h-5 flex-shrink-0" />
                                         Lab Hardware
                                     </Link>
                                 </>
@@ -209,16 +239,16 @@ export default function DashboardPage() {
                                 <>
                                     <Link
                                         href="/assignments"
-                                        className="px-4 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-indigo-500/20 transition active:scale-95"
+                                        className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-indigo-500/20 transition active:scale-95"
                                     >
-                                        <FluentAssignmentLedgerIcon className="w-4 h-4" />
+                                        <FluentAssignmentsIcon className="w-5 h-5 flex-shrink-0" />
                                         My Assignments
                                     </Link>
                                     <Link
                                         href="/live-board"
-                                        className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
+                                        className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-xs flex items-center gap-2 backdrop-blur-sm border border-white/10 transition active:scale-95"
                                     >
-                                        <Pencil className="w-4 h-4 text-purple-300" />
+                                        <FluentWhiteboardIcon className="w-5 h-5 flex-shrink-0" />
                                         Live Whiteboard
                                     </Link>
                                 </>
@@ -231,146 +261,146 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     {user?.role === 'student' ? (
                         <>
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-indigo-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                                        <FluentAssignmentLedgerIcon className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentAssignmentsIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">Tasks</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800 px-2 py-0.5 rounded-md">Tasks</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">{stats.assignedToMe ?? 0}</div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">{t('dashboard.assignedToMe', 'Assigned To Me')}</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">{stats.assignedToMe ?? 0}</div>
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">{t('dashboard.assignedToMe', 'Assigned To Me')}</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Active terms</span>
-                                    <Link href="/assignments" className="text-indigo-600 font-semibold hover:underline">View &rarr;</Link>
+                                    <Link href="/assignments" className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">View &rarr;</Link>
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-emerald-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-emerald-400 dark:hover:border-emerald-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                                        <Upload className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentReviewSubmissionsIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">Submitted</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800 px-2 py-0.5 rounded-md">Submitted</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">{stats.mySubmissions ?? 0}</div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">{t('dashboard.mySubmissions', 'My Submissions')}</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">{stats.mySubmissions ?? 0}</div>
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">{t('dashboard.mySubmissions', 'My Submissions')}</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Uploaded files</span>
-                                    <Link href="/submissions" className="text-emerald-600 font-semibold hover:underline">History &rarr;</Link>
+                                    <Link href="/submissions" className="text-emerald-600 dark:text-emerald-400 font-semibold hover:underline">History &rarr;</Link>
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-amber-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                                        <Video className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentLiveCollabIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-md">Upcoming</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-600 bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800 px-2 py-0.5 rounded-md">Live Viva</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">{stats.pendingVivas ?? 0}</div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">{t('dashboard.pendingVivas', 'Pending Vivas')}</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                    <span>Live evaluation</span>
-                                    <Link href="/meetings" className="text-amber-600 font-semibold hover:underline">Join &rarr;</Link>
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">{stats.pendingVivas ?? 0}</div>
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">{t('dashboard.pendingVivas', 'Pending Vivas')}</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                                    <span>Oral assessment</span>
+                                    <Link href="/meetings" className="text-amber-600 dark:text-amber-400 font-semibold hover:underline">Join &rarr;</Link>
                                 </div>
                             </div>
 
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-blue-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-blue-400 dark:hover:border-blue-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                                        <FluentTrophyIcon className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentGradesIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">Score</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-blue-600 bg-blue-50 dark:bg-blue-950/60 border border-blue-200/60 dark:border-blue-800 px-2 py-0.5 rounded-md">Ledger</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">
                                     {stats.avgScore != null ? `${stats.avgScore}%` : '--'}
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">{t('dashboard.avgScore', 'Average Score')}</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                    <span>Cumulative mark</span>
-                                    <Link href="/grades" className="text-blue-600 font-semibold hover:underline">Report &rarr;</Link>
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">{t('dashboard.avgScore', 'Average Score')}</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                                    <span>Cumulative marks</span>
+                                    <Link href="/grades" className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">Report &rarr;</Link>
                                 </div>
                             </div>
                         </>
                     ) : (
                         <>
                             {/* Staff & Admin KPI 1: Active Labs */}
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-sky-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-sky-400 dark:hover:border-sky-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center">
-                                        <FluentWorkstationIcon className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentLabSuiteIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/60 dark:border-emerald-800 px-2 py-0.5 rounded-md flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                                        Operational
+                                        Nominal
                                     </span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">
                                     {stats.activeLabs ?? (stats.totalClasses || 0)}
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
                                     {stats.activeLabs != null ? t('dashboard.activeLabs', 'Active Labs') : 'Active Classes'}
                                 </div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-                                    <span>Hardware workstations</span>
-                                    <Link href="/admin/labs" className="text-sky-600 font-semibold hover:underline">Manage &rarr;</Link>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+                                    <span>Computer workstations</span>
+                                    <Link href="/admin/labs" className="text-sky-600 dark:text-sky-400 font-semibold hover:underline">Manage &rarr;</Link>
                                 </div>
                             </div>
 
                             {/* Staff & Admin KPI 2: Pending Grading */}
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-amber-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-                                        <Clock className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentReviewSubmissionsIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md">Action Due</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200/60 dark:border-amber-800 px-2 py-0.5 rounded-md">Queue</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">
                                     {stats.pendingGrading ?? 0}
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">
                                     {t('dashboard.pendingGrading', 'Pending Grading')}
                                 </div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Submissions to evaluate</span>
-                                    <Link href="/submissions" className="text-indigo-600 font-semibold hover:underline">Grade &rarr;</Link>
+                                    <Link href="/submissions" className="text-amber-600 dark:text-amber-400 font-semibold hover:underline">Grade &rarr;</Link>
                                 </div>
                             </div>
 
                             {/* Staff & Admin KPI 3: Students / Enrolled Users */}
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-indigo-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-indigo-400 dark:hover:border-indigo-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                                        <GraduationCap className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentClassesIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md">Enrolled</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800 px-2 py-0.5 rounded-md">Enrolled</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">
                                     {stats.totalStudents ?? (stats.totalUsers || 0)}
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">Total Students</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">Total Students</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Across active batches</span>
-                                    <Link href="/classes" className="text-indigo-600 font-semibold hover:underline">Rosters &rarr;</Link>
+                                    <Link href="/classes" className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">Rosters &rarr;</Link>
                                 </div>
                             </div>
 
                             {/* Staff & Admin KPI 4: Live Vivas & Meetings */}
-                            <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs hover:border-purple-300 transition group">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800/80 shadow-xs hover:border-purple-400 dark:hover:border-purple-500 hover:shadow-md transition group">
                                 <div className="flex items-center justify-between">
-                                    <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                                        <Video className="w-5 h-5" />
+                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 active:scale-95 transition-transform">
+                                        <FluentLiveCollabIcon className="w-7 h-7 flex-shrink-0" />
                                     </div>
-                                    <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md">Live Stream</span>
+                                    <span className="text-[10px] font-mono font-bold tracking-wider uppercase text-purple-700 bg-purple-50 dark:bg-purple-950/60 border border-purple-200/60 dark:border-purple-800 px-2 py-0.5 rounded-md">Live Viva</span>
                                 </div>
-                                <div className="text-3xl font-extrabold text-slate-900 tracking-tight mt-3">
+                                <div className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-3">
                                     {stats.totalVivas ?? (stats.scheduledVivas || 0)}
                                 </div>
-                                <div className="text-xs font-semibold text-slate-500 mt-1">Scheduled Vivas / Meetings</div>
-                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+                                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mt-1">Scheduled Vivas / Meetings</div>
+                                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Real-time assessment</span>
-                                    <Link href="/meetings" className="text-purple-600 font-semibold hover:underline">Launch &rarr;</Link>
+                                    <Link href="/meetings" className="text-purple-600 dark:text-purple-400 font-semibold hover:underline">Launch &rarr;</Link>
                                 </div>
                             </div>
                         </>
@@ -384,28 +414,30 @@ export default function DashboardPage() {
                     <div className="lg:col-span-7 xl:col-span-8 space-y-6">
 
                         {/* Actionable Deadlines & Lab Schedule */}
-                        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-                            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
-                                        <CalendarDays className="w-5 h-5" />
+                        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs overflow-hidden">
+                            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+                                        <FluentCalendarIcon className="w-6 h-6 flex-shrink-0" />
                                     </div>
                                     <div>
-                                        <h2 className="font-bold text-slate-900 text-sm">{t('dashboard.upcomingDeadlines', 'Upcoming Deadlines & Schedule')}</h2>
-                                        <p className="text-xs text-slate-500">Assignments and submissions requiring attention</p>
+                                        <h2 className="font-bold text-slate-900 dark:text-white text-sm">{t('dashboard.upcomingDeadlines', 'Upcoming Deadlines & Schedule')}</h2>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Assignments and submissions requiring attention</p>
                                     </div>
                                 </div>
-                                <Link href="/assignments" className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1">
+                                <Link href="/assignments" className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 transition flex items-center gap-1">
                                     {t('common.viewAll', 'View All')} <ChevronRight className="w-3.5 h-3.5" />
                                 </Link>
                             </div>
 
-                            <div className="divide-y divide-slate-100">
+                            <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
                                 {deadlines.length === 0 ? (
-                                    <div className="p-8 text-center text-slate-500">
-                                        <Clock className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                                    <div className="p-8 text-center text-slate-500 dark:text-slate-400">
+                                        <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 mx-auto mb-2 shadow-xs">
+                                            <FluentAssignmentsIcon className="w-6 h-6 flex-shrink-0" />
+                                        </div>
                                         <p className="text-sm font-medium">{t('dashboard.noUpcomingDeadlines', 'No upcoming deadlines')}</p>
-                                        <p className="text-xs text-slate-400 mt-1">All assignments and evaluations are currently up to date.</p>
+                                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All assignments and evaluations are currently up to date.</p>
                                     </div>
                                 ) : (
                                     deadlines.slice(0, 5).map((item, i) => {
@@ -421,30 +453,30 @@ export default function DashboardPage() {
                                                 : t('dashboard.dueSoon', 'Due soon');
 
                                         const statusColors = {
-                                            graded: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                            submitted: 'bg-blue-50 text-blue-700 border-blue-200',
-                                            needs_revision: 'bg-amber-50 text-amber-700 border-amber-200',
-                                            pending: 'bg-slate-100 text-slate-600 border-slate-200'
+                                            graded: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+                                            submitted: 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+                                            needs_revision: 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+                                            pending: 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
                                         };
 
                                         return (
                                             <Link
                                                 key={i}
                                                 href={`/assignments/${item.id}`}
-                                                className="p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-slate-50 transition group"
+                                                className="p-4 sm:p-5 flex items-center justify-between gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition group"
                                             >
                                                 <div className="flex items-center gap-3.5 min-w-0">
-                                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100">
-                                                        <FileText className="w-5 h-5 group-hover:scale-105 transition" />
+                                                    <div className="w-11 h-11 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+                                                        <FluentAssignmentsIcon className="w-6 h-6 flex-shrink-0" />
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="font-bold text-slate-900 text-sm truncate group-hover:text-indigo-600 transition">
+                                                        <p className="font-bold text-slate-900 dark:text-white text-sm truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
                                                             {item.title}
                                                         </p>
-                                                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                                                             <span>{item.subject?.name || 'Lab Course'}</span>
                                                             <span>•</span>
-                                                            <span className={hoursLeft < 24 ? 'text-red-600 font-semibold' : 'text-slate-500'}>
+                                                            <span className={hoursLeft < 24 ? 'text-red-600 font-semibold' : 'text-slate-500 dark:text-slate-400'}>
                                                                 {timeLeftText}
                                                             </span>
                                                         </div>
@@ -452,10 +484,10 @@ export default function DashboardPage() {
                                                 </div>
 
                                                 <div className="flex items-center gap-3 shrink-0">
-                                                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border ${statusColors[item.status] || statusColors.pending}`}>
+                                                    <span className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-md border ${statusColors[item.status] || statusColors.pending}`}>
                                                         {item.status || t('dashboard.pending', 'Pending')}
                                                     </span>
-                                                    <span className="text-xs font-semibold text-indigo-600 group-hover:translate-x-0.5 transition hidden sm:inline-flex items-center gap-1">
+                                                    <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-0.5 transition hidden sm:inline-flex items-center gap-1">
                                                         {user?.role === 'student' ? 'Open' : 'Review'} &rarr;
                                                     </span>
                                                 </div>
@@ -467,70 +499,84 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Recent Workspaces, Whiteboards & Office Documents */}
-                        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5">
-                            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                                <div className="flex items-center gap-2.5">
-                                    <div className="p-2 rounded-xl bg-purple-50 text-purple-600">
-                                        <Folder className="w-5 h-5" />
+                        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs p-5">
+                            <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+                                        <FluentDocumentsIcon className="w-6 h-6 flex-shrink-0" />
                                     </div>
                                     <div>
-                                        <h2 className="font-bold text-slate-900 text-sm">Recent Boards & Office Documents</h2>
-                                        <p className="text-xs text-slate-500">Pick up right where you left off</p>
+                                        <h2 className="font-bold text-slate-900 dark:text-white text-sm">Recent Boards & Office Documents</h2>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Pick up right where you left off</p>
                                     </div>
                                 </div>
-                                <Link href="/documents" className="text-xs font-semibold text-purple-600 hover:text-purple-800 transition">
+                                <Link href="/documents" className="text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-800 transition">
                                     Browse All &rarr;
                                 </Link>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
                                 <Link
                                     href="/whiteboard"
-                                    className="p-3.5 rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50/30 transition group"
+                                    className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 hover:border-purple-400 dark:hover:border-purple-500 hover:bg-purple-50/30 dark:hover:bg-purple-950/20 transition group"
                                 >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
-                                            <Pencil className="w-4 h-4" />
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 transition-transform">
+                                            <FluentWhiteboardIcon className="w-6 h-6 flex-shrink-0" />
                                         </div>
-                                        <span className="text-[10px] font-mono text-slate-400">Interactive</span>
+                                        <span className="text-[10px] font-mono text-purple-600 dark:text-purple-400 font-bold">Canvas</span>
                                     </div>
-                                    <p className="font-bold text-slate-900 text-xs truncate group-hover:text-purple-700 transition">Interactive Whiteboard</p>
-                                    <p className="text-[11px] text-slate-400 mt-0.5">Multi-page drawing & AI tools</p>
+                                    <p className="font-bold text-slate-900 dark:text-white text-xs truncate group-hover:text-purple-600 dark:group-hover:text-purple-400 transition">Live Whiteboard</p>
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Drawing & AI Bot</p>
                                 </Link>
 
                                 <Link
                                     href="/documents/word-editor"
-                                    className="p-3.5 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 transition group"
+                                    className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition group"
                                 >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
-                                            W
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 transition-transform">
+                                            <FluentWordDocIcon className="w-6 h-6 flex-shrink-0" />
                                         </div>
-                                        <span className="text-[10px] font-mono text-slate-400">Word</span>
+                                        <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold">Word</span>
                                     </div>
-                                    <p className="font-bold text-slate-900 text-xs truncate group-hover:text-blue-700 transition">Word Document Editor</p>
-                                    <p className="text-[11px] text-slate-400 mt-0.5">Lab manuals, syllabi & docs</p>
+                                    <p className="font-bold text-slate-900 dark:text-white text-xs truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">Word Document</p>
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Lab manuals & docs</p>
                                 </Link>
 
                                 <Link
                                     href="/documents/excel-editor"
-                                    className="p-3.5 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/30 transition group"
+                                    className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 hover:border-emerald-400 dark:hover:border-emerald-500 hover:bg-emerald-50/30 dark:hover:bg-emerald-950/20 transition group"
                                 >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                                            X
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 transition-transform">
+                                            <FluentExcelDocIcon className="w-6 h-6 flex-shrink-0" />
                                         </div>
-                                        <span className="text-[10px] font-mono text-slate-400">Excel</span>
+                                        <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">Excel</span>
                                     </div>
-                                    <p className="font-bold text-slate-900 text-xs truncate group-hover:text-emerald-700 transition">Excel Spreadsheet Editor</p>
-                                    <p className="text-[11px] text-slate-400 mt-0.5">Marks sheets & grade records</p>
+                                    <p className="font-bold text-slate-900 dark:text-white text-xs truncate group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition">Excel Sheet</p>
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Marks & ledgers</p>
+                                </Link>
+
+                                <Link
+                                    href="/documents/pdf-studio"
+                                    className="p-3.5 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 hover:border-rose-400 dark:hover:border-rose-500 hover:bg-rose-50/30 dark:hover:bg-rose-950/20 transition group"
+                                >
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 transition-transform">
+                                            <FluentPdfDocIcon className="w-6 h-6 flex-shrink-0" />
+                                        </div>
+                                        <span className="text-[10px] font-mono text-rose-600 dark:text-rose-400 font-bold">PDF</span>
+                                    </div>
+                                    <p className="font-bold text-slate-900 dark:text-white text-xs truncate group-hover:text-rose-600 dark:group-hover:text-rose-400 transition">PDF Studio</p>
+                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Annotate & merge</p>
                                 </Link>
                             </div>
                         </div>
 
                         {/* Student Assignment Calendar */}
                         {user?.role === 'student' && (
-                            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs p-5">
                                 <AssignmentCalendar />
                             </div>
                         )}
@@ -540,18 +586,18 @@ export default function DashboardPage() {
                     <div className="lg:col-span-5 xl:col-span-4 space-y-6">
 
                         {/* Modular Quick Launchpad */}
-                        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1.5 rounded-lg bg-slate-900 text-white">
-                                        <Activity className="w-4 h-4" />
+                        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs p-5">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs">
+                                        <FluentDashboardIcon className="w-6 h-6 flex-shrink-0" />
                                     </div>
                                     <div>
-                                        <h2 className="font-bold text-slate-900 text-sm">Modular Launchpad</h2>
-                                        <p className="text-[11px] text-slate-400">One-click direct access</p>
+                                        <h2 className="font-bold text-slate-900 dark:text-white text-sm">Modular Launchpad</h2>
+                                        <p className="text-[11px] text-slate-400 dark:text-slate-500">One-click direct access</p>
                                     </div>
                                 </div>
-                                <span className="text-[10px] font-mono font-semibold text-slate-400 uppercase">ULRMS Hub</span>
+                                <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider">Fluent Hub</span>
                             </div>
 
                             {/* Category Filter Pills */}
@@ -568,10 +614,10 @@ export default function DashboardPage() {
                                             key={tab.id}
                                             type="button"
                                             onClick={() => setActiveCategory(tab.id)}
-                                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
                                                 activeCategory === tab.id
-                                                    ? 'bg-slate-900 text-white shadow-xs'
-                                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                                    ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                                             }`}
                                         >
                                             {tab.label}
@@ -581,7 +627,7 @@ export default function DashboardPage() {
                             )}
 
                             {/* Compact Icon Tiles (High Information Density, Zero URL clutter) */}
-                            <div className="grid grid-cols-2 gap-2 pt-2">
+                            <div className="grid grid-cols-2 gap-2.5 pt-2">
                                 {(user?.role === 'student' ? studentShortcuts : staffShortcuts)
                                     .filter(s => activeCategory === 'all' || s.category === activeCategory)
                                     .slice(0, 8)
@@ -591,17 +637,17 @@ export default function DashboardPage() {
                                             <Link
                                                 key={idx}
                                                 href={item.href}
-                                                className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 transition group flex items-center gap-2.5"
+                                                className="p-2.5 rounded-2xl border border-slate-200/90 dark:border-slate-800/80 hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20 transition group flex items-center gap-2.5"
                                             >
-                                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition ${item.color}`}>
-                                                    <Icon className="w-4 h-4" />
+                                                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200/80 dark:border-slate-700/80 shadow-xs group-hover:scale-105 shrink-0 transition-transform">
+                                                    <Icon className="w-6 h-6 flex-shrink-0" />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="font-bold text-slate-800 text-xs truncate group-hover:text-indigo-600 transition">
+                                                    <p className="font-bold text-slate-800 dark:text-slate-100 text-xs truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition">
                                                         {item.title}
                                                     </p>
-                                                    <p className="text-[10px] text-slate-400 truncate capitalize">
-                                                        {item.category}
+                                                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate capitalize">
+                                                        {item.desc || item.category}
                                                     </p>
                                                 </div>
                                             </Link>
@@ -611,42 +657,42 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Live Lab Workstation Pulse */}
-                        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5">
-                            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                                <div className="flex items-center gap-2">
+                        <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs p-5">
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                                <div className="flex items-center gap-2.5">
                                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    <h2 className="font-bold text-slate-900 text-sm">Lab Hardware & Workstations</h2>
+                                    <h2 className="font-bold text-slate-900 dark:text-white text-sm">Lab Hardware & Workstations</h2>
                                 </div>
-                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
                                     Nominal
                                 </span>
                             </div>
 
-                            <div className="space-y-3 pt-3">
+                            <div className="space-y-3.5 pt-3">
                                 <div>
-                                    <div className="flex items-center justify-between text-xs mb-1">
-                                        <span className="font-semibold text-slate-700">Lab 1 (Computer Systems)</span>
-                                        <span className="font-mono text-slate-500">28 / 30 Active</span>
+                                    <div className="flex items-center justify-between text-xs mb-1.5">
+                                        <span className="font-semibold text-slate-700 dark:text-slate-300">Lab 1 (Computer Systems)</span>
+                                        <span className="font-mono text-slate-500 dark:text-slate-400">28 / 30 Active</span>
                                     </div>
-                                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                                         <div className="h-full bg-indigo-600 rounded-full" style={{ width: '93%' }} />
                                     </div>
                                 </div>
 
                                 <div>
-                                    <div className="flex items-center justify-between text-xs mb-1">
-                                        <span className="font-semibold text-slate-700">Lab 2 (Web & Mobile Dev)</span>
-                                        <span className="font-mono text-slate-500">30 / 30 Full</span>
+                                    <div className="flex items-center justify-between text-xs mb-1.5">
+                                        <span className="font-semibold text-slate-700 dark:text-slate-300">Lab 2 (Web & Mobile Dev)</span>
+                                        <span className="font-mono text-slate-500 dark:text-slate-400">30 / 30 Full</span>
                                     </div>
-                                    <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+                                    <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                                         <div className="h-full bg-emerald-500 rounded-full" style={{ width: '100%' }} />
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
                                 <span>Active PCs: {stats.activeLabs != null ? stats.activeLabs * 30 : '60'}</span>
-                                <Link href="/admin/labs" className="text-indigo-600 font-semibold hover:underline">
+                                <Link href="/admin/labs" className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline">
                                     Station Map &rarr;
                                 </Link>
                             </div>
@@ -654,16 +700,16 @@ export default function DashboardPage() {
 
                         {/* Student Specific Profile / PC Widget */}
                         {user?.role === 'student' && studentProfile && (
-                            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5">
-                                <h2 className="font-bold text-slate-900 text-sm mb-3">My Lab Workstation</h2>
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm rounded-2xl border border-slate-200/90 dark:border-slate-800/80 shadow-xs p-5">
+                                <h2 className="font-bold text-slate-900 dark:text-white text-sm mb-3">My Lab Workstation</h2>
                                 <div className="grid grid-cols-2 gap-3 text-center">
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">
                                         <p className="text-[10px] text-slate-400 font-semibold uppercase">{t('dashboard.class', 'Class')}</p>
-                                        <p className="font-bold text-slate-800 text-sm mt-0.5">{studentProfile.primaryClass?.name || '-'}</p>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm mt-0.5">{studentProfile.primaryClass?.name || '-'}</p>
                                     </div>
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">
                                         <p className="text-[10px] text-slate-400 font-semibold uppercase">{t('dashboard.assignedPc', 'Assigned PC')}</p>
-                                        <p className="font-bold text-slate-800 text-sm mt-0.5">{studentProfile.assignedPc?.itemNumber || '-'}</p>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm mt-0.5">{studentProfile.assignedPc?.itemNumber || '-'}</p>
                                     </div>
                                 </div>
                             </div>
