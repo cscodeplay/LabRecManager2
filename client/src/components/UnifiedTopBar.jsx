@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import api from '@/lib/api';
 import SessionSelector from './SessionSelector';
-import NotificationBell from './NotificationBell';
 import { useAuthStore } from '@/lib/store';
 
 const CATEGORIES = [
@@ -81,7 +80,12 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
-    const [notifMenuOpen, setNotifMenuOpen] = useState(false);
+    const sessionMenuOpenRef = useRef(false);
+
+    const handleSessionOpenChange = useCallback((open) => {
+        sessionMenuOpenRef.current = open;
+        setSessionMenuOpen(open);
+    }, []);
 
     const containerRef = useRef(null);
     const inputRef = useRef(null);
@@ -120,7 +124,7 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                     return next;
                 });
             } else if (e.key === 'Escape') {
-                if (!sessionMenuOpen && !notifMenuOpen) {
+                if (!sessionMenuOpenRef.current && !sessionMenuOpen) {
                     if (query) {
                         setQuery('');
                     } else if (!isPinned) {
@@ -145,30 +149,37 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('open-global-search', handleCustomOpen);
         };
-    }, [isPinned, query, sessionMenuOpen, notifMenuOpen]);
+    }, [isPinned, query, sessionMenuOpen]);
 
-    // Click outside to collapse (Guarded against Session & Notification menus)
+    // Click outside to collapse (Guarded against Session & attached menus)
     useEffect(() => {
         if (!isExpanded || isPinned) return;
 
         const handleOutsideClick = (e) => {
-            // Never dismiss if session or notification dropdown is currently open
-            if (sessionMenuOpen || notifMenuOpen) return;
+            // Never dismiss if session menu is currently open
+            if (sessionMenuOpenRef.current || sessionMenuOpen) return;
+
+            // If target element was unmounted during click (e.g. clicking menu item that closes dropdown), do not collapse
+            if (!e.target || !e.target.isConnected) return;
 
             // Check if click was inside container or any attached menu
-            if (containerRef.current && !containerRef.current.contains(e.target)) {
-                if (e.target && typeof e.target.closest === 'function') {
-                    if (e.target.closest('[data-popover], [role="menu"], [data-dropdown], .session-menu, .notif-menu')) {
-                        return;
-                    }
-                }
-                setIsExpanded(false);
+            if (containerRef.current && containerRef.current.contains(e.target)) {
+                return;
             }
+
+            if (e.target && typeof e.target.closest === 'function') {
+                if (e.target.closest('[data-popover], [role="menu"], [role="dialog"], [data-dropdown], .session-menu, .notif-menu, .session-selector-container')) {
+                    return;
+                }
+            }
+
+            setIsExpanded(false);
         };
 
-        window.addEventListener('pointerdown', handleOutsideClick, true);
-        return () => window.removeEventListener('pointerdown', handleOutsideClick, true);
-    }, [isExpanded, isPinned, sessionMenuOpen, notifMenuOpen]);
+        // Use bubbling listener so inside handlers run first
+        window.addEventListener('pointerdown', handleOutsideClick);
+        return () => window.removeEventListener('pointerdown', handleOutsideClick);
+    }, [isExpanded, isPinned, sessionMenuOpen]);
 
     // Live search debounced fetch
     useEffect(() => {
@@ -390,51 +401,35 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
         : 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-md';
 
     return (
-        <div ref={containerRef} className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[80] select-none transition-all">
-            {/* COLLAPSED PILL: Search, Session & Notification */}
+        <div ref={containerRef} onPointerDown={(e) => e.stopPropagation()} className="fixed top-2.5 left-1/2 -translate-x-1/2 z-[80] select-none transition-all">
+            {/* COLLAPSED STATE: Search Icon Button (Single Element) */}
             {!isExpanded && (
-                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${surfaceClass} border border-slate-200/90 dark:border-slate-700/80 shadow-lg text-xs font-semibold`}>
-                    {/* Search Trigger Button */}
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setIsExpanded(true);
-                            setTimeout(() => inputRef.current?.focus(), 60);
-                        }}
-                        className="flex items-center gap-2 px-2.5 py-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition cursor-pointer"
-                        title="Open Global Search with Filter Options (⌘K)"
-                    >
-                        <Search className="w-4 h-4 text-indigo-500" />
-                        <span className="hidden sm:inline">Search...</span>
-                        <kbd className="hidden sm:inline-block px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-400">
-                            ⌘K
-                        </kbd>
-                    </button>
-
-                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-
-                    {/* Compact Session Indicator */}
-                    <div className="shrink-0">
-                        <SessionSelector variant="pill" onOpenChange={setSessionMenuOpen} />
-                    </div>
-
-                    <div className="h-4 w-px bg-slate-200 dark:bg-slate-700" />
-
-                    {/* Compact Notification Bell */}
-                    <div className="shrink-0">
-                        <NotificationBell
-                            variant="default"
-                            onOpenChange={setNotifMenuOpen}
-                            lowMemory={isLowMemory}
-                        />
-                    </div>
-                </div>
+                <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => {
+                        setIsExpanded(true);
+                        setTimeout(() => inputRef.current?.focus(), 60);
+                    }}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full ${surfaceClass} border border-slate-200/90 dark:border-slate-700/80 shadow-lg text-slate-700 dark:text-slate-200 hover:scale-105 active:scale-95 transition-all cursor-pointer`}
+                    title="Open Search with Session & Category Filters (⌘K)"
+                    aria-label="Open Search with Session & Category Filters"
+                >
+                    <Search className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-semibold">Search</span>
+                    <kbd className="hidden sm:inline-block px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-mono text-slate-400">
+                        ⌘K
+                    </kbd>
+                </button>
             )}
 
-            {/* EXPANDED UNIFIED SEARCH BAR WITH INTEGRATED SESSION, NOTIFICATION & FILTER PILLS */}
+            {/* EXPANDED SEARCH BAR WITH INTEGRATED SESSION & FILTER PILLS */}
             {isExpanded && (
-                <div className={`w-[min(680px,calc(100vw-32px))] rounded-3xl ${surfaceClass} border border-slate-200/90 dark:border-slate-700/90 shadow-2xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150`}>
-                    {/* Top Row: Search Input + Session Selector + Notification Bell + Pin + Close */}
+                <div
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className={`w-[min(680px,calc(100vw-32px))] rounded-3xl ${surfaceClass} border border-slate-200/90 dark:border-slate-700/90 shadow-2xl p-3 space-y-2.5 animate-in fade-in zoom-in-95 duration-150`}
+                >
+                    {/* Top Row: Search Input + Academic Session Selector + Pin + Close */}
                     <div className="flex items-center gap-2">
                         {/* Search Input Box */}
                         <div className="flex-1 flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-100/90 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 min-w-0">
@@ -451,32 +446,23 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                                 <button
                                     type="button"
                                     onClick={() => setQuery('')}
-                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                                 >
                                     <X className="w-3.5 h-3.5" />
                                 </button>
                             )}
                         </div>
 
-                        {/* Session Selector */}
-                        <div className="shrink-0">
-                            <SessionSelector variant="pill" onOpenChange={setSessionMenuOpen} />
-                        </div>
-
-                        {/* Notification Bell */}
-                        <div className="shrink-0">
-                            <NotificationBell
-                                variant="default"
-                                onOpenChange={setNotifMenuOpen}
-                                lowMemory={isLowMemory}
-                            />
+                        {/* Academic Session Selector */}
+                        <div className="shrink-0" onPointerDown={(e) => e.stopPropagation()}>
+                            <SessionSelector variant="pill" onOpenChange={handleSessionOpenChange} />
                         </div>
 
                         {/* Pin Button */}
                         <button
                             type="button"
                             onClick={togglePin}
-                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition ${
+                            className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 transition cursor-pointer ${
                                 isPinned
                                     ? 'bg-indigo-600 text-white border-indigo-600'
                                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:text-slate-600'
@@ -493,7 +479,7 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                                 setIsExpanded(false);
                                 setQuery('');
                             }}
-                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-500 flex items-center justify-center shrink-0 transition"
+                            className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-400 hover:text-rose-500 flex items-center justify-center shrink-0 transition cursor-pointer"
                             title="Close Search Bar (Esc)"
                         >
                             <X className="w-4 h-4" />

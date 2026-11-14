@@ -20,6 +20,12 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
     const [isOpen, setIsOpen] = useState(false);
     const [loading, setLoading] = useState(false);
 
+    const toggleOpen = (nextVal) => {
+        const val = typeof nextVal === 'boolean' ? nextVal : !isOpen;
+        setIsOpen(val);
+        onOpenChange?.(val);
+    };
+
     useEffect(() => {
         onOpenChange?.(isOpen);
     }, [isOpen, onOpenChange]);
@@ -27,7 +33,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
     useEffect(() => {
         if (!isOpen) return;
         const onKeyDown = (e) => {
-            if (e.key === 'Escape') setIsOpen(false);
+            if (e.key === 'Escape') toggleOpen(false);
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
@@ -76,7 +82,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
 
     const handleSelectSession = (session) => {
         setSession(session);
-        setIsOpen(false);
+        toggleOpen(false);
 
         // Dispatch custom event so all pages can re-fetch their data
         if (typeof window !== 'undefined') {
@@ -89,11 +95,12 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
     }
 
     return (
-        <div className="relative">
+        <div className="relative session-selector-container" data-popover="true" data-dropdown="true" onPointerDown={(e) => e.stopPropagation()}>
             {/* Selector Button */}
             <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); toggleOpen(); }}
                 className={`flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
                     variant === 'pill'
                         ? 'h-8 max-h-8 px-3 rounded-full border text-xs font-semibold'
@@ -120,13 +127,15 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                     <div
                         data-popover="true"
                         className="fixed inset-0 z-[90]"
-                        onClick={(e) => { e.stopPropagation(); setIsOpen(false); }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); toggleOpen(false); }}
                     />
 
                     {/* Dropdown Menu */}
                     <div
                         data-popover="true"
                         data-dropdown="true"
+                        onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                         className="absolute top-full mt-2 right-0 w-64 bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-800 z-[100] overflow-hidden session-menu"
                     >
@@ -145,7 +154,9 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                                 availableSessions.map((session) => (
                                     <button
                                         key={session.id}
-                                        onClick={() => handleSelectSession(session)}
+                                        type="button"
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => { e.stopPropagation(); handleSelectSession(session); }}
                                         className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition ${selectedSession?.id === session.id ? 'bg-primary-50 dark:bg-primary-950/40' : ''
                                             }`}
                                     >

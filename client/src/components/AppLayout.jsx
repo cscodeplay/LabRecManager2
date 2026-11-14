@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import UnifiedTopBar from './UnifiedTopBar';
+import NotificationBell from './NotificationBell';
 import { ReadOnlyBanner } from './SessionSelector';
 import CommitInfoBadge from './CommitInfoBadge';
 import FloatingChatbot from './FloatingChatbot';
@@ -62,8 +63,16 @@ export default function AppLayout({ children }) {
             {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
             <Sidebar />
 
-            {/* Unified Top Search & Session Bar (Direct Search with Filter Options + Session + Notification Bell with Chime & Mute) */}
+            {/* Unified Top Search Bar with Session & Category Filter Options */}
             <UnifiedTopBar isLowMemory={isLowMemory} />
+
+            {/* Top-Right Notification Bell Floating Circle with Full Volume Control */}
+            <div className={`fixed top-2.5 ${(pathname?.startsWith('/whiteboard') || pathname?.startsWith('/live-board')) ? 'right-[160px] sm:right-[236px]' : 'right-3.5'} z-[80]`}>
+                <NotificationBell
+                    variant="floating-circle"
+                    lowMemory={isLowMemory}
+                />
+            </div>
 
             {/* Bottom-Right Small-Font Commit Hash */}
             <div className="fixed bottom-2.5 right-3.5 z-[70]">
