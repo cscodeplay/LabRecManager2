@@ -141,7 +141,8 @@ router.delete('/vendors/:id', authenticate, authorize('admin', 'principal'), asy
  */
 router.get('/requests', authenticate, asyncHandler(async (req, res) => {
     const { status, academicYearId, all } = req.query;
-    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const where = { schoolId: req.user.schoolId };
     if (status) where.status = status;
     if (sessionId) where.academicYearId = sessionId;
@@ -153,7 +154,7 @@ router.get('/requests', authenticate, asyncHandler(async (req, res) => {
             include: {
                 createdBy: { select: { firstName: true, lastName: true } },
                 approvedBy: { select: { firstName: true, lastName: true } },
-                items: { select: { id: true, itemName: true, quantity: true, estimatedUnitPrice: true } },
+                items: { select: { id: true, itemName: true, quantity: true, estimatedUnitPrice: true, approvedUnitPrice: true, approvedVendorId: true } },
                 quotations: { select: { id: true, vendorId: true, totalAmount: true } },
                 academicYear: { select: { id: true, yearLabel: true, isCurrent: true } }
             },
@@ -253,6 +254,9 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
 
         // Resolve academic year: explicit body param > X-Academic-Session header > school's current active session
         let resolvedYearId = academicYearId || req.headers['x-academic-session'] || null;
+        if (!isValidUuid(resolvedYearId)) {
+            resolvedYearId = null;
+        }
         if (!resolvedYearId && req.user?.schoolId) {
             const currentYear = await prisma.academicYear.findFirst({
                 where: { schoolId: req.user.schoolId, isCurrent: true }
