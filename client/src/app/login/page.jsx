@@ -7,7 +7,11 @@ import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { Eye, EyeOff, GraduationCap, LogIn, Calendar, KeyRound, Lock, Globe, ChevronDown, Check, Search, Shield } from 'lucide-react';
+import {
+    Eye, EyeOff, LogIn, Calendar, KeyRound, Lock, Globe,
+    ChevronDown, Check, Search, Shield, ShieldCheck, Sparkles
+} from 'lucide-react';
+import { FluentInstituteOpsIcon, FluentExamHubIcon } from '@/components/FluentAppIcons';
 import { authAPI } from '@/lib/api';
 import { useAuthStore, useLanguageStore } from '@/lib/store';
 import { SUPPORTED_LANGUAGES } from '@/lib/i18n';
@@ -59,76 +63,73 @@ function LoginLanguageSelector() {
     return (
         <div className="relative" ref={dropdownRef}>
             <button
+                type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition shadow-sm"
+                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/90 dark:bg-slate-800/90 border border-slate-200/90 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800 transition shadow-xs text-xs font-semibold text-slate-700 dark:text-slate-200"
             >
-                <Globe className="w-4 h-4 text-slate-500" />
-                <span className="text-sm font-medium text-slate-700">{currentLang.nativeName}</span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                <span>{currentLang.nativeName}</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden z-50">
-                    <div className="p-2 border-b border-slate-200">
+                <div className="absolute right-0 top-full mt-2 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150">
+                    <div className="p-2.5 border-b border-slate-100 dark:border-slate-800">
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                             <input
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 placeholder={t('common.search') + '...'}
-                                className="w-full pl-9 pr-3 py-2 text-sm rounded-lg bg-slate-100 border-none focus:ring-2 focus:ring-primary-500"
+                                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-slate-100 dark:bg-slate-800 border-none focus:ring-2 focus:ring-indigo-500"
                                 autoFocus
                             />
                         </div>
                     </div>
 
-                    <div className="max-h-64 overflow-y-auto">
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
                         {internationalLanguages.length > 0 && (
-                            <div>
-                                <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
+                            <div className="p-1">
+                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                     {t('language.internationalLanguages')}
                                 </div>
                                 {internationalLanguages.map((lang) => (
                                     <button
                                         key={lang.code}
+                                        type="button"
                                         onClick={() => handleLanguageChange(lang.code)}
-                                        className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-100 transition ${language === lang.code ? 'bg-primary-50' : ''}`}
+                                        className={`w-full flex items-center justify-between px-3 py-2 text-left rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition ${language === lang.code ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}
                                     >
-                                        <span className="flex-1">
-                                            <span className="block text-sm font-medium text-slate-900">{lang.nativeName}</span>
-                                            <span className="block text-xs text-slate-500">{lang.name}</span>
-                                        </span>
-                                        {language === lang.code && <Check className="w-4 h-4 text-primary-500" />}
+                                        <div>
+                                            <span className="block text-xs font-semibold">{lang.nativeName}</span>
+                                            <span className="block text-[10px] text-slate-400">{lang.name}</span>
+                                        </div>
+                                        {language === lang.code && <Check className="w-3.5 h-3.5 text-indigo-600" />}
                                     </button>
                                 ))}
                             </div>
                         )}
 
                         {indianLanguages.length > 0 && (
-                            <div>
-                                <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
+                            <div className="p-1">
+                                <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                     {t('language.indianLanguages')}
                                 </div>
                                 {indianLanguages.map((lang) => (
                                     <button
                                         key={lang.code}
+                                        type="button"
                                         onClick={() => handleLanguageChange(lang.code)}
-                                        className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-100 transition ${language === lang.code ? 'bg-primary-50' : ''}`}
+                                        className={`w-full flex items-center justify-between px-3 py-2 text-left rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition ${language === lang.code ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}
                                     >
-                                        <span className="flex-1">
-                                            <span className="block text-sm font-medium text-slate-900">{lang.nativeName}</span>
-                                            <span className="block text-xs text-slate-500">{lang.name}</span>
-                                        </span>
-                                        {language === lang.code && <Check className="w-4 h-4 text-primary-500" />}
+                                        <div>
+                                            <span className="block text-xs font-semibold">{lang.nativeName}</span>
+                                            <span className="block text-[10px] text-slate-400">{lang.name}</span>
+                                        </div>
+                                        {language === lang.code && <Check className="w-3.5 h-3.5 text-indigo-600" />}
                                     </button>
                                 ))}
-                            </div>
-                        )}
-
-                        {filteredLanguages.length === 0 && (
-                            <div className="px-3 py-4 text-center text-sm text-slate-500">
-                                {t('common.noData')}
                             </div>
                         )}
                     </div>
@@ -160,13 +161,12 @@ export default function LoginPage() {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [firstName, setFirstName] = useState('');
-    const [codeType, setCodeType] = useState('pin'); // 'pin' | 'backup-code'
+    const [codeType, setCodeType] = useState('pin');
     const [firstTimeAlert, setFirstTimeAlert] = useState(null);
 
     const { register, handleSubmit, formState: { errors } } = useForm();
 
     useEffect(() => {
-        // Hydrate from localStorage for instantaneous branding display without flashing
         try {
             const cached = localStorage.getItem('school_branding');
             if (cached) {
@@ -188,7 +188,6 @@ export default function LoginPage() {
             const years = res.data.data?.academicYears || [];
             let schoolData = res.data.data?.school;
 
-            // Also check dedicated branding endpoint if schoolData is empty or missing logo
             if (!schoolData || !schoolData.logoUrl) {
                 try {
                     const brandRes = await axios.get('/api/schools/branding');
@@ -211,18 +210,15 @@ export default function LoginPage() {
 
             setAcademicYears(years);
 
-            // Default to current session, then latest by startDate
             const currentYear = years.find(y => y.isCurrent);
             if (currentYear) {
                 setSelectedYear(currentYear.id);
             } else if (years.length > 0) {
-                // Sort by startDate desc and pick the latest one
                 const sorted = [...years].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
                 setSelectedYear(sorted[0].id);
             }
         } catch (error) {
             console.error('Could not load academic years:', error.message);
-            // Automatic retry after 2.5s for Render/Neon backend cold start
             setTimeout(async () => {
                 try {
                     const retryRes = await axios.get('/api/schools/academic-years');
@@ -242,7 +238,6 @@ export default function LoginPage() {
     };
 
     const onSubmit = async (data) => {
-        // Only require session selection if sessions are available
         if (academicYears.length > 0 && !selectedYear) {
             toast.error(t('auth.academicSession'));
             return;
@@ -402,17 +397,19 @@ export default function LoginPage() {
         }
     };
 
-    const displayTitle = schoolInfo.name || t('login.title');
+    const displayTitle = schoolInfo.name || t('login.title') || 'Unified Lab Record Management';
 
     return (
-        <div className="min-h-screen flex relative">
-            {/* Left Section - Gradient Background */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 relative overflow-hidden">
-                <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10"></div>
+        <div className="min-h-screen flex flex-col lg:flex-row bg-slate-900 text-slate-100 relative overflow-hidden">
+            {/* Ambient Background Gradient Blooms */}
+            <div className="absolute -top-32 -left-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-sky-600/20 rounded-full blur-3xl pointer-events-none" />
 
-                {/* Top-Left Corner Brand Header (Desktop) */}
-                <div className="absolute top-6 left-6 z-20 flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-white/15 backdrop-blur-md p-1.5 flex items-center justify-center shadow-sm border border-white/20 overflow-hidden">
+            {/* Left Section - 3D Fluent Hero (Desktop) */}
+            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950/80 relative p-12 flex-col justify-between border-r border-slate-800">
+                {/* Brand Header */}
+                <div className="relative z-10 flex items-center gap-3.5">
+                    <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md p-2 flex items-center justify-center shadow-lg border border-white/20">
                         {schoolInfo.logoUrl && !logoLoadError ? (
                             <img
                                 src={schoolInfo.logoUrl}
@@ -421,276 +418,367 @@ export default function LoginPage() {
                                 onError={() => setLogoLoadError(true)}
                             />
                         ) : (
-                            <GraduationCap className="w-6 h-6 text-white" />
+                            <FluentInstituteOpsIcon size={32} />
                         )}
                     </div>
-                    <div className="flex flex-col text-left">
-                        <span className="font-bold text-white text-base tracking-tight leading-tight">
-                            {schoolInfo.name || 'ULRMS'}
+                    <div>
+                        <span className="font-black text-white text-lg tracking-tight leading-tight block">
+                            {schoolInfo.name || 'ULRMS Enterprise'}
                         </span>
-                        {schoolInfo.nameHindi ? (
-                            <span className="text-xs text-white/80 font-medium leading-tight">
-                                {schoolInfo.nameHindi}
-                            </span>
-                        ) : (
-                            <span className="text-xs text-white/70 font-medium leading-tight">
-                                Lab Record Management
-                            </span>
-                        )}
+                        <span className="text-xs text-indigo-300 font-mono tracking-wider uppercase">
+                            {schoolInfo.nameHindi || 'Laboratory Assessment Platform'}
+                        </span>
                     </div>
                 </div>
 
-                <div className="relative z-10 flex flex-col justify-center items-center text-white p-12 text-center w-full">
-                    <div className="w-28 h-28 bg-white/95 backdrop-blur-xl rounded-2xl flex items-center justify-center mb-6 overflow-hidden p-3 shadow-2xl border border-white/40">
-                        {schoolInfo.logoUrl && !logoLoadError ? (
-                            <img
-                                src={schoolInfo.logoUrl}
-                                alt={schoolInfo.name || 'School Logo'}
-                                className="w-full h-full object-contain"
-                                onError={() => setLogoLoadError(true)}
-                            />
-                        ) : (
-                            <GraduationCap className="w-14 h-14 text-primary-600" />
-                        )}
+                {/* Central Showcase */}
+                <div className="relative z-10 max-w-md my-auto py-8">
+                    <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-indigo-500 to-sky-500 p-4 mb-6 shadow-2xl shadow-indigo-500/30 flex items-center justify-center border border-white/30">
+                        <FluentExamHubIcon size={46} />
                     </div>
-                    <h1 className="text-4xl font-extrabold mb-2 text-center tracking-tight drop-shadow-sm">
+
+                    <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight mb-3 leading-tight drop-shadow-sm">
                         {displayTitle}
                     </h1>
-                    {schoolInfo.nameHindi && (
-                        <p className="text-xl text-white/90 font-medium mb-3">
-                            {schoolInfo.nameHindi}
-                        </p>
-                    )}
-                    <p className="text-lg text-white/80 text-center max-w-md">
-                        {t('login.subtitle')}
+                    <p className="text-slate-300 text-sm leading-relaxed mb-8">
+                        {t('login.subtitle') || 'High-performance laboratory record keeping, dynamic code IDEs, tabbed office studios, and real-time live evaluation.'}
                     </p>
 
-                    <div className="mt-10 grid gap-3 text-sm">
+                    {/* Tactile Feature Pills */}
+                    <div className="grid grid-cols-2 gap-3 text-xs">
                         {[
-                            t('login.features.multiLanguage'),
-                            t('login.features.onlineViva'),
-                            t('login.features.realTimeGrading'),
-                            t('login.features.comprehensiveReports')
+                            { label: 'Real-Time Viva Rubrics', icon: '⚡' },
+                            { label: 'Tabbed Office & PDF Studio', icon: '📑' },
+                            { label: '10-Turn Paper Slip PINs', icon: '🔑' },
+                            { label: 'Multi-Language Support', icon: '🌐' }
                         ].map((feature, i) => (
-                            <div key={i} className="flex items-center gap-3 bg-white/10 backdrop-blur px-4 py-2 rounded-lg">
-                                <span className="w-2 h-2 bg-white rounded-full"></span>
-                                {feature}
+                            <div
+                                key={i}
+                                className="flex items-center gap-2.5 p-3 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:border-indigo-400/30 transition text-slate-200"
+                            >
+                                <span className="text-sm">{feature.icon}</span>
+                                <span className="font-semibold">{feature.label}</span>
                             </div>
                         ))}
                     </div>
                 </div>
-                <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-white/5 rounded-full"></div>
-                <div className="absolute -top-12 -right-12 w-48 h-48 bg-white/5 rounded-full"></div>
+
+                {/* Left Bottom Legal & Version */}
+                <div className="relative z-10 flex items-center justify-between text-xs text-slate-400 pt-6 border-t border-slate-800/80">
+                    <span>© 2026 ULRMS • Institutional Suite</span>
+                    <Link
+                        href="/licenses"
+                        className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 transition font-medium"
+                    >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Open Source Licenses</span>
+                    </Link>
+                </div>
             </div>
 
             {/* Right Section - Login Form */}
-            <div className="flex-1 flex flex-col justify-center items-center p-8 bg-slate-50 relative">
-                {/* Top-Left Corner Brand Header (Mobile) */}
-                <div className="lg:hidden absolute top-4 left-4 z-20 flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-white p-1.5 flex items-center justify-center shadow-sm border border-slate-200 overflow-hidden">
-                        {schoolInfo.logoUrl && !logoLoadError ? (
-                            <img
-                                src={schoolInfo.logoUrl}
-                                alt={schoolInfo.name || 'School Logo'}
-                                className="w-full h-full object-contain"
-                                onError={() => setLogoLoadError(true)}
-                            />
-                        ) : (
-                            <GraduationCap className="w-5 h-5 text-primary-600" />
-                        )}
-                    </div>
-                    <span className="font-bold text-slate-800 text-sm tracking-tight truncate max-w-[150px] sm:max-w-[200px]">
-                        {schoolInfo.name || 'ULRMS'}
-                    </span>
-                </div>
-
-                {/* Language Toggle & Status */}
-                <div className="absolute top-4 right-4 flex items-center gap-4">
-                    <DatabaseStatus />
-                    <LoginLanguageSelector />
-                </div>
-
-                <div className="w-full max-w-md">
-                    <div className="lg:hidden text-center mb-8 mt-8">
-                        <div className="w-20 h-20 bg-white rounded-2xl shadow-md border border-slate-200 flex items-center justify-center mx-auto mb-3 overflow-hidden p-2">
+            <div className="flex-1 flex flex-col justify-center items-center p-6 sm:p-12 bg-slate-900/60 backdrop-blur-xl relative z-10 min-h-screen lg:min-h-0">
+                {/* Top Corner Utilities */}
+                <div className="w-full max-w-md flex items-center justify-between mb-6">
+                    {/* Mobile Brand */}
+                    <div className="lg:hidden flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-xl bg-white/10 p-1.5 flex items-center justify-center border border-white/20">
                             {schoolInfo.logoUrl && !logoLoadError ? (
                                 <img
                                     src={schoolInfo.logoUrl}
-                                    alt={schoolInfo.name || 'School Logo'}
+                                    alt="Logo"
                                     className="w-full h-full object-contain"
                                     onError={() => setLogoLoadError(true)}
                                 />
                             ) : (
-                                <GraduationCap className="w-10 h-10 text-primary-600" />
+                                <FluentInstituteOpsIcon size={20} />
                             )}
                         </div>
-                        <h1 className="text-2xl font-bold text-slate-900">{displayTitle}</h1>
-                        {schoolInfo.nameHindi && (
-                            <p className="text-sm text-slate-600 font-medium mt-1">{schoolInfo.nameHindi}</p>
-                        )}
+                        <span className="font-black text-white text-sm tracking-tight truncate max-w-[150px]">
+                            {schoolInfo.name || 'ULRMS'}
+                        </span>
                     </div>
 
-                    <div className="card p-8">
-                        <h2 className="text-2xl font-bold text-slate-900 mb-6">{t('auth.login')}</h2>
+                    <div className="flex items-center gap-3 ml-auto">
+                        <DatabaseStatus />
+                        <LoginLanguageSelector />
+                    </div>
+                </div>
 
-                        {/* Mode Toggle */}
-                        <div className="flex gap-2 mb-6">
-                            <button
-                                type="button"
-                                onClick={() => { setLoginMode('password'); setPinVerified(false); }}
-                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${loginMode === 'password' ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-600'}`}
-                            >
-                                <Lock className="w-4 h-4 inline mr-1" /> {t('auth.usePassword')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => { setLoginMode('pin'); setPinVerified(false); }}
-                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition ${loginMode === 'pin' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
-                            >
-                                <KeyRound className="w-4 h-4 inline mr-1" /> {t('auth.firstTimeLogin')}
-                            </button>
-                        </div>
+                {/* Login Card */}
+                <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-7 sm:p-9 shadow-2xl border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100">
+                    <div className="mb-6">
+                        <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                            {t('auth.login') || 'Sign In'}
+                        </h2>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Choose your preferred authentication mode to access your lab portal.
+                        </p>
+                    </div>
 
-                        {/* Academic Session */}
-                        <div className="mb-5">
-                            <label className="label flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-primary-500" />
-                                {t('auth.academicSession')}
-                            </label>
-                            <select
-                                value={selectedYear}
-                                onChange={(e) => setSelectedYear(e.target.value)}
-                                className="input w-full bg-gradient-to-r from-orange-50 to-green-50 border-2 border-primary-200"
-                                disabled={loadingYears}
-                            >
-                                {loadingYears ? (
-                                    <option>{t('common.loading')}</option>
-                                ) : academicYears.length === 0 ? (
-                                    <option value="">{t('auth.noSessions')}</option>
-                                ) : (
-                                    academicYears.map(year => (
-                                        <option key={year.id} value={year.id}>
-                                            {year.yearLabel} {year.isCurrent ? `(${t('auth.current')})` : ''}
-                                        </option>
-                                    ))
-                                )}
-                            </select>
-                        </div>
+                    {/* Mode Toggle Pills */}
+                    <div className="flex p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 mb-6 gap-1 border border-slate-200/80 dark:border-slate-700/80">
+                        <button
+                            type="button"
+                            onClick={() => { setLoginMode('password'); setPinVerified(false); }}
+                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                                loginMode === 'password'
+                                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>{t('auth.usePassword') || 'Password'}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setLoginMode('pin'); setPinVerified(false); }}
+                            className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+                                loginMode === 'pin'
+                                    ? 'bg-amber-500 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            <span>{t('auth.firstTimeLogin') || '10-Turn Slip / PIN'}</span>
+                        </button>
+                    </div>
 
-                        {/* PASSWORD MODE */}
-                        {loginMode === 'password' && (
-                            <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-                                <div>
-                                    <label className="label">{t('auth.email')}</label>
-                                    <input type="email" className="input" placeholder="you@mslabs.com" {...register('email', { required: true })} />
-                                </div>
-                                <div>
-                                    <label className="label">{t('auth.password')}</label>
-                                    <div className="relative">
-                                        <input type={showPassword ? 'text' : 'password'} className="input pr-12" placeholder="••••••••" {...register('password', { required: true })} />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-                                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                        </button>
-                                    </div>
-                                </div>
-                                <button type="submit" disabled={isLoading} className="btn btn-primary w-full py-3">
-                                    {isLoading ? t('auth.signingIn') : <><LogIn className="w-5 h-5 inline mr-2" />{t('auth.login')}</>}
-                                </button>
-                                <div className="text-center pt-2">
-                                    <Link
-                                        href="/reset-password-pin"
-                                        className="text-xs text-primary-600 hover:text-primary-700 font-medium underline inline-flex items-center gap-1"
+                    {/* Academic Session Selector */}
+                    <div className="mb-5">
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                            {t('auth.academicSession') || 'Academic Session'}
+                        </label>
+                        <select
+                            value={selectedYear}
+                            onChange={(e) => setSelectedYear(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            disabled={loadingYears}
+                        >
+                            {loadingYears ? (
+                                <option>{t('common.loading') || 'Loading sessions...'}</option>
+                            ) : academicYears.length === 0 ? (
+                                <option value="">{t('auth.noSessions') || 'No sessions configured'}</option>
+                            ) : (
+                                academicYears.map(year => (
+                                    <option key={year.id} value={year.id}>
+                                        {year.yearLabel} {year.isCurrent ? `(${t('auth.current') || 'Current'})` : ''}
+                                    </option>
+                                ))
+                            )}
+                        </select>
+                    </div>
+
+                    {/* PASSWORD MODE FORM */}
+                    {loginMode === 'password' && (
+                        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {t('auth.email') || 'Institutional Email'}
+                                </label>
+                                <input
+                                    type="email"
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="you@institution.edu"
+                                    {...register('email', { required: true })}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {t('auth.password') || 'Password'}
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        className="w-full pl-3.5 pr-10 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="••••••••"
+                                        {...register('password', { required: true })}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                                     >
-                                        Forgot Password / Use 10-Turn Emergency Slip
-                                    </Link>
+                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
                                 </div>
-                            </form>
-                        )}
-
-                        {/* PIN / BACKUP CODE FIRST-TIME LOGIN MODE */}
-                        {loginMode === 'pin' && !pinVerified && (
-                            <div className="space-y-4">
-                                {firstTimeAlert && (
-                                    <div className={`p-3.5 rounded-xl text-xs ${
-                                        firstTimeAlert.type === 'used'
-                                            ? 'bg-amber-50 border-2 border-amber-400 text-amber-950'
-                                            : 'bg-rose-50 border border-rose-300 text-rose-950'
-                                    }`}>
-                                        <div className="font-bold mb-0.5">
-                                            {firstTimeAlert.type === 'used' ? '⚠️ Backup Code Already Used!' : '❌ Invalid Code'}
-                                        </div>
-                                        <div>{firstTimeAlert.message}</div>
-                                    </div>
-                                )}
-
-                                <div>
-                                    <label className="label">{t('auth.email')}</label>
-                                    <input
-                                        type="email"
-                                        className="input"
-                                        placeholder="you@mslabs.com"
-                                        value={pinEmail}
-                                        onChange={(e) => { setPinEmail(e.target.value); setFirstTimeAlert(null); }}
-                                    />
-                                </div>
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="label mb-0">First-Time Code (PIN or 10-Turn Backup Code)</label>
-                                        <span className="text-[10px] text-indigo-600 font-mono font-semibold">6-digit PIN or XXXX-XXXX</span>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        className="input text-center tracking-widest font-mono text-base uppercase"
-                                        placeholder="000000 or 4812-9214"
-                                        maxLength={10}
-                                        value={pinValue}
-                                        onChange={(e) => { setPinValue(e.target.value); setFirstTimeAlert(null); }}
-                                    />
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        Enter the 6-digit PIN from teacher OR any unused code from your 10-turn paper slip.
-                                    </p>
-                                </div>
-                                <button type="button" onClick={handlePinVerify} disabled={isLoading} className="btn btn-primary w-full py-3 bg-amber-500 hover:bg-amber-600">
-                                    {isLoading ? t('auth.verifying') : <><KeyRound className="w-5 h-5 inline mr-2" />Verify Code & Continue</>}
-                                </button>
                             </div>
-                        )}
 
-                        {/* PASSWORD SETUP after PIN verified */}
-                        {loginMode === 'pin' && pinVerified && (
-                            <div className="space-y-5">
-                                <div className="p-4 bg-green-50 rounded-lg border border-green-200 text-green-800">
-                                    ✓ {t('auth.pinVerified').replace('!', '')} <strong>{firstName}</strong>
-                                </div>
-                                <div>
-                                    <label className="label">{t('auth.setPassword')}</label>
-                                    <div className="relative">
-                                        <input type={showPassword ? 'text' : 'password'} className="input pr-12" placeholder="Min 6 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400">
-                                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                        </button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="label">{t('auth.confirmPassword')}</label>
-                                    <input type={showPassword ? 'text' : 'password'} className="input" placeholder="Confirm password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
-                                </div>
-                                <button type="button" onClick={handleSetPassword} disabled={isLoading} className="btn btn-primary w-full py-3">
-                                    {isLoading ? t('auth.settingUp') : <><LogIn className="w-5 h-5 inline mr-2" />{t('auth.setPasswordLogin')}</>}
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Administrator Login Link */}
-                        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-                            <Link
-                                href="/adminmoslogin"
-                                className="text-xs text-slate-400 hover:text-slate-600 font-medium inline-flex items-center gap-1.5 transition"
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="w-full py-3 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-sky-600 hover:from-indigo-700 hover:to-sky-700 shadow-md shadow-indigo-500/20 active:scale-[0.99] transition flex items-center justify-center gap-2 mt-2"
                             >
-                                <Shield className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Administrator Portal Login</span>
-                            </Link>
+                                {isLoading ? (
+                                    t('auth.signingIn') || 'Authenticating...'
+                                ) : (
+                                    <>
+                                        <LogIn className="w-4 h-4" />
+                                        <span>{t('auth.login') || 'Sign In to Portal'}</span>
+                                    </>
+                                )}
+                            </button>
+
+                            <div className="text-center pt-2">
+                                <Link
+                                    href="/reset-password-pin"
+                                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
+                                >
+                                    Forgot Password / Use 10-Turn Emergency Slip
+                                </Link>
+                            </div>
+                        </form>
+                    )}
+
+                    {/* PIN / BACKUP CODE FIRST-TIME MODE */}
+                    {loginMode === 'pin' && !pinVerified && (
+                        <div className="space-y-4">
+                            {firstTimeAlert && (
+                                <div className={`p-3 rounded-xl text-xs ${
+                                    firstTimeAlert.type === 'used'
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200'
+                                        : 'bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-700 text-rose-900 dark:text-rose-200'
+                                }`}>
+                                    <div className="font-bold mb-0.5">
+                                        {firstTimeAlert.type === 'used' ? '⚠️ Backup Code Already Used!' : '❌ Invalid Code'}
+                                    </div>
+                                    <div>{firstTimeAlert.message}</div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {t('auth.email') || 'Institutional Email'}
+                                </label>
+                                <input
+                                    type="email"
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="you@institution.edu"
+                                    value={pinEmail}
+                                    onChange={(e) => { setPinEmail(e.target.value); setFirstTimeAlert(null); }}
+                                />
+                            </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                                        Verification Code
+                                    </label>
+                                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-mono font-bold">
+                                        6-digit PIN or XXXX-XXXX
+                                    </span>
+                                </div>
+                                <input
+                                    type="text"
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center uppercase bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    placeholder="000000 or 4812-9214"
+                                    maxLength={10}
+                                    value={pinValue}
+                                    onChange={(e) => { setPinValue(e.target.value); setFirstTimeAlert(null); }}
+                                />
+                                <p className="text-[11px] text-slate-400 mt-1">
+                                    Enter 6-digit PIN or any unused code from your 10-turn paper slip.
+                                </p>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handlePinVerify}
+                                disabled={isLoading}
+                                className="w-full py-3 rounded-xl text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 shadow-md shadow-amber-500/20 active:scale-[0.99] transition flex items-center justify-center gap-2 mt-2"
+                            >
+                                {isLoading ? (
+                                    t('auth.verifying') || 'Verifying Code...'
+                                ) : (
+                                    <>
+                                        <KeyRound className="w-4 h-4" />
+                                        <span>Verify Code & Continue</span>
+                                    </>
+                                )}
+                            </button>
                         </div>
+                    )}
+
+                    {/* PASSWORD SETUP after PIN verified */}
+                    {loginMode === 'pin' && pinVerified && (
+                        <div className="space-y-4">
+                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs font-medium">
+                                ✓ Verified for <strong>{firstName}</strong>! Set your permanent password below.
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {t('auth.setPassword') || 'New Password'}
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        className="w-full pl-3.5 pr-10 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Min 6 characters"
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                    >
+                                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                                    {t('auth.confirmPassword') || 'Confirm Password'}
+                                </label>
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="Confirm password"
+                                    value={confirmPassword}
+                                    onChange={(e) => setConfirmPassword(e.target.value)}
+                                />
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={handleSetPassword}
+                                disabled={isLoading}
+                                className="w-full py-3 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-600/20 active:scale-[0.99] transition flex items-center justify-center gap-2 mt-2"
+                            >
+                                {isLoading ? (
+                                    t('auth.settingUp') || 'Setting Password...'
+                                ) : (
+                                    <>
+                                        <LogIn className="w-4 h-4" />
+                                        <span>{t('auth.setPasswordLogin') || 'Save Password & Enter'}</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Footer Links */}
+                    <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+                        <Link
+                            href="/adminmoslogin"
+                            className="text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium inline-flex items-center gap-1.5 transition"
+                        >
+                            <Shield className="w-3.5 h-3.5 text-slate-400" />
+                            <span>Administrator Portal</span>
+                        </Link>
+
+                        <Link
+                            href="/licenses"
+                            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 font-medium inline-flex items-center gap-1 transition"
+                            title="Open Source & Licensing Notices"
+                        >
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>Legal & Licenses</span>
+                        </Link>
                     </div>
                 </div>
             </div>

@@ -6,8 +6,9 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 import {
     Users, GraduationCap, Search, Plus, Eye, UserPlus, Calendar, Lock,
-    ArrowLeft, Edit2, Trash2, X, Check, AlertCircle, Save
+    ArrowLeft, Edit2, Trash2, X, Check, AlertCircle, Save, ChevronLeft, ChevronRight, RotateCcw
 } from 'lucide-react';
+import { FluentExamHubIcon } from '@/components/FluentAppIcons';
 import { useAuthStore } from '@/lib/store';
 import { classesAPI } from '@/lib/api';
 import api from '@/lib/api';
@@ -27,6 +28,9 @@ export default function ClassesPage() {
     const [instructors, setInstructors] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedStream, setSelectedStream] = useState('All');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 9;
 
     // Edit Class Modal state
     const [showEditModal, setShowEditModal] = useState(false);
@@ -141,10 +145,23 @@ export default function ClassesPage() {
         }
     };
 
-    const filteredClasses = classes.filter(c =>
-        c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.nameHindi?.includes(searchQuery)
-    );
+    const filteredClasses = classes.filter(c => {
+        const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.nameHindi?.includes(searchQuery);
+        const matchesStream = selectedStream === 'All' || (c.stream || 'General') === selectedStream;
+        return matchesSearch && matchesStream;
+    });
+
+    const totalPages = Math.max(1, Math.ceil(filteredClasses.length / ITEMS_PER_PAGE));
+    const paginatedClasses = filteredClasses.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+    const streamCounts = {
+        All: classes.length,
+        ...STREAMS.reduce((acc, s) => {
+            acc[s] = classes.filter(c => (c.stream || 'General') === s).length;
+            return acc;
+        }, {})
+    };
 
     const isAdmin = user?.role === 'admin' || user?.role === 'principal';
 
@@ -209,103 +226,199 @@ export default function ClassesPage() {
                     </div>
                 )}
 
-                {/* Search */}
-                <div className="card p-4">
-                    <div className="relative">
-                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                        <input
-                            type="text"
-                            placeholder={t('classes.searchClasses')}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="input pl-11 rounded-xl"
-                        />
+                {/* Stream Filter Pills & Search Bar (Pattern 1: Data Catalog) */}
+                <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                        {/* Stream Pills */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                            {['All', ...STREAMS].map((st) => {
+                                const count = streamCounts[st] || 0;
+                                const isSelected = selectedStream === st;
+                                return (
+                                    <button
+                                        key={st}
+                                        type="button"
+                                        onClick={() => { setSelectedStream(st); setCurrentPage(1); }}
+                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                            isSelected
+                                                ? 'bg-primary-600 text-white shadow-xs'
+                                                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                        }`}
+                                    >
+                                        <span>{st}</span>
+                                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                                            isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'
+                                        }`}>
+                                            {count}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Search Input */}
+                        <div className="relative min-w-[240px]">
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder={t('classes.searchClasses')}
+                                value={searchQuery}
+                                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+                                className="w-full pl-9 pr-8 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setSearchQuery(''); setCurrentPage(1); }}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {/* Classes Grid */}
                 {filteredClasses.length === 0 ? (
-                    <div className="card p-12 text-center">
-                        <GraduationCap className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-700 mb-4" />
-                        <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">{t('classes.noClassesFound')}</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {isAdmin ? t('classes.createFirst') : t('classes.noClassesAvailable')}
+                    /* Pattern 5: Friendly Tactile Empty State */
+                    <div className="card p-12 text-center rounded-3xl border border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shadow-xs">
+                        <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800/80 mx-auto flex items-center justify-center mb-4 text-primary-500 shadow-xs border border-slate-200/80 dark:border-slate-700/80">
+                            <FluentExamHubIcon size={34} />
+                        </div>
+                        <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-1">
+                            {searchQuery || selectedStream !== 'All' ? 'No matching classes found' : t('classes.noClassesFound')}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-4">
+                            {searchQuery || selectedStream !== 'All'
+                                ? 'Try adjusting your search query or selecting a different academic stream filter.'
+                                : (isAdmin ? t('classes.createFirst') : t('classes.noClassesAvailable'))
+                            }
                         </p>
+                        {(searchQuery || selectedStream !== 'All') && (
+                            <button
+                                type="button"
+                                onClick={() => { setSearchQuery(''); setSelectedStream('All'); setCurrentPage(1); }}
+                                className="btn btn-sm btn-secondary text-xs inline-flex items-center gap-1.5 rounded-xl"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Reset Filter Pills</span>
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredClasses.map((cls) => (
-                            <div key={cls.id} className="card hover:shadow-lg hover:border-slate-300 dark:hover:border-slate-700 transition group flex flex-col overflow-hidden">
-                                <div className="p-5 flex-1">
-                                    <div className="flex items-start justify-between mb-4">
-                                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-primary-500/20">
-                                            {cls.gradeLevel}
-                                            {cls.section && <span className="text-sm ml-0.5">{cls.section}</span>}
+                    <>
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {paginatedClasses.map((cls) => (
+                                <div key={cls.id} className="card hover:shadow-md hover:border-slate-300 dark:hover:border-slate-700 transition group flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-800/90 bg-white/95 dark:bg-slate-900/95">
+                                    <div className="p-5 flex-1">
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white font-black text-base shadow-xs shadow-primary-500/20">
+                                                {cls.gradeLevel}
+                                                {cls.section && <span className="text-xs ml-0.5">{cls.section}</span>}
+                                            </div>
+                                            <span className="text-[11px] text-slate-700 dark:text-slate-300 font-bold px-2.5 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 font-mono uppercase tracking-wider">
+                                                {cls.stream || t('classes.general')}
+                                            </span>
                                         </div>
-                                        <span className="text-xs text-slate-600 dark:text-slate-300 font-bold px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
-                                            {cls.stream || t('classes.general')}
-                                        </span>
+
+                                        <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-1 tracking-tight">{cls.name}</h3>
+                                        {cls.nameHindi && (
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{cls.nameHindi}</p>
+                                        )}
+
+                                        <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mb-3 font-medium">
+                                            <span className="flex items-center gap-1.5">
+                                                <Users className="w-3.5 h-3.5 text-primary-500" />
+                                                <span>{cls._count?.enrollments || 0} enrolled</span>
+                                            </span>
+                                            {cls.maxStudents && (
+                                                <span className="text-slate-400 font-mono text-[11px]">
+                                                    / {cls.maxStudents} max
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {cls.classTeacher && (
+                                            <p className="text-xs text-slate-600 dark:text-slate-300">
+                                                <span className="font-bold text-slate-700 dark:text-slate-200">{t('classes.teacher')}:</span> {cls.classTeacher.firstName} {cls.classTeacher.lastName}
+                                            </p>
+                                        )}
                                     </div>
 
-                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">{cls.name}</h3>
-                                    {cls.nameHindi && (
-                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">{cls.nameHindi}</p>
-                                    )}
-
-                                    <div className="flex items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mb-3 font-medium">
-                                        <span className="flex items-center gap-1.5">
-                                            <Users className="w-4 h-4 text-primary-500" />
-                                            {cls._count?.enrollments || 0} {t('classes.students')}
-                                        </span>
+                                    {/* Icon-Only Action Bar */}
+                                    <div className="px-4 py-2 bg-slate-50/90 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-1">
+                                        <Link
+                                            href={`/classes/${cls.id}`}
+                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition-colors"
+                                            title={t('classes.view')}
+                                        >
+                                            <Eye className="w-4 h-4" />
+                                        </Link>
+                                        {isAdmin && (
+                                            <>
+                                                <Link
+                                                    href={`/classes/${cls.id}`}
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition-colors"
+                                                    title="Manage Students"
+                                                >
+                                                    <UserPlus className="w-4 h-4" />
+                                                </Link>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleOpenEditModal(cls, e)}
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors"
+                                                    title="Edit Class"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleDeleteClass(cls, e)}
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
+                                                    title="Delete Class"
+                                                >
+                                                    <Trash2 className="w-4 h-4 text-red-500" />
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
-
-                                    {cls.classTeacher && (
-                                        <p className="text-xs text-slate-600 dark:text-slate-300">
-                                            <span className="font-bold text-slate-700 dark:text-slate-200">{t('classes.teacher')}:</span> {cls.classTeacher.firstName} {cls.classTeacher.lastName}
-                                        </p>
-                                    )}
                                 </div>
+                            ))}
+                        </div>
 
-                                {/* Icon-Only Action Bar */}
-                                <div className="px-4 py-2.5 bg-slate-50/90 dark:bg-slate-900/60 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-end gap-1.5">
-                                    <Link
-                                        href={`/classes/${cls.id}`}
-                                        className="p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition-colors"
-                                        title={t('classes.view')}
+                        {/* Pagination Bar (Default 9-10 items per page) */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500">
+                                <div>
+                                    Showing <span className="font-bold text-slate-700 dark:text-slate-300">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="font-bold text-slate-700 dark:text-slate-300">{Math.min(currentPage * ITEMS_PER_PAGE, filteredClasses.length)}</span> of <span className="font-bold text-slate-700 dark:text-slate-300">{filteredClasses.length}</span> classes
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        disabled={currentPage === 1}
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                        title="Previous Page"
                                     >
-                                        <Eye className="w-5 h-5" />
-                                    </Link>
-                                    {isAdmin && (
-                                        <>
-                                            <Link
-                                                href={`/classes/${cls.id}`}
-                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-950/40 rounded-lg transition-colors"
-                                                title="Manage Students"
-                                            >
-                                                <UserPlus className="w-5 h-5" />
-                                            </Link>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => handleOpenEditModal(cls, e)}
-                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition-colors"
-                                                title="Edit Class"
-                                            >
-                                                <Edit2 className="w-5 h-5" />
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => handleDeleteClass(cls, e)}
-                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors"
-                                                title="Delete Class"
-                                            >
-                                                <Trash2 className="w-5 h-5 text-red-500" />
-                                            </button>
-                                        </>
-                                    )}
+                                        <ChevronLeft className="w-4 h-4" />
+                                    </button>
+                                    <span className="px-3 py-1 font-mono text-xs font-semibold">
+                                        Page {currentPage} of {totalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        disabled={currentPage === totalPages}
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        className="p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                        title="Next Page"
+                                    >
+                                        <ChevronRight className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
-                        ))}
-                    </div>
+                        )}
+                    </>
                 )}
             </main>
 

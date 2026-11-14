@@ -1,0 +1,35 @@
+# Unified Lab Record Management System (ULRMS)
+## Software License Agreement
+
+Copyright (c) 2024-2026 Unified Lab Record Management System (ULRMS) Contributors & Institutional Partners.
+All Rights Reserved.
+
+---
+
+### 1. Proprietary Grant & Permitted Use
+This software and associated documentation files (the "Software") are proprietary and confidential property of ULRMS and its authorized institutional licensees.
+
+Permission is hereby granted to authorized educational institutions, administrators, instructors, and enrolled students to access and use the Software solely for educational, laboratory record management, and academic assessment purposes, subject to the following conditions:
+
+1. **Non-Commercial Redistribution:** You may not sell, lease, sublicense, commercialize, or distribute copies or substantial portions of the Software to third parties without prior written consent from the copyright holders.
+2. **Reverse Engineering:** You may not decompile, reverse-engineer, disassemble, or derive source code from compiled mobile/desktop application binaries, except to the extent permitted by applicable law.
+3. **Institutional Integrity:** Academic records, student assessment evaluations, digital signatures, and attendance audit trails generated within the Software must be maintained in compliance with institutional data governance policies.
+
+---
+
+### 2. Third-Party Open Source Software Acknowledgements
+The Software incorporates and dynamically links with open-source components developed by third parties. Each open-source component is governed by its respective license terms:
+
+- **MIT License:** React, Next.js, Framer Motion, Tailwind CSS, Lucide React, Monaco Editor, Zustand, TanStack Query, Axios, Date-fns, Jspreadsheet-CE, JSZip, UUID, Winston.
+- **Apache License 2.0:** TypeScript, PDF.js (`pdfjs-dist`), SheetJS (`xlsx`), ECharts, HTML5-QRCode, docx-preview, DOMPurify, Google Generative AI SDK, Groq SDK, Prisma Client.
+- **SIL Open Font License 1.1:** Inter Font Family.
+- **ISC License:** Lucide icons core, Node-cron, Signal-exit.
+- **BSD 2-Clause / 3-Clause:** Mammoth (.docx parser), Dotenv.
+- **LGPL 3.0 (Dynamic Server-Side Linking):** `sharp` / `libvips` image processing binaries running solely on private backend execution environments.
+
+A full and complete interactive directory of third-party licenses, copyright notices, and legal attributions is accessible within the application at `/licenses` or via **Settings > Legal & Open Source Notices**.
+
+---
+
+### 3. Disclaimer of Warranty
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
