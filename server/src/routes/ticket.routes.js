@@ -255,7 +255,8 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
  */
 router.get('/stats', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     const { academicYearId, all } = req.query;
-    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const statsWhere = sessionId ? { academicYearId: sessionId } : {};
 
     const [byStatus, byPriority, byCategory, recentActivity] = await Promise.all([
