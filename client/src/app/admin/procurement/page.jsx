@@ -520,16 +520,23 @@ export default function ProcurementPage() {
             }
 
             const [reqRes, vendorRes, staffRes] = await Promise.all([
-                procurementAPI.getRequests(reqQuery).catch(e => { console.error('Requests error:', e); return { data: { data: [] } }; }),
-                procurementAPI.getVendors().catch(e => { console.error('Vendors error:', e); return { data: { data: [] } }; }),
-                procurementAPI.getStaff().catch(e => { console.error('Staff error:', e); return { data: { data: [] } }; })
+                procurementAPI.getRequests(reqQuery).catch(e => {
+                    console.error('Requests error:', e);
+                    return { data: { data: [] } };
+                }),
+                procurementAPI.getVendors().catch(e => {
+                    console.error('Vendors error:', e);
+                    toast.error(e.response?.data?.message || 'Failed to load vendors');
+                    return { data: { data: [] } };
+                }),
+                procurementAPI.getStaff().catch(e => {
+                    console.error('Staff error:', e);
+                    return { data: { data: [] } };
+                })
             ]);
-            console.log('Requests:', reqRes.data);
-            console.log('Vendors:', vendorRes.data);
-            console.log('Staff:', staffRes.data);
-            setRequests(reqRes.data?.data || []);
-            setVendors(vendorRes.data?.data || []);
-            setStaffList(staffRes.data?.data || []);
+            setRequests(Array.isArray(reqRes.data?.data) ? reqRes.data.data : []);
+            setVendors(Array.isArray(vendorRes.data?.data) ? vendorRes.data.data : []);
+            setStaffList(Array.isArray(staffRes.data?.data) ? staffRes.data.data : []);
         } catch (error) {
             console.error('Load data error:', error);
             toast.error('Failed to load data: ' + error.message);
@@ -1423,7 +1430,7 @@ export default function ProcurementPage() {
             setShowVendorModal(false);
             setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false });
             setEditingVendor(null);
-            loadData();
+            await loadData();
         } catch (error) {
             const errMsg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to save vendor';
             toast.error(`Failed to save vendor: ${errMsg}`);
@@ -1448,7 +1455,7 @@ export default function ProcurementPage() {
 
             // Restore selected vendors from quotations
             if (data.request?.quotations?.length > 0) {
-                const vendorIds = [...new Set(data.request.quotations.map(q => q.vendor.id))];
+                const vendorIds = [...new Set(data.request.quotations.map(q => q.vendor?.id || q.vendorId).filter(Boolean))];
                 setSelectedVendorIds(vendorIds);
             }
 
@@ -1456,10 +1463,13 @@ export default function ProcurementPage() {
             if (data.request?.quotations?.length > 0) {
                 const prices = {};
                 data.request.quotations.forEach(q => {
-                    prices[q.vendor.id] = {};
-                    q.items.forEach(item => {
-                        prices[q.vendor.id][item.procurementItemId] = item.unitPrice;
-                    });
+                    const vid = q.vendor?.id || q.vendorId;
+                    if (vid) {
+                        prices[vid] = {};
+                        (q.items || []).forEach(item => {
+                            prices[vid][item.procurementItemId] = item.unitPrice;
+                        });
+                    }
                 });
                 setVendorQuotationPrices(prices);
             }
@@ -1528,8 +1538,9 @@ export default function ProcurementPage() {
             if (data.request?.quotations?.length > 0) {
                 const docs = {};
                 data.request.quotations.forEach(q => {
-                    if (q.documentUrl) {
-                        docs[q.vendor.id] = 'Quotation Document';
+                    const vid = q.vendor?.id || q.vendorId;
+                    if (q.documentUrl && vid) {
+                        docs[vid] = 'Quotation Document';
                     }
                 });
                 setVendorQuotationDocs(docs);
@@ -1553,7 +1564,7 @@ export default function ProcurementPage() {
                     return 1;
                 };
                 const vendorIds = data.request?.quotations?.length > 0
-                    ? [...new Set(data.request.quotations.map(q => q.vendor.id))]
+                    ? [...new Set(data.request.quotations.map(q => q.vendor?.id || q.vendorId).filter(Boolean))]
                     : [];
                 const highestStep = calcHighestStep(data.request, vendorIds);
                 setWorkflowStep(highestStep);
@@ -1628,7 +1639,7 @@ export default function ProcurementPage() {
     const printComparison = () => {
         if (!requestDetail) return;
         const { request, comparison } = requestDetail;
-        const vendorNames = [...new Set(request.quotations.map(q => q.vendor.name))];
+        const vendorNames = [...new Set((request.quotations || []).map(q => q.vendor?.name || 'Vendor'))];
 
         const html = `
         <html>
@@ -1866,14 +1877,14 @@ export default function ProcurementPage() {
 
                 {/* Vendors Tab */}
                 {activeTab === 'vendors' && (() => {
-                    const vendorsWithCosts = vendors.map(vendor => {
-                        let cost = parseFloat(vendor.totalCost || 0);
+                    const vendorsWithCosts = (vendors || []).map(vendor => {
+                        let cost = parseFloat(vendor?.totalCost || 0) || 0;
                         if (cost === 0 && requests?.length > 0) {
                             requests.forEach(r => {
                                 (r.items || []).forEach(item => {
-                                    if (item.approvedVendorId === vendor.id) {
-                                        const price = parseFloat(item.approvedUnitPrice || 0);
-                                        const qty = item.quantity || 1;
+                                    if (item?.approvedVendorId === vendor?.id) {
+                                        const price = parseFloat(item?.approvedUnitPrice || 0) || 0;
+                                        const qty = parseInt(item?.quantity || 1) || 1;
                                         cost += (price * qty);
                                     }
                                 });
@@ -1881,10 +1892,11 @@ export default function ProcurementPage() {
                         }
                         return {
                             ...vendor,
-                            computedCost: cost
+                            computedCost: isNaN(cost) ? 0 : cost
                         };
                     });
                     const grandTotalCost = vendorsWithCosts.reduce((sum, v) => sum + (v.computedCost || 0), 0);
+                    const safeGrandTotal = isNaN(grandTotalCost) ? 0 : grandTotalCost;
 
                     return (
                         <div className="space-y-4">
@@ -1894,7 +1906,14 @@ export default function ProcurementPage() {
                                     <h3 className="font-semibold text-slate-800">Vendors & Suppliers</h3>
                                     <p className="text-xs text-slate-500">Manage suppliers, rate contracts, and procurement costs</p>
                                 </div>
-                                <button onClick={() => { setEditingVendor(null); setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false }); setShowVendorModal(true); }} className="btn btn-primary">
+                                <button
+                                    onClick={() => {
+                                        setEditingVendor(null);
+                                        setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false });
+                                        setShowVendorModal(true);
+                                    }}
+                                    className="btn btn-primary"
+                                >
                                     <Building className="w-4 h-4" /> Add Vendor
                                 </button>
                             </div>
@@ -1907,7 +1926,7 @@ export default function ProcurementPage() {
                                         <Receipt className="w-5 h-5 text-indigo-200" />
                                     </div>
                                     <div className="text-2xl font-bold tracking-tight">
-                                        ₹{grandTotalCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{safeGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                     <p className="text-xs text-indigo-200 mt-1">Total financial cost across all registered vendors</p>
                                 </div>
@@ -1916,7 +1935,7 @@ export default function ProcurementPage() {
                                         <span className="text-xs uppercase tracking-wider font-semibold text-slate-500">Registered Vendors</span>
                                         <Users className="w-5 h-5 text-blue-500" />
                                     </div>
-                                    <div className="text-2xl font-bold text-slate-800">{vendors.length}</div>
+                                    <div className="text-2xl font-bold text-slate-800">{vendors?.length || 0}</div>
                                     <p className="text-xs text-slate-400 mt-1">Active vendors in supplier directory</p>
                                 </div>
                                 <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
@@ -1925,7 +1944,7 @@ export default function ProcurementPage() {
                                         <CreditCard className="w-5 h-5 text-emerald-500" />
                                     </div>
                                     <div className="text-2xl font-bold text-slate-800">
-                                        ₹{(vendors.length > 0 ? grandTotalCost / vendors.length : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        ₹{(vendors?.length > 0 ? safeGrandTotal / vendors.length : 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </div>
                                     <p className="text-xs text-slate-400 mt-1">Average procurement spend per supplier</p>
                                 </div>
@@ -1937,7 +1956,14 @@ export default function ProcurementPage() {
                                     <div className="col-span-full text-center py-12 bg-white rounded-xl shadow-sm">
                                         <Building className="w-12 h-12 mx-auto text-slate-300 mb-3" />
                                         <p className="text-slate-500">No vendors added yet</p>
-                                        <button onClick={() => { setEditingVendor(null); setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false }); setShowVendorModal(true); }} className="btn btn-primary mt-3">
+                                        <button
+                                            onClick={() => {
+                                                setEditingVendor(null);
+                                                setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false });
+                                                setShowVendorModal(true);
+                                            }}
+                                            className="btn btn-primary mt-3"
+                                        >
                                             <Building className="w-4 h-4" /> Add First Vendor
                                         </button>
                                     </div>
@@ -1946,7 +1972,7 @@ export default function ProcurementPage() {
                                         <div key={vendor.id} className="bg-white rounded-xl shadow-sm p-4 border border-slate-100 hover:shadow-md transition">
                                             <div className="flex items-start justify-between">
                                                 <div>
-                                                    <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
+                                                    <h3 className="font-semibold text-slate-900">{vendor.name || 'Unnamed Vendor'}</h3>
                                                     {vendor.isLocal && (
                                                         <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                                             Local Vendor
@@ -1954,7 +1980,19 @@ export default function ProcurementPage() {
                                                     )}
                                                 </div>
                                                 <button
-                                                    onClick={() => { setEditingVendor(vendor); setVendorForm(vendor); setShowVendorModal(true); }}
+                                                    onClick={() => {
+                                                        setEditingVendor(vendor);
+                                                        setVendorForm({
+                                                            name: vendor.name || '',
+                                                            contactPerson: vendor.contactPerson || '',
+                                                            email: vendor.email || '',
+                                                            phone: vendor.phone || '',
+                                                            address: vendor.address || '',
+                                                            gstin: vendor.gstin || '',
+                                                            isLocal: Boolean(vendor.isLocal)
+                                                        });
+                                                        setShowVendorModal(true);
+                                                    }}
                                                     className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
                                                     title="Edit Vendor"
                                                 >
@@ -1970,7 +2008,7 @@ export default function ProcurementPage() {
                                             <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
                                                 <span className="text-xs text-slate-500 font-medium">Financial Cost:</span>
                                                 <span className="text-sm font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
-                                                    ₹{vendor.computedCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    ₹{(vendor.computedCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </span>
                                             </div>
                                         </div>
@@ -2115,38 +2153,69 @@ export default function ProcurementPage() {
                     <div className="bg-white rounded-xl shadow-xl max-w-md w-full">
                         <div className="p-6 border-b flex items-center justify-between">
                             <h2 className="text-lg font-semibold">{editingVendor ? 'Edit Vendor' : 'Add Vendor'}</h2>
-                            <button onClick={() => { setShowVendorModal(false); setEditingVendor(null); setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '' }); }} className="text-slate-400 hover:text-slate-600">
+                            <button onClick={() => { setShowVendorModal(false); setEditingVendor(null); }} className="text-slate-400 hover:text-slate-600">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
                         <form onSubmit={handleCreateVendor} className="p-6 space-y-4">
                             <div>
                                 <label className="label">Vendor Name *</label>
-                                <input type="text" value={vendorForm.name} onChange={(e) => setVendorForm({ ...vendorForm, name: e.target.value })} className="input" required />
+                                <input
+                                    type="text"
+                                    value={vendorForm?.name || ''}
+                                    onChange={(e) => setVendorForm(prev => ({ ...prev, name: e.target.value }))}
+                                    className="input"
+                                    placeholder="e.g. Acme Tech Solutions"
+                                    required
+                                />
                             </div>
                             <div>
                                 <label className="label">Contact Person</label>
-                                <input type="text" value={vendorForm.contactPerson} onChange={(e) => setVendorForm({ ...vendorForm, contactPerson: e.target.value })} className="input" />
+                                <input
+                                    type="text"
+                                    value={vendorForm?.contactPerson || ''}
+                                    onChange={(e) => setVendorForm(prev => ({ ...prev, contactPerson: e.target.value }))}
+                                    className="input"
+                                    placeholder="e.g. Ramesh Kumar"
+                                />
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="label">Email</label>
-                                    <input type="email" value={vendorForm.email} onChange={(e) => setVendorForm({ ...vendorForm, email: e.target.value })} className="input" />
+                                    <input
+                                        type="email"
+                                        value={vendorForm?.email || ''}
+                                        onChange={(e) => setVendorForm(prev => ({ ...prev, email: e.target.value }))}
+                                        className="input"
+                                        placeholder="vendor@example.com"
+                                    />
                                 </div>
                                 <div>
                                     <label className="label">Phone</label>
-                                    <input type="text" value={vendorForm.phone} onChange={(e) => setVendorForm({ ...vendorForm, phone: e.target.value })} className="input" />
+                                    <input
+                                        type="text"
+                                        value={vendorForm?.phone || ''}
+                                        onChange={(e) => setVendorForm(prev => ({ ...prev, phone: e.target.value }))}
+                                        className="input"
+                                        placeholder="9876543210"
+                                    />
                                 </div>
                             </div>
                             <div>
                                 <label className="label">GSTIN</label>
-                                <input type="text" value={vendorForm.gstin} onChange={(e) => setVendorForm({ ...vendorForm, gstin: e.target.value })} className="input" />
+                                <input
+                                    type="text"
+                                    value={vendorForm?.gstin || ''}
+                                    onChange={(e) => setVendorForm(prev => ({ ...prev, gstin: e.target.value.toUpperCase() }))}
+                                    className="input uppercase"
+                                    placeholder="22AAAAA0000A1Z5"
+                                />
                             </div>
                             <div>
                                 <label className="label">Address</label>
                                 <textarea
-                                    value={vendorForm.address}
-                                    onChange={(e) => setVendorForm({ ...vendorForm, address: e.target.value })}
+                                    value={vendorForm?.address || ''}
+                                    onChange={(e) => setVendorForm(prev => ({ ...prev, address: e.target.value }))}
                                     className="input min-h-[80px]"
                                     placeholder="Full address of vendor"
                                 />
@@ -2155,16 +2224,16 @@ export default function ProcurementPage() {
                                 <input
                                     type="checkbox"
                                     id="isLocal"
-                                    checked={vendorForm.isLocal}
-                                    onChange={(e) => setVendorForm({ ...vendorForm, isLocal: e.target.checked })}
-                                    className="w-5 h-5 accent-amber-600"
+                                    checked={Boolean(vendorForm?.isLocal)}
+                                    onChange={(e) => setVendorForm(prev => ({ ...prev, isLocal: e.target.checked }))}
+                                    className="w-5 h-5 accent-amber-600 cursor-pointer"
                                 />
                                 <label htmlFor="isLocal" className="text-amber-800 font-medium cursor-pointer">
                                     Local Vendor (Required for quotation compliance)
                                 </label>
                             </div>
                             <div className="flex justify-end gap-2 pt-4">
-                                <button type="button" onClick={() => setShowVendorModal(false)} className="btn btn-secondary">Cancel</button>
+                                <button type="button" onClick={() => { setShowVendorModal(false); setEditingVendor(null); }} className="btn btn-secondary">Cancel</button>
                                 <button type="submit" className="btn btn-primary">{editingVendor ? 'Update' : 'Create'}</button>
                             </div>
                         </form>

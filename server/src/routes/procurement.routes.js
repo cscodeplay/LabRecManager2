@@ -19,9 +19,16 @@ const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4
  */
 router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
     try {
-        console.log('Fetching vendors for schoolId:', req.user.schoolId);
+        const schoolId = req.user?.schoolId;
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Your user profile is not associated with an institution. Please contact the administrator.'
+            });
+        }
+        console.log('Fetching vendors for schoolId:', schoolId);
         const vendors = await prisma.vendor.findMany({
-            where: { schoolId: req.user.schoolId },
+            where: { schoolId },
             include: {
                 approvedItems: {
                     select: {
@@ -50,11 +57,11 @@ router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
             orderBy: { name: 'asc' }
         });
 
-        // Compute financial cost per vendor
+        // Compute financial cost per vendor safely
         const vendorsWithFinancials = vendors.map(v => {
             const totalCost = (v.approvedItems || []).reduce((sum, item) => {
-                const price = parseFloat(item.approvedUnitPrice || 0);
-                const qty = item.quantity || 1;
+                const price = parseFloat(item.approvedUnitPrice || 0) || 0;
+                const qty = parseInt(item.quantity || 1) || 1;
                 return sum + (price * qty);
             }, 0);
             return {
@@ -69,7 +76,7 @@ router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
         res.json({ success: true, data: vendorsWithFinancials });
     } catch (error) {
         console.error('GET vendors error:', error);
-        res.status(500).json({ success: false, message: 'Failed to load vendors', error: error.message });
+        res.status(500).json({ success: false, message: 'Failed to load vendors: ' + error.message, error: error.message });
     }
 }));
 
@@ -84,16 +91,15 @@ router.post('/vendors', authenticate, authorize('admin', 'principal', 'lab_assis
             return res.status(400).json({ success: false, message: 'Vendor name is required' });
         }
 
-        let schoolId = req.user.schoolId;
+        const schoolId = req.user?.schoolId;
         if (!schoolId) {
-            const firstSchool = await prisma.school.findFirst({ select: { id: true } });
-            schoolId = firstSchool?.id;
-        }
-        if (!schoolId) {
-            return res.status(400).json({ success: false, message: 'Valid school reference is required' });
+            return res.status(400).json({
+                success: false,
+                message: 'Your user account is not associated with an institution. Cannot create vendor without valid school.'
+            });
         }
 
-        console.log('Creating vendor:', { name: name.trim(), contactPerson, email, phone, address, gstin, isLocal, schoolId });
+        console.log('Creating vendor for schoolId:', schoolId, { name: name.trim(), contactPerson, email, phone, address, gstin, isLocal });
         const vendor = await prisma.vendor.create({
             data: {
                 name: name.trim(),

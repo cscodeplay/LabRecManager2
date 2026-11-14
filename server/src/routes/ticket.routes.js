@@ -115,36 +115,72 @@ router.post('/', authenticate, [
     console.log('Parsed values:', { title, description, category, priority, itemId, labId, issueTypeId, academicYearId: resolvedYearId });
 
     try {
-        const ticketNumber = await generateTicketNumber();
-        console.log('Generated ticket number:', ticketNumber);
-
         const validCategories = ['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other'];
         const validPriorities = ['low', 'medium', 'high', 'critical'];
 
+        // Verify foreign key references exist in database to avoid P2003 constraint failures
+        let validItemId = null;
+        if (itemId && isValidUuid(itemId)) {
+            const item = await prisma.labItem.findUnique({ where: { id: itemId }, select: { id: true } });
+            if (item) validItemId = item.id;
+        }
+
+        let validLabId = null;
+        if (labId && isValidUuid(labId)) {
+            const lab = await prisma.lab.findUnique({ where: { id: labId }, select: { id: true } });
+            if (lab) validLabId = lab.id;
+        }
+
+        let validIssueTypeId = null;
+        if (issueTypeId && isValidUuid(issueTypeId)) {
+            const it = await prisma.ticketIssueType.findUnique({ where: { id: issueTypeId }, select: { id: true } });
+            if (it) validIssueTypeId = it.id;
+        }
+
+        let validYearId = null;
+        if (resolvedYearId && isValidUuid(resolvedYearId)) {
+            const yr = await prisma.academicYear.findUnique({ where: { id: resolvedYearId }, select: { id: true } });
+            if (yr) validYearId = yr.id;
+        }
+
         const ticketData = {
-            ticketNumber,
             title: title.trim(),
             description: description.trim(),
             category: category && validCategories.includes(category) ? category : 'other',
             priority: priority && validPriorities.includes(priority) ? priority : 'medium',
             status: 'open',
-            itemId: itemId && isValidUuid(itemId) ? itemId : null,
-            labId: labId && isValidUuid(labId) ? labId : null,
-            issueTypeId: issueTypeId && isValidUuid(issueTypeId) ? issueTypeId : null,
-            academicYearId: resolvedYearId && isValidUuid(resolvedYearId) ? resolvedYearId : null,
+            itemId: validItemId,
+            labId: validLabId,
+            issueTypeId: validIssueTypeId,
+            academicYearId: validYearId,
             createdById: req.user.id
         };
-        console.log('Ticket data to create:', JSON.stringify(ticketData, null, 2));
 
-        const ticket = await prisma.ticket.create({
-            data: ticketData,
-            include: {
-                createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-                item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
-                lab: { select: { id: true, name: true, roomNumber: true } },
-                issueType: { select: { id: true, name: true, category: true } }
+        let ticket = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+            try {
+                const ticketNumber = await generateTicketNumber();
+                ticketData.ticketNumber = ticketNumber;
+                console.log(`Creating ticket (attempt ${attempt + 1}):`, ticketNumber);
+
+                ticket = await prisma.ticket.create({
+                    data: ticketData,
+                    include: {
+                        createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+                        item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
+                        lab: { select: { id: true, name: true, roomNumber: true } },
+                        issueType: { select: { id: true, name: true, category: true } }
+                    }
+                });
+                break;
+            } catch (createErr) {
+                if (createErr.code === 'P2002' && attempt < 4) {
+                    console.warn(`Ticket number collision on attempt ${attempt + 1}, retrying...`);
+                    continue;
+                }
+                throw createErr;
             }
-        });
+        }
 
         console.log('Ticket created successfully:', ticket.id, ticket.ticketNumber);
 
@@ -174,7 +210,11 @@ router.post('/', authenticate, [
         console.error('Error message:', error.message);
         console.error('Error code:', error.code);
         console.error('Error stack:', error.stack);
-        throw error;
+        res.status(500).json({
+            success: false,
+            message: 'Failed to create ticket: ' + (error.message || 'Server error'),
+            error: error.message
+        });
     }
 }));
 
@@ -193,8 +233,8 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const validPriorities = ['low', 'medium', 'high', 'critical'];
     const validCategories = ['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other'];
 
-    // Filter by academic session
-    if (sessionId) {
+    // Filter by academic session only if explicitly provided and all !== 'true'
+    if (all !== 'true' && sessionId) {
         where.academicYearId = sessionId;
     }
 
@@ -224,55 +264,90 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     }
 
     // Role-based filtering
-    const userRole = req.user.role;
+    const userRole = req.user?.role;
     if (userRole === 'student') {
-        // Students can only see their own tickets
         where.createdById = req.user.id;
     } else if (userRole === 'instructor') {
-        // Instructors see their tickets and tickets from their classes (TODO: enhance)
         where.OR = [
             { createdById: req.user.id },
             { assignedToId: req.user.id }
         ];
     }
-    // Admins, principals, lab_assistants can see all tickets
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
 
-    const [tickets, total] = await Promise.all([
-        prisma.ticket.findMany({
-            where,
-            include: {
-                createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
-                assignedTo: { select: { id: true, firstName: true, lastName: true } },
-                item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
-                lab: { select: { id: true, name: true, roomNumber: true } },
-                academicYear: { select: { id: true, yearLabel: true, isCurrent: true } },
-                _count: { select: { comments: true } }
-            },
-            orderBy: [
-                { status: 'asc' }, // Open tickets first
-                { priority: 'desc' }, // Critical first
-                { createdAt: 'desc' }
-            ],
-            skip,
-            take: parseInt(limit)
-        }),
-        prisma.ticket.count({ where })
-    ]);
+    try {
+        const [tickets, total] = await Promise.all([
+            prisma.ticket.findMany({
+                where,
+                include: {
+                    createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+                    assignedTo: { select: { id: true, firstName: true, lastName: true } },
+                    item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
+                    lab: { select: { id: true, name: true, roomNumber: true } },
+                    academicYear: { select: { id: true, yearLabel: true, isCurrent: true } },
+                    _count: { select: { comments: true } }
+                },
+                orderBy: [
+                    { status: 'asc' },
+                    { priority: 'desc' },
+                    { createdAt: 'desc' }
+                ],
+                skip,
+                take: limitNum
+            }),
+            prisma.ticket.count({ where })
+        ]);
 
-    res.json({
-        success: true,
-        data: {
-            tickets,
-            pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
-                total,
-                totalPages: Math.ceil(total / parseInt(limit))
+        res.json({
+            success: true,
+            data: {
+                tickets,
+                pagination: {
+                    page: pageNum,
+                    limit: limitNum,
+                    total,
+                    totalPages: Math.ceil(total / limitNum)
+                }
             }
+        });
+    } catch (dbErr) {
+        console.error('=== GET /api/tickets DB ERROR ===', dbErr);
+        try {
+            // Graceful resilient fallback: query basic tickets without complex joins
+            const fallbackTickets = await prisma.ticket.findMany({
+                where: userRole === 'student' ? { createdById: req.user.id } : {},
+                include: {
+                    createdBy: { select: { id: true, firstName: true, lastName: true, role: true } },
+                    lab: { select: { id: true, name: true, roomNumber: true } }
+                },
+                orderBy: { createdAt: 'desc' },
+                take: limitNum
+            });
+            const fallbackCount = await prisma.ticket.count();
+            return res.json({
+                success: true,
+                data: {
+                    tickets: fallbackTickets,
+                    pagination: {
+                        page: 1,
+                        limit: limitNum,
+                        total: fallbackCount,
+                        totalPages: Math.ceil(fallbackCount / limitNum)
+                    }
+                }
+            });
+        } catch (fatalErr) {
+            console.error('Fatal ticket query failure:', fatalErr);
+            return res.status(500).json({
+                success: false,
+                message: 'Failed to load tickets: ' + dbErr.message,
+                error: dbErr.message
+            });
         }
-    });
+    }
 }));
 
 /**

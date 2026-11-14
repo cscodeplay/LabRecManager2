@@ -106,7 +106,7 @@ export default function TicketsPage() {
         if (user?.role === 'student') {
             loadStudentProfile();
         }
-    }, [_hasHydrated, isAuthenticated, statusFilter, priorityFilter, myTicketsOnly, selectedSessionId]);
+    }, [_hasHydrated, isAuthenticated, statusFilter, priorityFilter, myTicketsOnly]);
 
     const loadStudentProfile = async () => {
         try {
@@ -127,19 +127,18 @@ export default function TicketsPage() {
     const loadTickets = async () => {
         try {
             setLoading(true);
-            const params = {};
+            const params = { all: 'true' };
             if (statusFilter !== 'all') params.status = statusFilter;
             if (priorityFilter) params.priority = priorityFilter;
             if (myTicketsOnly) params.myTickets = 'true';
-            if (selectedSessionId) {
-                params.academicYearId = selectedSessionId;
-            }
 
             const res = await ticketsAPI.getAll(params);
-            setTickets(res.data?.data?.tickets || res.data?.tickets || []);
+            const ticketList = res.data?.data?.tickets || res.data?.tickets || (Array.isArray(res.data?.data) ? res.data.data : []);
+            setTickets(Array.isArray(ticketList) ? ticketList : []);
         } catch (error) {
             console.error('Error loading tickets:', error);
             toast.error(error.response?.data?.message || 'Failed to load tickets');
+            setTickets([]);
         } finally {
             setLoading(false);
         }
