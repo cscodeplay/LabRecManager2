@@ -6,14 +6,34 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const notificationService = require('../services/notificationService');
 
-const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
 /**
- * Generate unique ticket number (TKT-000001 format)
+ * Generate unique ticket number (TKT-000001 format) with collision safety
  */
 async function generateTicketNumber() {
+    const lastTicket = await prisma.ticket.findFirst({
+        orderBy: { createdAt: 'desc' },
+        select: { ticketNumber: true }
+    });
+    let nextNum = 1;
+    if (lastTicket?.ticketNumber?.startsWith('TKT-')) {
+        const parsed = parseInt(lastTicket.ticketNumber.replace('TKT-', ''), 10);
+        if (!isNaN(parsed)) {
+            nextNum = parsed + 1;
+        }
+    }
     const count = await prisma.ticket.count();
-    return `TKT-${String(count + 1).padStart(6, '0')}`;
+    if (count >= nextNum) {
+        nextNum = count + 1;
+    }
+
+    let candidate = `TKT-${String(nextNum).padStart(6, '0')}`;
+    while (await prisma.ticket.findUnique({ where: { ticketNumber: candidate } })) {
+        nextNum++;
+        candidate = `TKT-${String(nextNum).padStart(6, '0')}`;
+    }
+    return candidate;
 }
 
 /**
@@ -61,12 +81,12 @@ router.get('/issue-types', authenticate, asyncHandler(async (req, res) => {
 router.post('/', authenticate, [
     body('title').trim().notEmpty().withMessage('Title is required'),
     body('description').trim().notEmpty().withMessage('Description is required'),
-    body('category').optional().isIn(['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other']),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']),
-    body('itemId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid item ID format'),
-    body('labId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid lab ID format'),
-    body('issueTypeId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid issue type ID format'),
-    body('academicYearId').optional().matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i).withMessage('Invalid academic year ID format')
+    body('category').optional({ values: 'falsy' }).isIn(['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other']),
+    body('priority').optional({ values: 'falsy' }).isIn(['low', 'medium', 'high', 'critical']),
+    body('itemId').optional({ values: 'falsy' }).custom(val => !val || isValidUuid(val)).withMessage('Invalid item ID format'),
+    body('labId').optional({ values: 'falsy' }).custom(val => !val || isValidUuid(val)).withMessage('Invalid lab ID format'),
+    body('issueTypeId').optional({ values: 'falsy' }).custom(val => !val || isValidUuid(val)).withMessage('Invalid issue type ID format'),
+    body('academicYearId').optional({ values: 'falsy' }).custom(val => !val || isValidUuid(val)).withMessage('Invalid academic year ID format')
 ], asyncHandler(async (req, res) => {
     console.log('=== POST /api/tickets - Create Ticket ===');
     console.log('User:', req.user?.email, 'Role:', req.user?.role, 'ID:', req.user?.id);
@@ -75,7 +95,7 @@ router.post('/', authenticate, [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
         console.log('Validation errors:', JSON.stringify(errors.array(), null, 2));
-        return res.status(400).json({ success: false, errors: errors.array() });
+        return res.status(400).json({ success: false, errors: errors.array(), message: errors.array()[0]?.msg || 'Validation failed' });
     }
 
     const { title, description, category, priority, itemId, labId, issueTypeId, academicYearId } = req.body;
@@ -98,17 +118,20 @@ router.post('/', authenticate, [
         const ticketNumber = await generateTicketNumber();
         console.log('Generated ticket number:', ticketNumber);
 
+        const validCategories = ['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other'];
+        const validPriorities = ['low', 'medium', 'high', 'critical'];
+
         const ticketData = {
             ticketNumber,
-            title,
-            description,
-            category: category || 'other',
-            priority: priority || 'medium',
+            title: title.trim(),
+            description: description.trim(),
+            category: category && validCategories.includes(category) ? category : 'other',
+            priority: priority && validPriorities.includes(priority) ? priority : 'medium',
             status: 'open',
-            itemId: itemId || null,
-            labId: labId || null,
-            issueTypeId: issueTypeId || null,
-            academicYearId: resolvedYearId || null,
+            itemId: itemId && isValidUuid(itemId) ? itemId : null,
+            labId: labId && isValidUuid(labId) ? labId : null,
+            issueTypeId: issueTypeId && isValidUuid(issueTypeId) ? issueTypeId : null,
+            academicYearId: resolvedYearId && isValidUuid(resolvedYearId) ? resolvedYearId : null,
             createdById: req.user.id
         };
         console.log('Ticket data to create:', JSON.stringify(ticketData, null, 2));
@@ -166,28 +189,32 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const where = {};
 
+    const validStatuses = ['open', 'in_progress', 'resolved', 'closed'];
+    const validPriorities = ['low', 'medium', 'high', 'critical'];
+    const validCategories = ['hardware_issue', 'software_issue', 'maintenance_request', 'general_complaint', 'other'];
+
     // Filter by academic session
     if (sessionId) {
         where.academicYearId = sessionId;
     }
 
-    // Filter by status
-    if (status && status !== 'all') {
+    // Filter by status (strict enum checking)
+    if (status && status !== 'all' && validStatuses.includes(status)) {
         where.status = status;
     }
 
-    // Filter by priority
-    if (priority) {
+    // Filter by priority (strict enum checking)
+    if (priority && priority !== 'all' && validPriorities.includes(priority)) {
         where.priority = priority;
     }
 
-    // Filter by category
-    if (category) {
+    // Filter by category (strict enum checking)
+    if (category && category !== 'all' && validCategories.includes(category)) {
         where.category = category;
     }
 
     // Filter by lab
-    if (labId) {
+    if (labId && isValidUuid(labId)) {
         where.labId = labId;
     }
 

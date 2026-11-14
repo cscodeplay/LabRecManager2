@@ -506,10 +506,10 @@ export default function ProcurementPage() {
     }, [_hasHydrated, isAuthenticated, router]);
 
     useEffect(() => {
-        if (_hasHydrated && user?.school?.id) {
+        if (_hasHydrated && isAuthenticated) {
             loadData();
         }
-    }, [_hasHydrated, user?.school?.id, selectedSessionId]);
+    }, [_hasHydrated, isAuthenticated, selectedSessionId]);
 
     const loadData = async () => {
         try {
@@ -1398,23 +1398,35 @@ export default function ProcurementPage() {
 
     const handleCreateVendor = async (e) => {
         e.preventDefault();
+        if (!vendorForm.name || !vendorForm.name.trim()) {
+            toast.error('Vendor name is required');
+            return;
+        }
         try {
+            const payload = {
+                name: vendorForm.name.trim(),
+                contactPerson: vendorForm.contactPerson?.trim() || null,
+                email: vendorForm.email?.trim() || null,
+                phone: vendorForm.phone?.trim() || null,
+                address: vendorForm.address?.trim() || null,
+                gstin: vendorForm.gstin?.trim() || null,
+                isLocal: Boolean(vendorForm.isLocal)
+            };
+
             if (editingVendor) {
-                await procurementAPI.updateVendor(editingVendor.id, vendorForm);
-                toast.success('Vendor updated');
+                await procurementAPI.updateVendor(editingVendor.id, payload);
+                toast.success('Vendor updated successfully');
             } else {
-                await procurementAPI.createVendor(vendorForm);
-                toast.success('Vendor created');
+                await procurementAPI.createVendor(payload);
+                toast.success('Vendor created successfully');
             }
             setShowVendorModal(false);
-            setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '' });
+            setVendorForm({ name: '', contactPerson: '', email: '', phone: '', address: '', gstin: '', isLocal: false });
             setEditingVendor(null);
             loadData();
         } catch (error) {
-            const errMsg = error.response?.data?.error || error.response?.data?.message || error.message;
-            const errCode = error.response?.data?.code || '';
-            const errMeta = error.response?.data?.meta ? JSON.stringify(error.response.data.meta) : '';
-            toast.error(`Failed to save vendor: ${errMsg} ${errCode} ${errMeta}`, { duration: 8000 });
+            const errMsg = error.response?.data?.message || error.response?.data?.error || error.message || 'Failed to save vendor';
+            toast.error(`Failed to save vendor: ${errMsg}`);
             console.error('Vendor save error:', error.response?.data);
         }
     };

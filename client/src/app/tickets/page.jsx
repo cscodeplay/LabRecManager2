@@ -186,23 +186,23 @@ export default function TicketsPage() {
 
         try {
             const data = {
-                title: form.title,
-                description: form.description,
-                category: form.category,
-                priority: form.priority,
+                title: form.title.trim(),
+                description: form.description.trim(),
+                category: form.category || 'other',
+                priority: form.priority || 'medium',
                 academicYearId: selectedSessionId || undefined
             };
             // For students, auto-use their assigned PC if available
             if (user?.role === 'student' && studentProfile?.assignedPc) {
-                data.itemId = studentProfile.assignedPc.id;
+                if (studentProfile.assignedPc.id) data.itemId = studentProfile.assignedPc.id;
                 if (studentProfile.assignedPc.lab?.id) {
                     data.labId = studentProfile.assignedPc.lab.id;
                 }
             } else {
-                if (form.labId) data.labId = form.labId;
-                if (form.itemId) data.itemId = form.itemId;
+                if (form.labId && form.labId.trim()) data.labId = form.labId.trim();
+                if (form.itemId && form.itemId.trim()) data.itemId = form.itemId.trim();
             }
-            if (form.issueTypeId) data.issueTypeId = form.issueTypeId;
+            if (form.issueTypeId && form.issueTypeId.trim()) data.issueTypeId = form.issueTypeId.trim();
 
             const res = await ticketsAPI.create(data);
             const tNumber = res.data?.data?.ticket?.ticketNumber || res.data?.ticket?.ticketNumber || 'CREATED';
@@ -211,7 +211,8 @@ export default function TicketsPage() {
             setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemType: '', itemId: '', issueTypeId: '' });
             loadTickets();
         } catch (error) {
-            toast.error(error.response?.data?.message || 'Failed to create ticket');
+            const msg = error.response?.data?.message || (error.response?.data?.errors && error.response.data.errors[0]?.msg) || error.message || 'Failed to create ticket';
+            toast.error(msg);
         }
     };
 

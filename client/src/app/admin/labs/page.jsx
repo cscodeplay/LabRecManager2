@@ -205,17 +205,6 @@ export default function LabsPage() {
                             <h1 className="text-xl font-semibold text-slate-900">Labs Management</h1>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Link href="/admin/labs/shift-requests" className="btn btn-secondary">
-                            <ArrowRightLeft className="w-4 h-4" /> Shift Requests
-                        </Link>
-                        <Link href="/admin/labs/import-history" className="btn btn-secondary">
-                            <History className="w-4 h-4" /> Import History
-                        </Link>
-                        <Link href="/admin/labs/inventory-reports" className="btn btn-secondary">
-                            <BarChart3 className="w-4 h-4" /> Reports
-                        </Link>
-                    </div>
                 </div>
             </header>
             <LabInfrastructureTabs activeTab="labs" />

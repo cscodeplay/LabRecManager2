@@ -9,7 +9,7 @@ import {
     FluentTicketsIcon,
     FluentLabSuiteIcon
 } from '@/components/FluentNavIcons';
-import { Monitor, Laptop, Barcode, ClipboardList, Wrench } from 'lucide-react';
+import { Monitor, Laptop, Barcode, ClipboardList, Wrench, History } from 'lucide-react';
 
 export default function LabInfrastructureTabs({ activeTab, className = '' }) {
     const pathname = usePathname();
@@ -45,6 +45,13 @@ export default function LabInfrastructureTabs({ activeTab, className = '' }) {
             label: 'Asset Barcodes',
             subLabel: 'Tagging & Inventory',
             icon: Barcode
+        }] : []),
+        ...(isStaff ? [{
+            id: 'import-history',
+            href: '/admin/labs/import-history',
+            label: 'Import History',
+            subLabel: 'CSV & Excel Imports',
+            icon: History
         }] : []),
         ...(isStaff ? [{
             id: 'procurement',

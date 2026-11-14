@@ -142,18 +142,10 @@ export function useEdgeHoverReveal({
     useEffect(() => () => clearCloseTimer(), [clearCloseTimer]);
 
     const handlePointerEnter = useCallback((e) => {
-        // Guard against iOS/iPadOS touch emulation where pointerleave is never synthesized
-        if (e?.pointerType === 'touch') {
-            pointerInsideRef.current = false;
-            clearCloseTimer();
-            setIsOpen(true);
-            scheduleAutoHide();
-            return;
-        }
-        pointerInsideRef.current = true;
         clearCloseTimer();
+        pointerInsideRef.current = true;
         setIsOpen(true);
-    }, [clearCloseTimer, scheduleAutoHide]);
+    }, [clearCloseTimer]);
 
     const handlePointerLeave = useCallback((e) => {
         pointerInsideRef.current = false;

@@ -7,6 +7,7 @@ import { ArrowLeft, Barcode, Download, Copy, Printer, Search, Package, RefreshCw
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 
 export default function BarcodeGeneratorPage() {
     const router = useRouter();
@@ -162,22 +163,32 @@ export default function BarcodeGeneratorPage() {
     if (!_hasHydrated || !isAuthenticated) return null;
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <header className="bg-white shadow-sm border-b sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 py-4">
-                    <div className="flex items-center gap-4">
-                        <Link href="/admin/labs" className="text-slate-500 hover:text-slate-700">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                        <div className="flex items-center gap-2">
-                            <Barcode className="w-6 h-6 text-indigo-600" />
-                            <h1 className="text-xl font-semibold">Barcode Generator</h1>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            <LabInfrastructureTabs activeTab="barcodes" />
+
+            <main className="max-w-7xl mx-auto px-4 py-4 sm:px-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-xs border border-slate-200/80 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                            <Barcode className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Asset Barcode Generator</h1>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Generate, copy, and print Code-128 physical barcode labels for lab equipment</p>
                         </div>
                     </div>
+                    {selectedItems.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={printLabels}
+                                className="btn btn-primary text-xs flex items-center gap-2"
+                            >
+                                <Printer className="w-4 h-4" /> Print {selectedItems.length} Labels
+                            </button>
+                        </div>
+                    )}
                 </div>
-            </header>
 
-            <main className="max-w-7xl mx-auto px-4 py-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Left: Item Selection */}
                     <div className="bg-white rounded-xl shadow-sm p-6">

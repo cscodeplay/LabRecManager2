@@ -190,8 +190,6 @@ export default function Sidebar() {
 
     const [logoError, setLogoError] = useState(false);
     const [confirmingLogout, setConfirmingLogout] = useState(false);
-    const [hoveredPill, setHoveredPill] = useState(null);
-    const pillTimerRef = useRef(null);
 
     const [schoolInfo, setSchoolInfo] = useState(() => {
         try {
@@ -227,23 +225,6 @@ export default function Sidebar() {
             dockReveal.closeNow();
         }
     }, [pathname, dockReveal.isPinned]);
-
-    // Touch inactivity auto-hide for iPad & touch devices
-    const touchTimeoutRef = useRef(null);
-    const bumpTouchInactivity = useCallback(() => {
-        if (dockReveal.isPinned || confirmingLogout) return;
-        clearTimeout(touchTimeoutRef.current);
-        touchTimeoutRef.current = setTimeout(() => {
-            dockReveal.closeNow();
-        }, 3200);
-    }, [dockReveal, confirmingLogout]);
-
-    useEffect(() => {
-        if (dockReveal.isOpen && !dockReveal.isPinned) {
-            bumpTouchInactivity();
-        }
-        return () => clearTimeout(touchTimeoutRef.current);
-    }, [dockReveal.isOpen, dockReveal.isPinned, bumpTouchInactivity]);
 
     // Sync school info from user session and backend
     useEffect(() => {
@@ -306,17 +287,13 @@ export default function Sidebar() {
         fetchSchool();
     }, [user?.schoolId, user?.school]);
 
-    const clearPill = useCallback(() => {
-        clearTimeout(pillTimerRef.current);
-        setHoveredPill(null);
-    }, []);
-
-    // Multi-Pill Display States (Momentary on show, or continuous while hovering pinned sidebar)
+    // Multi-Pill Display States (Momentary on show, or continuous while hovering sidebar dock)
     const navRef = useRef(null);
     const itemRefs = useRef(new Map());
     const logoutRef = useRef(null);
     const [showAllPillsMomentary, setShowAllPillsMomentary] = useState(false);
     const [isPointerHoveringDock, setIsPointerHoveringDock] = useState(false);
+    const [hoveredItemKey, setHoveredItemKey] = useState(null);
     const [allPills, setAllPills] = useState([]);
     const momentaryTimerRef = useRef(null);
 
@@ -330,16 +307,14 @@ export default function Sidebar() {
         } else {
             setShowAllPillsMomentary(false);
             setIsPointerHoveringDock(false);
-            clearPill();
+            setHoveredItemKey(null);
         }
         return () => {
             if (momentaryTimerRef.current) clearTimeout(momentaryTimerRef.current);
         };
-    }, [dockReveal.isVisible, clearPill]);
+    }, [dockReveal.isVisible]);
 
-    useEffect(() => () => clearTimeout(pillTimerRef.current), []);
-
-    const shouldShowAllPills = showAllPillsMomentary || (dockReveal.isPinned && isPointerHoveringDock);
+    const shouldShowAllPills = isPointerHoveringDock || showAllPillsMomentary;
 
     const updateAllPills = useCallback(() => {
         if (!dockReveal.isVisible) {
@@ -360,7 +335,6 @@ export default function Sidebar() {
                     key,
                     label: el.getAttribute('data-label') || key,
                     top: rect.top + rect.height / 2,
-                    left: rect.right + 12,
                     tone: 'default',
                 });
             }
@@ -372,7 +346,6 @@ export default function Sidebar() {
                 key: 'logout',
                 label: t('auth.logout') || 'Logout',
                 top: rect.top + rect.height / 2,
-                left: rect.right + 12,
                 tone: 'danger',
             });
         }
@@ -382,30 +355,15 @@ export default function Sidebar() {
 
     useEffect(() => {
         if (shouldShowAllPills) {
-            const timer = setTimeout(updateAllPills, 40);
-            return () => clearTimeout(timer);
+            updateAllPills();
+            const t1 = setTimeout(updateAllPills, 40);
+            const t2 = setTimeout(updateAllPills, 160);
+            return () => {
+                clearTimeout(t1);
+                clearTimeout(t2);
+            };
         }
     }, [shouldShowAllPills, updateAllPills]);
-
-    const showPillFor = useCallback((el, label, tone = 'default') => {
-        if (!el || shouldShowAllPills) return;
-        clearTimeout(pillTimerRef.current);
-        const rect = el.getBoundingClientRect();
-        setHoveredPill({
-            label,
-            top: rect.top + rect.height / 2,
-            left: rect.right + 12,
-            tone,
-        });
-    }, [shouldShowAllPills]);
-
-    const schedulePillHide = useCallback(() => {
-        if (shouldShowAllPills) return;
-        clearTimeout(pillTimerRef.current);
-        pillTimerRef.current = setTimeout(() => {
-            setHoveredPill(null);
-        }, 60);
-    }, [shouldShowAllPills]);
 
     const handleLogout = async () => {
         setConfirmingLogout(true);
@@ -473,10 +431,8 @@ export default function Sidebar() {
                 }}
                 onPointerLeave={() => {
                     setIsPointerHoveringDock(false);
+                    setHoveredItemKey(null);
                 }}
-                onTouchStart={bumpTouchInactivity}
-                onTouchMove={bumpTouchInactivity}
-                onPointerDown={bumpTouchInactivity}
                 aria-label="Primary Navigation Dock"
                 style={{ willChange: dockReveal.isVisible ? 'transform, opacity' : 'auto' }}
                 className={`fixed top-14 left-3 bottom-3 w-16 z-[75] rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl flex flex-col items-center py-2.5 ${glassSurface} transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
@@ -534,8 +490,7 @@ export default function Sidebar() {
                 <nav
                     ref={navRef}
                     onScroll={() => {
-                        clearPill();
-                        if (shouldShowAllPills) updateAllPills();
+                        updateAllPills();
                     }}
                     className="flex-1 w-full overflow-y-auto overscroll-contain no-scrollbar px-2 py-2"
                     aria-label="Modules"
@@ -545,6 +500,7 @@ export default function Sidebar() {
                             const isActive = isNavItemActive(item.href, pathname, user?.role);
                             const Icon = item.icon;
                             const label = !item.labelKey.startsWith('nav.') ? item.labelKey : t(item.labelKey);
+                            const isHovered = hoveredItemKey === item.href;
 
                             return (
                                 <li key={item.href}>
@@ -556,26 +512,33 @@ export default function Sidebar() {
                                         data-label={label}
                                         href={item.href}
                                         onClick={() => {
-                                            clearPill();
                                             if (!dockReveal.isPinned) {
                                                 dockReveal.closeNow();
                                             }
                                         }}
                                         onPointerEnter={(e) => {
                                             if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                                                showPillFor(e.currentTarget, label);
+                                                setIsPointerHoveringDock(true);
+                                                setHoveredItemKey(item.href);
                                             }
                                         }}
-                                        onPointerLeave={schedulePillHide}
-                                        onFocus={(e) => showPillFor(e.currentTarget, label)}
-                                        onBlur={schedulePillHide}
+                                        onPointerLeave={() => {
+                                            setHoveredItemKey(null);
+                                        }}
+                                        onFocus={() => {
+                                            setIsPointerHoveringDock(true);
+                                            setHoveredItemKey(item.href);
+                                        }}
+                                        onBlur={() => {
+                                            setHoveredItemKey(null);
+                                        }}
                                         aria-label={label}
                                         aria-current={isActive ? 'page' : undefined}
-                                        className={`group w-11 h-11 rounded-full flex items-center justify-center border transition-colors active:scale-95 ${
+                                        className={`group w-11 h-11 rounded-full flex items-center justify-center border transition-all duration-150 active:scale-95 ${
                                             isActive
                                                 ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-400 dark:border-primary-500 ring-2 ring-primary-500/20 shadow-xs'
                                                 : 'bg-slate-100/90 dark:bg-slate-800/90 border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-200/80 dark:hover:bg-slate-700'
-                                        }`}
+                                        } ${isHovered ? 'scale-110 z-10 shadow-md ring-2 ring-primary-500/40' : 'scale-100'}`}
                                     >
                                         <Icon className="w-6 h-6 flex-shrink-0 transition-transform duration-150 group-hover:scale-105" />
                                     </Link>
@@ -593,58 +556,60 @@ export default function Sidebar() {
                         onClick={handleLogout}
                         onPointerEnter={(e) => {
                             if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                                showPillFor(e.currentTarget, t('auth.logout') || 'Logout', 'danger');
+                                setIsPointerHoveringDock(true);
+                                setHoveredItemKey('logout');
                             }
                         }}
-                        onPointerLeave={schedulePillHide}
-                        onFocus={(e) => showPillFor(e.currentTarget, t('auth.logout') || 'Logout', 'danger')}
-                        onBlur={schedulePillHide}
+                        onPointerLeave={() => {
+                            setHoveredItemKey(null);
+                        }}
+                        onFocus={() => {
+                            setIsPointerHoveringDock(true);
+                            setHoveredItemKey('logout');
+                        }}
+                        onBlur={() => {
+                            setHoveredItemKey(null);
+                        }}
                         aria-label={t('auth.logout') || 'Logout'}
-                        className="w-11 h-11 rounded-full bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/70 flex items-center justify-center transition-colors active:scale-95 cursor-pointer"
+                        className={`w-11 h-11 rounded-full bg-red-50 dark:bg-red-950/50 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/70 flex items-center justify-center transition-all duration-150 active:scale-95 cursor-pointer ${
+                            hoveredItemKey === 'logout' ? 'scale-110 shadow-md ring-2 ring-red-400/50' : 'scale-100'
+                        }`}
                     >
                         <LogOut className="w-5 h-5" />
                     </button>
                 </div>
             </aside>
 
-            {/* All Visible Items Label Pills (Momentary on display, or while mouse/pencil hovers over pinned sidebar) */}
-            {shouldShowAllPills && dockReveal.isVisible ? (
-                allPills.map((pill) => (
-                    <div
-                        key={pill.key}
-                        role="tooltip"
-                        style={{
-                            top: `${pill.top}px`,
-                            left: `${pill.left}px`,
-                            transform: 'translate3d(0, -50%, 0)',
-                        }}
-                        className={`fixed z-[90] px-4 py-1.5 rounded-full shadow-xl border text-xs font-bold whitespace-nowrap pointer-events-none motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 ${
-                            pill.tone === 'danger'
-                                ? 'bg-red-600 text-white border-red-400 shadow-red-950/40'
-                                : 'bg-slate-900 dark:bg-slate-800 text-white border-slate-700/90 shadow-slate-950/60'
-                        }`}
-                    >
-                        {pill.label}
-                    </div>
-                ))
-            ) : hoveredPill && dockReveal.isVisible ? (
-                /* Single Reused Pill-Shaped Hover Label Portal */
-                <div
-                    role="tooltip"
-                    style={{
-                        top: `${hoveredPill.top}px`,
-                        left: `${hoveredPill.left}px`,
-                        transform: 'translate3d(0, -50%, 0)',
-                    }}
-                    className={`fixed z-[90] px-4 py-1.5 rounded-full shadow-xl border text-xs font-bold whitespace-nowrap pointer-events-none motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-100 ${
-                        hoveredPill.tone === 'danger'
-                            ? 'bg-red-600 text-white border-red-400'
-                            : 'bg-slate-900 text-white border-slate-700'
-                    }`}
-                >
-                    {hoveredPill.label}
-                </div>
-            ) : null}
+            {/* Synchronized Label Pills Rail: All pills appear and disappear together, maintaining constant 12px relative gap in pinned & unpinned states */}
+            {shouldShowAllPills && dockReveal.isVisible && allPills.length > 0 && (
+                allPills.map((pill) => {
+                    const isHovered = hoveredItemKey === pill.key;
+                    return (
+                        <div
+                            key={pill.key}
+                            role="tooltip"
+                            style={{
+                                position: 'fixed',
+                                top: `${pill.top}px`,
+                                left: '88px',
+                                transform: `translate3d(0, -50%, 0) ${isHovered ? 'scale(1.10)' : 'scale(1)'}`,
+                                willChange: 'transform, opacity',
+                            }}
+                            className={`z-[90] px-4 py-1.5 rounded-full border text-xs whitespace-nowrap pointer-events-none transition-all duration-150 origin-left motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 ${
+                                isHovered
+                                    ? pill.tone === 'danger'
+                                        ? 'bg-red-600 text-white border-red-300 ring-2 ring-red-400 shadow-2xl shadow-red-950/60 font-black'
+                                        : 'bg-primary-950 dark:bg-slate-900 text-white border-primary-400 ring-2 ring-primary-400/50 shadow-2xl shadow-primary-950/70 font-black'
+                                    : pill.tone === 'danger'
+                                        ? 'bg-red-600/95 text-white border-red-400 font-bold shadow-lg shadow-red-950/30'
+                                        : 'bg-slate-900/95 dark:bg-slate-800/95 text-white border-slate-700/90 font-bold shadow-lg shadow-slate-950/40'
+                            }`}
+                        >
+                            {pill.label}
+                        </div>
+                    );
+                })
+            )}
         </>
     );
 }

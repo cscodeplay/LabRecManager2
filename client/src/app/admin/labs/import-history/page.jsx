@@ -7,6 +7,7 @@ import { ArrowLeft, History, FileSpreadsheet, CheckCircle, AlertCircle, XCircle,
 import { useAuthStore } from '@/lib/store';
 import { labsAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
+import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 
 export default function ImportHistoryPage() {
     const router = useRouter();
@@ -71,22 +72,21 @@ export default function ImportHistoryPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50">
-            <header className="bg-white border-b border-slate-100 sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href="/admin/labs" className="text-slate-500 hover:text-slate-700">
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                        <div className="flex items-center gap-2">
-                            <History className="w-6 h-6 text-primary-500" />
-                            <h1 className="text-xl font-semibold text-slate-900">Import History</h1>
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+            <LabInfrastructureTabs activeTab="import-history" />
+
+            <main className="max-w-7xl mx-auto px-4 py-4 sm:px-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-xs border border-slate-200/80 dark:border-slate-800">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-950/60 border border-primary-200 dark:border-primary-800 flex items-center justify-center text-primary-600 dark:text-primary-400">
+                            <History className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Inventory Import History</h1>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Audit logs and results of batch CSV & Excel inventory imports</p>
                         </div>
                     </div>
                 </div>
-            </header>
-
-            <main className="max-w-7xl mx-auto px-4 py-6">
                 {history.length === 0 ? (
                     <div className="card p-12 text-center">
                         <FileSpreadsheet className="w-12 h-12 mx-auto mb-4 text-slate-300" />

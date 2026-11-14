@@ -77,19 +77,41 @@ router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
  * @route   POST /api/procurement/vendors
  * @desc    Create a vendor
  */
-router.post('/vendors', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.post('/vendors', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     try {
         const { name, contactPerson, email, phone, address, gstin, isLocal } = req.body;
-        console.log('Creating vendor:', { name, contactPerson, email, phone, address, gstin, isLocal, schoolId: req.user.schoolId });
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, message: 'Vendor name is required' });
+        }
+
+        let schoolId = req.user.schoolId;
+        if (!schoolId) {
+            const firstSchool = await prisma.school.findFirst({ select: { id: true } });
+            schoolId = firstSchool?.id;
+        }
+        if (!schoolId) {
+            return res.status(400).json({ success: false, message: 'Valid school reference is required' });
+        }
+
+        console.log('Creating vendor:', { name: name.trim(), contactPerson, email, phone, address, gstin, isLocal, schoolId });
         const vendor = await prisma.vendor.create({
-            data: { name, contactPerson, email, phone, address, gstin, isLocal: isLocal || false, schoolId: req.user.schoolId }
+            data: {
+                name: name.trim(),
+                contactPerson: contactPerson?.trim() || null,
+                email: email?.trim() || null,
+                phone: phone?.trim() || null,
+                address: address?.trim() || null,
+                gstin: gstin?.trim() || null,
+                isLocal: Boolean(isLocal),
+                schoolId
+            }
         });
-        res.status(201).json({ success: true, data: vendor, message: 'Vendor created' });
+        res.status(201).json({ success: true, data: vendor, message: 'Vendor created successfully' });
     } catch (error) {
         console.error('Vendor create error:', error);
         res.status(400).json({
             success: false,
-            message: 'Failed to create vendor',
+            message: error.message || 'Failed to create vendor',
             error: error.message,
             code: error.code,
             meta: error.meta
@@ -101,20 +123,31 @@ router.post('/vendors', authenticate, authorize('admin', 'principal'), asyncHand
  * @route   PUT /api/procurement/vendors/:id
  * @desc    Update a vendor
  */
-router.put('/vendors/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.put('/vendors/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     try {
         const { name, contactPerson, email, phone, address, gstin, isLocal } = req.body;
-        console.log('Updating vendor:', req.params.id, { name, contactPerson, email, phone, address, gstin, isLocal });
+        if (!name || !name.trim()) {
+            return res.status(400).json({ success: false, message: 'Vendor name is required' });
+        }
+        console.log('Updating vendor:', req.params.id, { name: name.trim(), contactPerson, email, phone, address, gstin, isLocal });
         const vendor = await prisma.vendor.update({
             where: { id: req.params.id },
-            data: { name, contactPerson, email, phone, address, gstin, isLocal }
+            data: {
+                name: name.trim(),
+                contactPerson: contactPerson?.trim() || null,
+                email: email?.trim() || null,
+                phone: phone?.trim() || null,
+                address: address?.trim() || null,
+                gstin: gstin?.trim() || null,
+                isLocal: Boolean(isLocal)
+            }
         });
-        res.json({ success: true, data: vendor, message: 'Vendor updated' });
+        res.json({ success: true, data: vendor, message: 'Vendor updated successfully' });
     } catch (error) {
         console.error('Vendor update error:', error);
         res.status(400).json({
             success: false,
-            message: 'Failed to update vendor',
+            message: error.message || 'Failed to update vendor',
             error: error.message,
             code: error.code,
             meta: error.meta
@@ -126,7 +159,7 @@ router.put('/vendors/:id', authenticate, authorize('admin', 'principal'), asyncH
  * @route   DELETE /api/procurement/vendors/:id
  * @desc    Delete a vendor
  */
-router.delete('/vendors/:id', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
+router.delete('/vendors/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     await prisma.vendor.delete({ where: { id: req.params.id } });
     res.json({ success: true, message: 'Vendor deleted' });
 }));

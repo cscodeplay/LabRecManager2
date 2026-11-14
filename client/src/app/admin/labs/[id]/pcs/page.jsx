@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet, Zap, Server, Tv, Headphones, ScanLine, Cable, Tag } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet, Zap, Server, Tv, Headphones, ScanLine, Cable, Tag, Check, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, filesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -104,6 +104,15 @@ export default function LabInventoryPage() {
     const [bulkShiftReason, setBulkShiftReason] = useState('');
     const [bulkShiftLoading, setBulkShiftLoading] = useState(false);
 
+    // Shift Requests Sub-section state (merged into equipment)
+    const [activeSection, setActiveSection] = useState('inventory'); // 'inventory' | 'shift_requests'
+    const [shiftRequests, setShiftRequests] = useState([]);
+    const [shiftRequestsLoading, setShiftRequestsLoading] = useState(false);
+    const [shiftActionLoading, setShiftActionLoading] = useState(null);
+    const [shiftStatusFilter, setShiftStatusFilter] = useState('');
+    const [shiftNotesModal, setShiftNotesModal] = useState({ open: false, request: null, action: '' });
+    const [shiftAdminNotes, setShiftAdminNotes] = useState('');
+
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!isAuthenticated) { router.push('/login'); return; }
@@ -112,6 +121,21 @@ export default function LabInventoryPage() {
         }
         loadData();
     }, [isAuthenticated, _hasHydrated]);
+
+    const loadShiftRequests = async () => {
+        setShiftRequestsLoading(true);
+        try {
+            const res = await labsAPI.getShiftRequests();
+            const all = res.data?.data?.shiftRequests || [];
+            // Show requests related to this lab (fromLab or toLab), or all if none found
+            const related = all.filter(r => r.fromLabId === params.id || r.toLabId === params.id);
+            setShiftRequests(related.length > 0 ? related : all);
+        } catch (error) {
+            console.error('Failed to load shift requests:', error);
+        } finally {
+            setShiftRequestsLoading(false);
+        }
+    };
 
     const loadData = async () => {
         setLoading(true);
@@ -126,10 +150,56 @@ export default function LabInventoryPage() {
             // Filter out current lab from available labs
             const allLabs = labsRes.data.data.labs || [];
             setAvailableLabs(allLabs.filter(l => l.id !== params.id));
+            loadShiftRequests();
         } catch (error) {
             toast.error('Failed to load lab data');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleApproveShift = (request) => {
+        setShiftNotesModal({ open: true, request, action: 'approve' });
+    };
+
+    const handleRejectShift = (request) => {
+        setShiftNotesModal({ open: true, request, action: 'reject' });
+    };
+
+    const confirmShiftAction = async () => {
+        const { request, action } = shiftNotesModal;
+        if (!request) return;
+        setShiftActionLoading(request.id);
+        try {
+            if (action === 'approve') {
+                const res = await labsAPI.approveShiftRequest(request.id, shiftAdminNotes);
+                toast.success(res.data?.message || 'Shift request approved successfully');
+            } else {
+                await labsAPI.rejectShiftRequest(request.id, shiftAdminNotes);
+                toast.success('Shift request rejected');
+            }
+            setShiftNotesModal({ open: false, request: null, action: '' });
+            setShiftAdminNotes('');
+            loadShiftRequests();
+            loadData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Action failed');
+        } finally {
+            setShiftActionLoading(null);
+        }
+    };
+
+    const handleCompleteShift = async (request) => {
+        setShiftActionLoading(request.id);
+        try {
+            await labsAPI.completeShiftRequest(request.id);
+            toast.success('Equipment transfer completed successfully');
+            loadShiftRequests();
+            loadData();
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to complete transfer');
+        } finally {
+            setShiftActionLoading(null);
         }
     };
 
@@ -150,6 +220,11 @@ export default function LabInventoryPage() {
 
         return Array.from(customFieldsFromItems).filter(f => !customFields.includes(f));
     }, [items, formData.itemType, customFields]);
+
+    const filteredShiftRequests = useMemo(() => {
+        if (!shiftStatusFilter) return shiftRequests;
+        return shiftRequests.filter(r => r.status === shiftStatusFilter);
+    }, [shiftRequests, shiftStatusFilter]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -563,7 +638,38 @@ export default function LabInventoryPage() {
             </header>
 
             <main className="max-w-7xl mx-auto px-4 py-6">
-                {/* Stock Summary Cards */}
+                {/* Section Selector: Equipment Inventory vs Shift Requests */}
+                <div className="flex items-center gap-2 mb-6 border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <button
+                        onClick={() => setActiveSection('inventory')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer ${
+                            activeSection === 'inventory'
+                                ? 'bg-primary-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                        }`}
+                    >
+                        <Package className="w-4 h-4" /> Equipment Inventory ({items.length})
+                    </button>
+                    <button
+                        onClick={() => { setActiveSection('shift_requests'); loadShiftRequests(); }}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition cursor-pointer ${
+                            activeSection === 'shift_requests'
+                                ? 'bg-primary-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                        }`}
+                    >
+                        <ArrowRightLeft className="w-4 h-4" /> Shift Requests
+                        {shiftRequests.filter(r => r.status === 'pending').length > 0 && (
+                            <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-amber-500 text-white font-bold">
+                                {shiftRequests.filter(r => r.status === 'pending').length}
+                            </span>
+                        )}
+                    </button>
+                </div>
+
+                {activeSection === 'inventory' ? (
+                    <>
+                        {/* Stock Summary Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
                     {Object.entries(ITEM_TYPES).map(([key, { label, icon: Icon, color }]) => {
                         const count = items.filter(i => i.itemType === key).length;
@@ -806,6 +912,162 @@ export default function LabInventoryPage() {
                                 })}
                             </tbody>
                         </table>
+                    </div>
+                )}
+                    </>
+                ) : (
+                    /* Shift Requests Merged View */
+                    <div className="space-y-6">
+                        {/* Summary KPI Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {[
+                                { status: 'pending', label: 'Pending Approval', color: 'amber', icon: Clock },
+                                { status: 'approved', label: 'Approved (Ready to Move)', color: 'blue', icon: CheckCircle },
+                                { status: 'completed', label: 'Completed Transfers', color: 'emerald', icon: Package },
+                                { status: 'rejected', label: 'Rejected', color: 'red', icon: XCircle }
+                            ].map(({ status, label, color, icon: Icon }) => {
+                                const count = shiftRequests.filter(r => r.status === status).length;
+                                return (
+                                    <div key={status} className={`card p-4 border-l-4 border-${color}-500 flex items-center justify-between`}>
+                                        <div>
+                                            <p className="text-2xl font-bold text-slate-900">{count}</p>
+                                            <p className="text-xs text-slate-500 font-medium">{label}</p>
+                                        </div>
+                                        <Icon className={`w-7 h-7 text-${color}-500 shrink-0`} />
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Filter Bar */}
+                        <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-xs border border-slate-200">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-slate-500">Filter by Status:</span>
+                                <select
+                                    value={shiftStatusFilter}
+                                    onChange={(e) => setShiftStatusFilter(e.target.value)}
+                                    className="input py-1 text-xs"
+                                >
+                                    <option value="">All Statuses</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="completed">Completed</option>
+                                    <option value="rejected">Rejected</option>
+                                </select>
+                            </div>
+                            <button
+                                onClick={loadShiftRequests}
+                                disabled={shiftRequestsLoading}
+                                className="btn btn-secondary text-xs flex items-center gap-1.5"
+                            >
+                                <RefreshCw className={`w-3.5 h-3.5 ${shiftRequestsLoading ? 'animate-spin' : ''}`} /> Refresh
+                            </button>
+                        </div>
+
+                        {/* Requests List */}
+                        {shiftRequestsLoading && shiftRequests.length === 0 ? (
+                            <div className="py-12 text-center">
+                                <div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto mb-2" />
+                                <p className="text-xs text-slate-400">Loading shift requests...</p>
+                            </div>
+                        ) : filteredShiftRequests.length === 0 ? (
+                            <div className="card p-12 text-center bg-white rounded-xl shadow-xs border border-slate-100">
+                                <ArrowRightLeft className="w-12 h-12 mx-auto text-slate-300 mb-3" />
+                                <h3 className="font-semibold text-slate-800 mb-1">No Shift Requests Found</h3>
+                                <p className="text-xs text-slate-500">
+                                    {shiftStatusFilter ? 'No requests match the selected filter.' : 'Equipment shift requests involving this lab will appear here.'}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {filteredShiftRequests.map((request) => {
+                                    const statusConfig = {
+                                        pending: { label: 'Pending', color: 'amber', icon: Clock },
+                                        approved: { label: 'Approved', color: 'blue', icon: CheckCircle },
+                                        rejected: { label: 'Rejected', color: 'red', icon: XCircle },
+                                        completed: { label: 'Completed', color: 'emerald', icon: Package }
+                                    }[request.status] || { label: request.status, color: 'slate', icon: Clock };
+                                    const StatusIcon = statusConfig.icon;
+                                    const isAdmin = ['admin', 'principal'].includes(user?.role);
+
+                                    return (
+                                        <div key={request.id} className="card p-5 bg-white rounded-xl shadow-xs border border-slate-200 hover:shadow-md transition">
+                                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                <div className="flex-1 space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold flex items-center gap-1 bg-${statusConfig.color}-100 text-${statusConfig.color}-700`}>
+                                                            <StatusIcon className="w-3 h-3" /> {statusConfig.label}
+                                                        </span>
+                                                        <span className="text-xs text-slate-400">
+                                                            {request.requestedAt ? new Date(request.requestedAt).toLocaleString() : ''}
+                                                        </span>
+                                                    </div>
+
+                                                    <h3 className="text-base font-bold text-slate-900">
+                                                        {request.item?.itemNumber || 'Equipment'}
+                                                        <span className="text-xs font-normal text-slate-500 ml-2">
+                                                            ({request.item?.brand} {request.item?.modelNo})
+                                                        </span>
+                                                    </h3>
+
+                                                    <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                                                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700">{request.fromLab?.name || 'Current Lab'}</span>
+                                                        <ArrowRightLeft className="w-3.5 h-3.5 text-slate-400" />
+                                                        <span className="bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-semibold">{request.toLab?.name || 'Destination Lab'}</span>
+                                                    </div>
+
+                                                    <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-2.5">
+                                                        <span className="font-semibold text-slate-700">Reason:</span> {request.reason}
+                                                    </p>
+
+                                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-400 pt-1">
+                                                        <span>Requested by: {request.requestedBy?.firstName} {request.requestedBy?.lastName}</span>
+                                                        {request.approvedBy && (
+                                                            <span>{request.status === 'rejected' ? 'Rejected' : 'Approved'} by: {request.approvedBy?.firstName} {request.approvedBy?.lastName}</span>
+                                                        )}
+                                                        {request.adminNotes && (
+                                                            <span className="text-amber-700 font-medium">Notes: {request.adminNotes}</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Actions */}
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {request.status === 'pending' && isAdmin && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleApproveShift(request)}
+                                                                disabled={shiftActionLoading === request.id}
+                                                                className="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer"
+                                                            >
+                                                                <Check className="w-3.5 h-3.5" /> Approve
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectShift(request)}
+                                                                disabled={shiftActionLoading === request.id}
+                                                                className="btn btn-sm bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer"
+                                                            >
+                                                                <X className="w-3.5 h-3.5" /> Reject
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {request.status === 'approved' && (
+                                                        <button
+                                                            onClick={() => handleCompleteShift(request)}
+                                                            disabled={shiftActionLoading === request.id}
+                                                            className="btn btn-sm btn-primary flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer"
+                                                        >
+                                                            <Package className="w-3.5 h-3.5" />
+                                                            {shiftActionLoading === request.id ? 'Completing...' : 'Complete Transfer'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
@@ -1471,6 +1733,68 @@ export default function LabInventoryPage() {
                                 className="btn btn-primary flex-1"
                             >
                                 {bulkShiftLoading ? 'Submitting...' : `Submit ${selectedItems.size} Request(s)`}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Shift Approval/Rejection Notes Modal */}
+            {shiftNotesModal.open && shiftNotesModal.request && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full shadow-xl">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                {shiftNotesModal.action === 'approve' ? 'Approve Transfer Request' : 'Reject Transfer Request'}
+                            </h3>
+                            <button
+                                onClick={() => setShiftNotesModal({ open: false, request: null, action: '' })}
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    Item: <strong className="text-slate-900 dark:text-white">{shiftNotesModal.request.item?.itemNumber}</strong>
+                                </p>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    Destination: <strong className="text-slate-900 dark:text-white">{shiftNotesModal.request.toLab?.name}</strong>
+                                </p>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                                    {shiftNotesModal.action === 'approve' ? 'Approval Notes (Optional)' : 'Reason for Rejection *'}
+                                </label>
+                                <textarea
+                                    value={shiftAdminNotes}
+                                    onChange={(e) => setShiftAdminNotes(e.target.value)}
+                                    placeholder={shiftNotesModal.action === 'approve' ? 'Add any instructions or remarks...' : 'Explain why this transfer is rejected...'}
+                                    className="input min-h-[90px] text-sm"
+                                    required={shiftNotesModal.action === 'reject'}
+                                />
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShiftNotesModal({ open: false, request: null, action: '' })}
+                                className="btn btn-secondary flex-1"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmShiftAction}
+                                disabled={shiftActionLoading === shiftNotesModal.request.id || (shiftNotesModal.action === 'reject' && !shiftAdminNotes.trim())}
+                                className={`btn flex-1 text-white ${
+                                    shiftNotesModal.action === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
+                                }`}
+                            >
+                                {shiftActionLoading === shiftNotesModal.request.id
+                                    ? 'Processing...'
+                                    : shiftNotesModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
                             </button>
                         </div>
                     </div>
