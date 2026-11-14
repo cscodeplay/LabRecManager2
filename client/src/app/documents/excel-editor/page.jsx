@@ -66,7 +66,7 @@ import {
 import * as xlsx from 'xlsx';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+
 import OfficeTabBar from '@/components/OfficeTabBar';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
@@ -3334,9 +3334,6 @@ export default function ExcelEditorPage() {
                         >
                             <Search size={14} className={isDark ? 'text-slate-400' : 'text-slate-600'} />
                         </button>
-
-                        {/* Theme Toggle (Light / Dark / High Contrast) */}
-                        <OfficeThemeToggle />
 
                         {/* Version History Button */}
                         <button

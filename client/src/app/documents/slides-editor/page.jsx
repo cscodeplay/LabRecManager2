@@ -45,7 +45,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+
 import OfficeTabBar from '@/components/OfficeTabBar';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
@@ -800,9 +800,6 @@ export default function SlidesEditorPage() {
                                 </>
                             )}
                         </div>
-
-                        {/* Theme Toggle */}
-                        <OfficeThemeToggle />
 
                         {/* Presentation Mode Button */}
                         <button

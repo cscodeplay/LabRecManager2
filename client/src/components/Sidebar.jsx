@@ -311,16 +311,84 @@ export default function Sidebar() {
         setHoveredPill(null);
     }, []);
 
+    // Multi-Pill Display States (Momentary on show, or continuous while hovering pinned sidebar)
+    const navRef = useRef(null);
+    const itemRefs = useRef(new Map());
+    const logoutRef = useRef(null);
+    const [showAllPillsMomentary, setShowAllPillsMomentary] = useState(false);
+    const [isPointerHoveringDock, setIsPointerHoveringDock] = useState(false);
+    const [allPills, setAllPills] = useState([]);
+    const momentaryTimerRef = useRef(null);
+
     useEffect(() => {
-        if (!dockReveal.isVisible) {
+        if (dockReveal.isVisible) {
+            setShowAllPillsMomentary(true);
+            if (momentaryTimerRef.current) clearTimeout(momentaryTimerRef.current);
+            momentaryTimerRef.current = setTimeout(() => {
+                setShowAllPillsMomentary(false);
+            }, 2500);
+        } else {
+            setShowAllPillsMomentary(false);
+            setIsPointerHoveringDock(false);
             clearPill();
         }
+        return () => {
+            if (momentaryTimerRef.current) clearTimeout(momentaryTimerRef.current);
+        };
     }, [dockReveal.isVisible, clearPill]);
 
     useEffect(() => () => clearTimeout(pillTimerRef.current), []);
 
+    const shouldShowAllPills = showAllPillsMomentary || (dockReveal.isPinned && isPointerHoveringDock);
+
+    const updateAllPills = useCallback(() => {
+        if (!dockReveal.isVisible) {
+            setAllPills([]);
+            return;
+        }
+        const navEl = navRef.current;
+        if (!navEl) return;
+        const navRect = navEl.getBoundingClientRect();
+        const pills = [];
+
+        itemRefs.current.forEach((el, key) => {
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            // Check if item is within visible nav viewport
+            if (rect.top >= navRect.top - 8 && rect.bottom <= navRect.bottom + 8) {
+                pills.push({
+                    key,
+                    label: el.getAttribute('data-label') || key,
+                    top: rect.top + rect.height / 2,
+                    left: rect.right + 12,
+                    tone: 'default',
+                });
+            }
+        });
+
+        if (logoutRef.current) {
+            const rect = logoutRef.current.getBoundingClientRect();
+            pills.push({
+                key: 'logout',
+                label: t('auth.logout') || 'Logout',
+                top: rect.top + rect.height / 2,
+                left: rect.right + 12,
+                tone: 'danger',
+            });
+        }
+
+        setAllPills(pills);
+    }, [dockReveal.isVisible, t]);
+
+    useEffect(() => {
+        if (shouldShowAllPills) {
+            const timer = setTimeout(updateAllPills, 40);
+            return () => clearTimeout(timer);
+        }
+    }, [shouldShowAllPills, updateAllPills]);
+
     const showPillFor = useCallback((el, label, tone = 'default') => {
-        if (!el) return;
+        if (!el || shouldShowAllPills) return;
         clearTimeout(pillTimerRef.current);
         const rect = el.getBoundingClientRect();
         setHoveredPill({
@@ -329,14 +397,15 @@ export default function Sidebar() {
             left: rect.right + 12,
             tone,
         });
-    }, []);
+    }, [shouldShowAllPills]);
 
     const schedulePillHide = useCallback(() => {
+        if (shouldShowAllPills) return;
         clearTimeout(pillTimerRef.current);
         pillTimerRef.current = setTimeout(() => {
             setHoveredPill(null);
         }, 60);
-    }, []);
+    }, [shouldShowAllPills]);
 
     const handleLogout = async () => {
         setConfirmingLogout(true);
@@ -397,6 +466,14 @@ export default function Sidebar() {
             {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
             <aside
                 {...dockReveal.containerProps}
+                onPointerEnter={(e) => {
+                    if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                        setIsPointerHoveringDock(true);
+                    }
+                }}
+                onPointerLeave={() => {
+                    setIsPointerHoveringDock(false);
+                }}
                 onTouchStart={bumpTouchInactivity}
                 onTouchMove={bumpTouchInactivity}
                 onPointerDown={bumpTouchInactivity}
@@ -455,7 +532,11 @@ export default function Sidebar() {
 
                 {/* Scrollable Icon-Only Navigation Rail (Round Icon Backgrounds) */}
                 <nav
-                    onScroll={clearPill}
+                    ref={navRef}
+                    onScroll={() => {
+                        clearPill();
+                        if (shouldShowAllPills) updateAllPills();
+                    }}
                     className="flex-1 w-full overflow-y-auto overscroll-contain no-scrollbar px-2 py-2"
                     aria-label="Modules"
                 >
@@ -468,6 +549,11 @@ export default function Sidebar() {
                             return (
                                 <li key={item.href}>
                                     <Link
+                                        ref={(el) => {
+                                            if (el) itemRefs.current.set(item.href, el);
+                                            else itemRefs.current.delete(item.href);
+                                        }}
+                                        data-label={label}
                                         href={item.href}
                                         onClick={() => {
                                             clearPill();
@@ -502,6 +588,7 @@ export default function Sidebar() {
                 {/* Static Footer: Round Logout Icon with Confirmation */}
                 <div className="w-full px-2 pt-2 border-t border-slate-200/80 dark:border-slate-800 flex flex-col items-center shrink-0">
                     <button
+                        ref={logoutRef}
                         type="button"
                         onClick={handleLogout}
                         onPointerEnter={(e) => {
@@ -520,8 +607,28 @@ export default function Sidebar() {
                 </div>
             </aside>
 
-            {/* Single Reused Pill-Shaped Hover Label Portal (Never clipped by overflow-y-auto) */}
-            {hoveredPill && dockReveal.isVisible && (
+            {/* All Visible Items Label Pills (Momentary on display, or while mouse/pencil hovers over pinned sidebar) */}
+            {shouldShowAllPills && dockReveal.isVisible ? (
+                allPills.map((pill) => (
+                    <div
+                        key={pill.key}
+                        role="tooltip"
+                        style={{
+                            top: `${pill.top}px`,
+                            left: `${pill.left}px`,
+                            transform: 'translate3d(0, -50%, 0)',
+                        }}
+                        className={`fixed z-[90] px-4 py-1.5 rounded-full shadow-xl border text-xs font-bold whitespace-nowrap pointer-events-none motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-150 ${
+                            pill.tone === 'danger'
+                                ? 'bg-red-600 text-white border-red-400 shadow-red-950/40'
+                                : 'bg-slate-900 dark:bg-slate-800 text-white border-slate-700/90 shadow-slate-950/60'
+                        }`}
+                    >
+                        {pill.label}
+                    </div>
+                ))
+            ) : hoveredPill && dockReveal.isVisible ? (
+                /* Single Reused Pill-Shaped Hover Label Portal */
                 <div
                     role="tooltip"
                     style={{
@@ -537,7 +644,7 @@ export default function Sidebar() {
                 >
                     {hoveredPill.label}
                 </div>
-            )}
+            ) : null}
         </>
     );
 }

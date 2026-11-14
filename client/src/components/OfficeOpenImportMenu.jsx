@@ -15,7 +15,8 @@ export default function OfficeOpenImportMenu({
     accept = '.pdf,application/pdf',
     onFileSelected,
     onOpenOfficeDoc,
-    className = ''
+    className = '',
+    iconOnly = false
 }) {
     const router = useRouter();
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -138,12 +139,17 @@ export default function OfficeOpenImportMenu({
             <button
                 type="button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5 shadow-xs transition-colors"
+                className={`h-8 ${iconOnly ? 'w-8 px-0 justify-center' : 'px-2.5'} rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 font-medium text-xs flex items-center gap-1.5 shadow-xs transition-colors`}
                 title="Open or Import Documents"
+                aria-label="Open or Import Documents"
             >
                 <FolderOpen className="w-3.5 h-3.5 text-rose-500" />
-                <span>Open / Import</span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
+                {!iconOnly && (
+                    <>
+                        <span>Open / Import</span>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                    </>
+                )}
             </button>
 
             {/* Dropdown Popover */}

@@ -61,7 +61,7 @@ import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+
 import OfficeTabBar from '@/components/OfficeTabBar';
 import VersionHistoryDrawer from '@/components/VersionHistoryDrawer';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
@@ -993,9 +993,6 @@ export default function WordEditorPage() {
                                 </>
                             )}
                         </div>
-
-                        {/* Theme Toggle */}
-                        <OfficeThemeToggle />
 
                         {/* Unified Collective Export Dropdown */}
                         <div className="relative export-menu-container">

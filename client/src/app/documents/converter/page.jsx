@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+
 import { useThemeStore } from '@/lib/store';
 
 const PRESET_CONVERSIONS = [
@@ -397,8 +397,6 @@ export default function UniversalDocumentConverterPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <OfficeThemeToggle />
-
                     <button
                         onClick={() => router.push('/live-board')}
                         className={`px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center gap-1.5 ${isDark ? 'text-slate-300 hover:text-white hover:bg-slate-800' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200'}`}

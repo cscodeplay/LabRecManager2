@@ -6,6 +6,8 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
 const notificationService = require('../services/notificationService');
 
+const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+
 /**
  * Generate unique ticket number (TKT-000001 format)
  */
@@ -80,6 +82,9 @@ router.post('/', authenticate, [
 
     // Resolve academic year: explicit body param > X-Academic-Session header > school's current active session
     let resolvedYearId = academicYearId || req.headers['x-academic-session'] || null;
+    if (!isValidUuid(resolvedYearId)) {
+        resolvedYearId = null;
+    }
     if (!resolvedYearId && req.user?.schoolId) {
         const currentYear = await prisma.academicYear.findFirst({
             where: { schoolId: req.user.schoolId, isCurrent: true }
@@ -157,7 +162,8 @@ router.post('/', authenticate, [
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { status, priority, category, labId, myTickets, academicYearId, all, page = 1, limit = 20 } = req.query;
-    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const where = {};
 
     // Filter by academic session

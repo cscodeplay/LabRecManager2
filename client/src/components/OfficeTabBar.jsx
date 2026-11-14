@@ -71,14 +71,14 @@ export default function OfficeTabBar({
                             {tab.isDirty && (
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Unsaved changes" />
                             )}
-                            {tabs.length > 1 && (
+                            {onCloseTab && (
                                 <button
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         onCloseTab(tab.id, e);
                                     }}
-                                    className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition opacity-0 group-hover:opacity-100 shrink-0"
+                                    className="p-0.5 rounded-full hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-950 dark:hover:text-rose-400 text-slate-400 transition opacity-70 group-hover:opacity-100 shrink-0"
                                     title="Close Tab"
                                     aria-label="Close Tab"
                                 >

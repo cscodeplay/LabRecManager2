@@ -6,7 +6,7 @@ import {
     Search, X, Pin, PinOff, Calendar, ChevronDown, ChevronUp,
     FileText, Folder, BookOpen, Users, GraduationCap,
     Sparkles, HelpCircle, Ticket, Wrench, Video, ArrowRight,
-    CornerDownLeft, Clock, RotateCcw
+    CornerDownLeft, Clock, RotateCcw, Sun, Moon
 } from 'lucide-react';
 import {
     FluentWordDocIcon,
@@ -18,7 +18,7 @@ import {
 } from '@/components/FluentAppIcons';
 import api from '@/lib/api';
 import SessionSelector from './SessionSelector';
-import { useAuthStore } from '@/lib/store';
+import { useAuthStore, useThemeStore } from '@/lib/store';
 import { useEdgeHoverReveal } from '@/hooks/useEdgeHoverReveal';
 
 const CATEGORIES = [
@@ -89,6 +89,33 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
 
     const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
     const sessionMenuOpenRef = useRef(false);
+
+    // Global Theme Store
+    const { theme, setTheme, initializeTheme } = useThemeStore();
+    const [isDark, setIsDark] = useState(false);
+
+    useEffect(() => {
+        initializeTheme();
+    }, [initializeTheme]);
+
+    useEffect(() => {
+        const checkDark = () => {
+            if (theme === 'dark' || theme === 'contrast') {
+                setIsDark(true);
+            } else if (theme === 'light') {
+                setIsDark(false);
+            } else {
+                setIsDark(typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            }
+        };
+        checkDark();
+    }, [theme]);
+
+    const toggleTheme = (e) => {
+        e?.stopPropagation?.();
+        const nextTheme = isDark ? 'light' : 'dark';
+        setTheme(nextTheme);
+    };
 
     const handleSessionOpenChange = useCallback((open) => {
         sessionMenuOpenRef.current = open;
@@ -552,6 +579,17 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                         }`}
                     >
                         {topBarReveal.isPinned ? <PinOff className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
+                    </button>
+
+                    {/* Dark Mode Toggle directly after Pin button */}
+                    <button
+                        type="button"
+                        onClick={toggleTheme}
+                        aria-label={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+                        title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
+                        className="w-8 h-8 rounded-full border flex items-center justify-center shrink-0 transition-colors active:scale-95 cursor-pointer bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    >
+                        {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600 dark:text-slate-300" />}
                     </button>
                 </header>
 

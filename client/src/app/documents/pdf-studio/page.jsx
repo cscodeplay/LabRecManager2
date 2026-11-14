@@ -73,11 +73,12 @@ import {
     Cloud,
     Folder,
     FolderPlus,
-    ScanText
+    ScanText,
+    CloudUpload
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+import PdfProcessingExportOverlay from '@/components/PdfProcessingExportOverlay';
 import OfficeTabBar from '@/components/OfficeTabBar';
 import OfficeAppBlurLoader from '@/components/OfficeAppBlurLoader';
 import OfficeOpenImportMenu from '@/components/OfficeOpenImportMenu';
@@ -2552,12 +2553,28 @@ export default function PdfStudioPage() {
         }
     }, [theme]);
 
-    // Unified Multi-PDF Source Documents & Pages
+    // Unified Multi-PDF Source Documents & Pages (Isolated Documents - Never Combined)
     const [sourceDocs, setSourceDocs] = useState([]); // [{ id, file, name, size, pdfDoc, pageCount }]
-    const [pages, setPages] = useState([]); // [{ id, docIndex, originalPageNum, pageIndex, rotation: 0 }]
+    const [pages, setPages] = useState([]); // [{ id, docId, docIndex, originalPageNum, pageIndex, rotation: 0 }]
     const [loading, setLoading] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [activePdfDocId, setActivePdfDocId] = useState(null);
+
+    // Subtle page selection for PDF processing & export
+    const [checkedPageIds, setCheckedPageIds] = useState(new Set());
+    const [showProcessingOverlay, setShowProcessingOverlay] = useState(false);
+
+    // Active document isolated from other documents
+    const activeDoc = useMemo(() => {
+        if (sourceDocs.length === 0) return null;
+        return sourceDocs.find(d => d.id === activePdfDocId) || sourceDocs[0];
+    }, [sourceDocs, activePdfDocId]);
+
+    // Active document pages: DO NOT COMBINE DOCUMENTS IN EITHER VIEW
+    const activePages = useMemo(() => {
+        if (!activeDoc) return [];
+        return pages.filter(p => (p.docId ? p.docId === activeDoc.id : (sourceDocs[p.docIndex]?.id === activeDoc.id || p.docIndex === 0)));
+    }, [pages, activeDoc, sourceDocs]);
 
     const pdfTabs = useMemo(() => {
         if (sourceDocs.length === 0) {
@@ -2572,20 +2589,32 @@ export default function PdfStudioPage() {
 
     const handleSelectPdfTab = (docId) => {
         setActivePdfDocId(docId);
-        const firstPageIdx = pages.findIndex(p => sourceDocs[p.docIndex]?.id === docId);
-        if (firstPageIdx >= 0) {
-            setCurrentPageIndex?.(firstPageIdx);
-            const el = document.getElementById(`pdf-page-wrapper-${firstPageIdx}`);
+        setCheckedPageIds(new Set());
+        setSelectedAnnotationPageIndex(0);
+        setCurrentPageIndex?.(0);
+        if (typeof window !== 'undefined') {
+            const el = document.getElementById('pdf-page-wrapper-0');
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     };
 
     const handleClosePdfTab = (docId, e) => {
         if (e) e.stopPropagation();
-        const docIdx = sourceDocs.findIndex(d => d.id === docId);
-        if (docIdx >= 0) {
-            setPages(prev => prev.filter(p => p.docIndex !== docIdx));
-            setSourceDocs(prev => prev.filter(d => d.id !== docId));
+        const remainingDocs = sourceDocs.filter(d => d.id !== docId);
+        setSourceDocs(remainingDocs);
+        setPages(prev => prev.filter(p => (p.docId ? p.docId !== docId : sourceDocs[p.docIndex]?.id !== docId)));
+        setCheckedPageIds(new Set());
+
+        if (activePdfDocId === docId) {
+            const nextDoc = remainingDocs[0];
+            setActivePdfDocId(nextDoc ? nextDoc.id : null);
+            setSelectedAnnotationPageIndex(0);
+            setCurrentPageIndex?.(0);
+        }
+
+        if (remainingDocs.length === 0) {
+            handleClearStudioSession();
+        } else {
             toast.success('Document tab closed');
         }
     };
@@ -3218,8 +3247,9 @@ export default function PdfStudioPage() {
                     }
                 }
                 const pageCount = docProxy ? docProxy.numPages : 1;
+                const docUniqueId = `doc_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 6)}`;
                 newSourceDocs.push({
-                    id: `doc_${docIdx}_${Date.now()}_${i}`,
+                    id: docUniqueId,
                     file: curFile,
                     name: curFile.name,
                     size: (curFile.size / (1024 * 1024)).toFixed(2),
@@ -3240,7 +3270,8 @@ export default function PdfStudioPage() {
                         }
                     } catch {}
                     newPages.push({
-                        id: `page_${docIdx}_${p}_${Date.now()}_${Math.random()}`,
+                        id: `page_${docUniqueId}_${p}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                        docId: docUniqueId,
                         docIndex: docIdx,
                         originalPageNum: p + 1,
                         pageIndex: p,
@@ -3256,6 +3287,9 @@ export default function PdfStudioPage() {
             const updatedPages = [...pages, ...newPages];
             setSourceDocs(updatedDocs);
             setPages(updatedPages);
+            if (!activePdfDocId && newSourceDocs.length > 0) {
+                setActivePdfDocId(newSourceDocs[0].id);
+            }
             pushHistory(updatedPages, annotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
             toast.success(`Imported ${newPages.length} page(s) from ${fileArr.length} PDF file(s)!`, { id: 'pdf-load' });
         } catch (err) {
@@ -3706,18 +3740,20 @@ export default function PdfStudioPage() {
     };
 
     const rotatePage = (index, delta = 90) => {
-        const targetPage = pages[index];
-        let nextAnnotations = annotations;
-        if (targetPage) {
-            nextAnnotations = annotations.map(a => {
-                const matches = a.pageId ? a.pageId === targetPage.id : a.pageIndex === index;
-                return matches ? rotateAnnotation90CW(a) : a;
-            });
-            setAnnotations(nextAnnotations);
-        }
+        const targetPage = activePages[index];
+        if (!targetPage) return;
+        const globalIdx = pages.findIndex(p => p.id === targetPage.id);
+        if (globalIdx < 0) return;
+
+        let nextAnnotations = annotations.map(a => {
+            const matches = a.pageId ? a.pageId === targetPage.id : a.pageIndex === index;
+            return matches ? rotateAnnotation90CW(a) : a;
+        });
+        setAnnotations(nextAnnotations);
+
         setPages(prev => {
             const copy = [...prev];
-            copy[index] = { ...copy[index], rotation: (copy[index].rotation + delta) % 360 };
+            copy[globalIdx] = { ...copy[globalIdx], rotation: (copy[globalIdx].rotation + delta) % 360 };
             pushHistory(copy, nextAnnotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
             return copy;
         });
@@ -3727,12 +3763,14 @@ export default function PdfStudioPage() {
     };
 
     const deletePage = (index) => {
-        if (pages.length <= 1) {
+        if (activePages.length <= 1) {
             toast.error('Document must contain at least one page');
             return;
         }
+        const targetPage = activePages[index];
+        if (!targetPage) return;
         setPages(prev => {
-            const copy = prev.filter((_, i) => i !== index);
+            const copy = prev.filter(p => p.id !== targetPage.id);
             pushHistory(copy, annotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
             return copy;
         });
@@ -3740,10 +3778,14 @@ export default function PdfStudioPage() {
     };
 
     const duplicatePage = (index) => {
+        const targetPage = activePages[index];
+        if (!targetPage) return;
+        const globalIdx = pages.findIndex(p => p.id === targetPage.id);
+        if (globalIdx < 0) return;
+
         setPages(prev => {
             const copy = [...prev];
-            const item = copy[index];
-            copy.splice(index + 1, 0, { ...item, id: `page_${Date.now()}_${Math.random()}` });
+            copy.splice(globalIdx + 1, 0, { ...targetPage, id: `page_${Date.now()}_${Math.random()}` });
             pushHistory(copy, annotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
             return copy;
         });
@@ -3751,13 +3793,23 @@ export default function PdfStudioPage() {
     };
 
     const movePage = (fromIndex, toIndex) => {
-        if (toIndex < 0 || toIndex >= pages.length || fromIndex === toIndex) return;
+        if (toIndex < 0 || toIndex >= activePages.length || fromIndex === toIndex) return;
+        const pageFrom = activePages[fromIndex];
+        const pageTo = activePages[toIndex];
+        if (!pageFrom || !pageTo) return;
+
         setPages(prev => {
-            const copy = [...prev];
-            const [moved] = copy.splice(fromIndex, 1);
-            copy.splice(toIndex, 0, moved);
-            pushHistory(copy, annotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
-            return copy;
+            const currentDocId = activeDoc?.id;
+            const docPages = prev.filter(p => (p.docId ? p.docId === currentDocId : true));
+            const otherPages = prev.filter(p => (p.docId ? p.docId !== currentDocId : false));
+
+            const docCopy = [...docPages];
+            const [moved] = docCopy.splice(fromIndex, 1);
+            docCopy.splice(toIndex, 0, moved);
+
+            const finalPages = [...docCopy, ...otherPages];
+            pushHistory(finalPages, annotations, appliedWatermarkText, appliedWatermarkColor, appliedWatermarkImage, appliedWatermarkImageDataUrl);
+            return finalPages;
         });
         toast.success(`Moved page to position ${toIndex + 1}`, { id: 'move-toast', duration: 1000 });
     };
@@ -6064,7 +6116,7 @@ export default function PdfStudioPage() {
                 <div className="w-full flex justify-center py-1 px-2 sm:px-4 z-40 shrink-0 pointer-events-none">
                     <div
                         className={`pointer-events-auto rounded-2xl border shadow-xl backdrop-blur-md px-2.5 sm:px-3 py-1 flex items-center justify-between gap-1 sm:gap-1.5 max-w-full overflow-visible transition-all duration-300 ${
-                            (activeTool !== 'select' || zoomMenuOpen || showExportMenu || stampMenuOpen || showWatermarkBar || selectedTextBoxId || selectedShapeId || selectedCalloutId)
+                            (activeTool !== 'select' || zoomMenuOpen || showProcessingOverlay || stampMenuOpen || showWatermarkBar || selectedTextBoxId || selectedShapeId || selectedCalloutId)
                                 ? 'opacity-100 shadow-2xl scale-100'
                                 : 'opacity-40 hover:opacity-100 hover:shadow-2xl focus-within:opacity-100'
                         } ${
@@ -6949,132 +7001,15 @@ export default function PdfStudioPage() {
                         </button>
 
                         {/* Collective Export Dropdown */}
-                        <div className="relative export-dropdown-container">
-                            <button
-                                type="button"
-                                onClick={() => setShowExportMenu(!showExportMenu)}
-                                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition"
-                            >
-                                <Download size={13} />
-                                <span>Export</span>
-                                <ChevronDown size={12} />
-                            </button>
-
-                            {showExportMenu && (
-                                <div className={`absolute right-0 mt-1 w-64 rounded-2xl border p-1.5 shadow-2xl z-[60] ${
-                                    isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
-                                }`}>
-                                    <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                        Office Media Files
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={handleSaveToOfficeMediaFiles}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 text-rose-500 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-rose-50'
-                                        }`}
-                                    >
-                                        <Save size={14} />
-                                        <div className="flex-1">
-                                            <div>Save to Office Media Files</div>
-                                            <div className="text-[10px] font-normal text-slate-400">Stores in CloudVault &rarr; PDF Documents</div>
-                                        </div>
-                                    </button>
-
-                                    <div className={`my-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`} />
-
-                                    <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                        Download PDF
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportReorganized('none')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <Download size={13} className="text-emerald-500" />
-                                        <span>Download Standard PDF</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportReorganized('basic')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <Sliders size={13} className="text-blue-500" />
-                                        <span>Download Basic Compressed (~40%)</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportReorganized('strong')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <Archive size={13} className="text-amber-500" />
-                                        <span>Download Strong Compressed (~75%)</span>
-                                    </button>
-
-                                    <div className={`my-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`} />
-
-                                    <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                        Convert & Print
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportAs('docx')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <FileText size={13} className="text-blue-500" />
-                                        <span>Convert to Word (.docx)</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportAs('xlsx')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <FileSpreadsheet size={13} className="text-emerald-500" />
-                                        <span>Convert to Excel (.xlsx)</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleExportAs('txt')}
-                                        disabled={processing}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <FileCode size={13} className="text-purple-500" />
-                                        <span>Extract Plain Text (.txt)</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowExportMenu(false);
-                                            setShowPrintModal(true);
-                                        }}
-                                        className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition ${
-                                            isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
-                                        }`}
-                                    >
-                                        <Printer size={13} className="text-slate-400" />
-                                        <span>Print Document...</span>
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowProcessingOverlay(true)}
+                            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
+                            title="Open Export & PDF Processing Overlay (Merge, Compress, OCR, Extract, Print, CloudVault)"
+                        >
+                            <Download size={13} />
+                            <span>Export</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -7531,31 +7466,34 @@ return (
             <header className={`h-12 border-b px-3 flex items-center justify-between shrink-0 shadow-xs transition-colors ${
                 isDark ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-800'
             }`}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     <button
                         type="button"
                         onClick={() => router.push('/documents')}
                         className={`p-1.5 rounded-lg transition ${isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-white' : 'hover:bg-slate-100 text-slate-600 hover:text-slate-900'}`}
                         title="Back to Documents Hub"
+                        aria-label="Back to Documents Hub"
                     >
                         <ArrowLeft size={16} />
                     </button>
+
                     <button
                         type="button"
                         onClick={() => setShowWelcomeHub(true)}
-                        className={`p-1.5 rounded-lg transition flex items-center gap-1 text-xs font-semibold ${
+                        className={`h-8 w-8 rounded-lg transition flex items-center justify-center ${
                             isDark ? 'text-rose-300 hover:text-white hover:bg-slate-800' : 'text-rose-600 hover:text-rose-800 hover:bg-rose-50'
                         }`}
-                        title="Open Welcome Launchpad & Templates"
+                        title="New / Templates - Open Welcome Launchpad & Templates"
+                        aria-label="New / Templates"
                     >
-                        <Sparkles size={14} className="text-rose-500" />
-                        <span className="hidden sm:inline">New / Templates</span>
+                        <Sparkles size={15} className="text-rose-500" />
                     </button>
 
-                    {/* Universal File Open / Import Menu */}
+                    {/* Universal File Open / Import Menu (Icon-Only with Tooltip) */}
                     <OfficeOpenImportMenu
                         currentApp="pdf"
                         accept=".pdf,application/pdf"
+                        iconOnly={true}
                         onFileSelected={(file) => handleFilesSelect([file])}
                         onOpenOfficeDoc={handleOpenOfficeDoc}
                     />
@@ -7564,86 +7502,20 @@ return (
                         <button
                             type="button"
                             onClick={handleClearStudioSession}
-                            className={`px-2 py-1 rounded-lg border text-xs font-semibold flex items-center gap-1 transition ${
+                            className={`h-8 w-8 rounded-lg border flex items-center justify-center transition ${
                                 isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-300' : 'border-slate-200 hover:bg-slate-100 text-slate-600'
                             }`}
-                            title="Clear loaded PDF and start a new session"
+                            title="New / Clear - Clear loaded PDF and start a new session"
+                            aria-label="New / Clear Session"
                         >
-                            <Plus size={13} className="text-rose-500" />
-                            <span className="hidden sm:inline">New / Clear</span>
+                            <Plus size={15} className="text-rose-500" />
                         </button>
                     )}
-
-                    <div className="flex items-center gap-2 ml-1">
-                        <span className="text-xs font-bold px-2 py-0.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-300">
-                            LabPDF Studio
-                        </span>
-                        <span className="text-xs text-slate-400 font-mono hidden md:inline truncate max-w-[220px]">
-                            {sourceDocs.length > 0 ? `• ${sourceDocs[0].name} ${sourceDocs.length > 1 ? `(+ ${sourceDocs.length - 1})` : ''}` : '• Professional PDF Studio'}
-                        </span>
-                    </div>
                 </div>
 
-                {/* 4 Mode Tabs */}
+                {/* View Controls & Full Screen */}
                 <div className="flex items-center gap-1.5">
-                    <div className={`flex items-center gap-1 p-0.5 rounded-xl border text-xs font-semibold ${
-                        isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-300'
-                    }`}>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('edit-merge')}
-                            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                                activeTab === 'edit-merge'
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
-                            }`}
-                        >
-                            <Layers size={13} />
-                            <span>Edit & Merge</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('extract')}
-                            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                                activeTab === 'extract'
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
-                            }`}
-                        >
-                            <Scissors size={13} />
-                            <span>Extract Pages</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('compress')}
-                            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                                activeTab === 'compress'
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
-                            }`}
-                        >
-                            <Sliders size={13} />
-                            <span>Compress</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('ocr')}
-                            className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                                activeTab === 'ocr'
-                                    ? 'bg-rose-600 text-white shadow-xs'
-                                    : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
-                            }`}
-                        >
-                            <FileSearch size={13} />
-                            <span>OCR & Text</span>
-                        </button>
-                    </div>
-
-                    {/* View Controls for Edit-Merge mode (Thumbnails sidebar toggle & Scroll / Grid view switcher) */}
-                    {activeTab === 'edit-merge' && sourceDocs.length > 0 && (
+                    {sourceDocs.length > 0 && (
                         <div className="flex items-center gap-1.5">
                             <button
                                 type="button"
@@ -7704,9 +7576,6 @@ return (
                     >
                         {isFullScreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                     </button>
-
-                    {/* Theme Toggle */}
-                    <OfficeThemeToggle />
                 </div>
             </header>
 
@@ -7725,16 +7594,16 @@ return (
                 isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'
             }`}>
                 {/* Optional Left Thumbnails Sidebar */}
-                {showThumbnails && activeTab === 'edit-merge' && sourceDocs.length > 0 && (
+                {showThumbnails && sourceDocs.length > 0 && (
                     <div className={`w-48 border-r overflow-y-auto p-2 space-y-2 shrink-0 select-none ${
                         isDark ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200 bg-white/60'
                     }`}>
                         <div className="text-[11px] font-bold text-slate-400 px-1 mb-2 flex items-center justify-between">
                             <span>THUMBNAILS</span>
-                            <span className="font-mono text-rose-500">{pages.length}</span>
+                            <span className="font-mono text-rose-500">{activePages.length}</span>
                         </div>
-                        {pages.map((p, idx) => {
-                            const sourceDoc = sourceDocs[p.docIndex] || sourceDocs[0];
+                        {activePages.map((p, idx) => {
+                            const sourceDoc = activeDoc || sourceDocs[p.docIndex] || sourceDocs[0];
                             const isSelected = selectedAnnotationPageIndex === idx;
                             return (
                                 <div
@@ -7773,15 +7642,13 @@ return (
                 )}
 
                 {/* Main Scrollable Canvas Area (Only this element scrolls!) */}
-                <main className={`flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-3 relative min-w-0 ${activeTab !== 'edit-merge' ? 'overflow-y-auto p-4 sm:p-6 items-center' : ''}`}>
-                    {/* TAB 1: EDIT & MERGE (Wide Bounded Container with Pinned Top Toolbar) */}
-                    {activeTab === 'edit-merge' && (
-                        <div
-                            className={`w-full max-w-[98%] xl:max-w-[96%] 2xl:max-w-[95%] h-[calc(100vh-115px)] min-h-[560px] mx-auto rounded-2xl border-2 shadow-inner relative flex flex-col overflow-hidden transition-colors ${
-                                isDark
-                                    ? 'bg-slate-900/40 border-slate-700/80 shadow-black/40'
-                                    : 'bg-slate-100/60 border-slate-300 shadow-slate-300/40'
-                            }`}
+                <main className="flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-3 relative min-w-0">
+                    <div
+                        className={`w-full max-w-[98%] xl:max-w-[96%] 2xl:max-w-[95%] h-[calc(100vh-115px)] min-h-[560px] mx-auto rounded-2xl border-2 shadow-inner relative flex flex-col overflow-hidden transition-colors ${
+                            isDark
+                                ? 'bg-slate-900/40 border-slate-700/80 shadow-black/40'
+                                : 'bg-slate-100/60 border-slate-300 shadow-slate-300/40'
+                        }`}
                         >
                             {/* Toolbar stays near top inside the container */}
                             {renderActionToolbar()}
@@ -7824,94 +7691,183 @@ return (
                                 <>
                                     {/* GRID MODE: REORDER & ORGANIZE */}
                                     {viewMode === 'grid' && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                            {pages.map((p, idx) => {
-                                                const sourceDoc = sourceDocs[p.docIndex] || sourceDocs[0];
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        className={`border rounded-2xl p-2.5 flex flex-col justify-between shadow-xs transition hover:shadow-md group/card relative ${
-                                                            isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
-                                                        }`}
+                                        <div className="w-full max-w-6xl">
+                                            {/* Grid View Selection Bar & Export Trigger */}
+                                            <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-200/80 dark:border-slate-800/80">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                        {activePages.length} {activePages.length === 1 ? 'Page' : 'Pages'}
+                                                    </span>
+                                                    <div className="h-3 w-px bg-slate-300 dark:bg-slate-700" />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (checkedPageIds.size === activePages.length) {
+                                                                setCheckedPageIds(new Set());
+                                                            } else {
+                                                                setCheckedPageIds(new Set(activePages.map(p => p.id)));
+                                                            }
+                                                        }}
+                                                        className="text-xs text-rose-600 dark:text-rose-400 hover:underline font-semibold"
                                                     >
-                                                        <div className="flex items-center justify-between text-[11px] mb-2 font-mono">
-                                                            <span className="font-bold text-rose-500 px-1.5 py-0.5 rounded bg-rose-500/10">
-                                                                #{idx + 1}
-                                                            </span>
-                                                            <span className="text-slate-400 truncate max-w-[100px]" title={sourceDoc?.name}>
-                                                                {sourceDoc?.name}
-                                                            </span>
-                                                        </div>
+                                                        {checkedPageIds.size === activePages.length ? 'Deselect All' : 'Select All'}
+                                                    </button>
+                                                    {checkedPageIds.size > 0 && (
+                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold border border-rose-200 dark:border-rose-900/50">
+                                                            {checkedPageIds.size} checked
+                                                        </span>
+                                                    )}
+                                                </div>
 
-                                                        {/* Native 90° Canvas Thumbnail (NO CSS rotate transform!) */}
-                                                        <div className="h-48 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center relative">
-                                                            <PdfPageCanvas
-                                                                pdfDoc={sourceDoc?.pdfDoc}
-                                                                pageNumber={p.originalPageNum}
-                                                                rotation={p.rotation}
-                                                                watermarkText={appliedWatermarkText}
-                                                                watermarkColor={appliedWatermarkColor}
-                                                                watermarkOpacity={watermarkOpacity}
-                                                                watermarkImage={appliedWatermarkImage}
-                                                                annotations={annotations.filter(a => a.pageId ? a.pageId === p.id : a.pageIndex === idx)}
-                                                                targetWidth={180}
-                                                            />
-                                                        </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowProcessingOverlay(true)}
+                                                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition active:scale-95 cursor-pointer"
+                                                    title="Open PDF Processing & Export Overlay"
+                                                >
+                                                    <Download size={14} />
+                                                    <span>Export & Process</span>
+                                                </button>
+                                            </div>
 
-                                                        {/* Card Action Controls */}
-                                                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
-                                                            <div className="flex items-center gap-0.5">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => movePage(idx, idx - 1)}
-                                                                    disabled={idx === 0}
-                                                                    className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${idx === 0 ? 'opacity-20 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
-                                                                    title="Move Left"
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                                {activePages.map((p, idx) => {
+                                                    const sourceDoc = activeDoc || sourceDocs[p.docIndex] || sourceDocs[0];
+                                                    const isChecked = checkedPageIds.has(p.id);
+                                                    return (
+                                                        <div
+                                                            key={p.id}
+                                                            className={`border rounded-2xl p-2.5 flex flex-col justify-between shadow-xs transition hover:shadow-md group/card relative ${
+                                                                isChecked
+                                                                    ? 'ring-2 ring-rose-500/40 border-rose-400 dark:border-rose-600'
+                                                                    : isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center justify-between text-[11px] mb-2 font-mono">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setCheckedPageIds(prev => {
+                                                                                const next = new Set(prev);
+                                                                                if (next.has(p.id)) next.delete(p.id);
+                                                                                else next.add(p.id);
+                                                                                return next;
+                                                                            });
+                                                                        }}
+                                                                        className={`w-4 h-4 rounded-full border flex items-center justify-center transition-all ${
+                                                                            isChecked
+                                                                                ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
+                                                                                : 'border-slate-300 dark:border-slate-600 hover:border-rose-400 bg-white dark:bg-slate-800'
+                                                                        }`}
+                                                                        title={isChecked ? 'Deselect page' : 'Select page for export/processing'}
+                                                                        aria-label="Select page"
+                                                                    >
+                                                                        {isChecked && <Check size={10} strokeWidth={3} />}
+                                                                    </button>
+
+                                                                    <span className="font-bold text-rose-500 px-1.5 py-0.5 rounded bg-rose-500/10">
+                                                                        #{idx + 1}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* Original Page Number on Right Top */}
+                                                                <span
+                                                                    className="font-bold text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] font-mono border border-slate-200 dark:border-slate-700"
+                                                                    title={`Original Document Page: ${p.originalPageNum}`}
                                                                 >
-                                                                    <MoveLeft size={13} />
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => movePage(idx, idx + 1)}
-                                                                    disabled={idx === pages.length - 1}
-                                                                    className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${idx === pages.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
-                                                                    title="Move Right"
-                                                                >
-                                                                    <MoveRight size={13} />
-                                                                </button>
+                                                                    Orig #{p.originalPageNum}
+                                                                </span>
                                                             </div>
 
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => rotatePage(idx, 90)}
-                                                                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition"
-                                                                title="Rotate 90° Clockwise"
+                                                            {/* Native 90° Canvas Thumbnail - Clicking switches to Continuous Scroll View */}
+                                                            <div
+                                                                onClick={() => {
+                                                                    setViewMode('scroll');
+                                                                    setSelectedAnnotationPageIndex(idx);
+                                                                    setCurrentPageIndex?.(idx);
+                                                                    setTimeout(() => {
+                                                                        const el = document.getElementById(`pdf-page-wrapper-${idx}`) || document.getElementById(`pdf-page-${idx}`);
+                                                                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                    }, 60);
+                                                                }}
+                                                                className="h-48 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden flex items-center justify-center relative cursor-pointer hover:border-rose-500 hover:shadow-md transition group/thumb"
+                                                                title="Click to view this page in Continuous Scroll View"
                                                             >
-                                                                <RotateCw size={13} />
-                                                            </button>
+                                                                <PdfPageCanvas
+                                                                    pdfDoc={sourceDoc?.pdfDoc}
+                                                                    pageNumber={p.originalPageNum}
+                                                                    rotation={p.rotation}
+                                                                    watermarkText={appliedWatermarkText}
+                                                                    watermarkColor={appliedWatermarkColor}
+                                                                    watermarkOpacity={watermarkOpacity}
+                                                                    watermarkImage={appliedWatermarkImage}
+                                                                    annotations={annotations.filter(a => a.pageId ? a.pageId === p.id : a.pageIndex === idx)}
+                                                                    targetWidth={180}
+                                                                />
+                                                                <div className="absolute inset-0 bg-rose-600/0 group-hover/thumb:bg-rose-600/5 transition-colors pointer-events-none flex items-center justify-center">
+                                                                    <span className="opacity-0 group-hover/thumb:opacity-100 px-2 py-1 rounded-md bg-slate-900/90 text-white text-[10px] font-bold shadow-lg transition-opacity flex items-center gap-1">
+                                                                        <ScrollText size={11} /> Open in Scroll
+                                                                    </span>
+                                                                </div>
+                                                            </div>
 
-                                                            <div className="flex items-center gap-0.5">
+                                                            {/* Card Action Controls */}
+                                                            <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-100 dark:border-slate-800/80">
+                                                                <div className="flex items-center gap-0.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); movePage(idx, idx - 1); }}
+                                                                        disabled={idx === 0}
+                                                                        className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${idx === 0 ? 'opacity-20 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
+                                                                        title="Move Left"
+                                                                    >
+                                                                        <MoveLeft size={13} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); movePage(idx, idx + 1); }}
+                                                                        disabled={idx === activePages.length - 1}
+                                                                        className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${idx === activePages.length - 1 ? 'opacity-20 cursor-not-allowed' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
+                                                                        title="Move Right"
+                                                                    >
+                                                                        <MoveRight size={13} />
+                                                                    </button>
+                                                                </div>
+
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => duplicatePage(idx)}
+                                                                    onClick={(e) => { e.stopPropagation(); rotatePage(idx, 90); }}
                                                                     className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition"
-                                                                    title="Duplicate Page"
+                                                                    title="Rotate 90° Clockwise"
                                                                 >
-                                                                    <Copy size={13} />
+                                                                    <RotateCw size={13} />
                                                                 </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => deletePage(idx)}
-                                                                    className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 transition"
-                                                                    title="Delete Page"
-                                                                >
-                                                                    <Trash2 size={13} />
-                                                                </button>
+
+                                                                <div className="flex items-center gap-0.5">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); duplicatePage(idx); }}
+                                                                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition"
+                                                                        title="Duplicate Page"
+                                                                    >
+                                                                        <Copy size={13} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); deletePage(idx); }}
+                                                                        className="p-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 transition"
+                                                                        title="Delete Page"
+                                                                    >
+                                                                        <Trash2 size={13} />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     )}
 
@@ -7923,8 +7879,8 @@ return (
                                                     if (e.target === e.currentTarget) handleDeselectAll();
                                                 }}
                                             >
-                                            {pages.map((p, idx) => {
-                                                const sourceDoc = sourceDocs[p.docIndex] || sourceDocs[0];
+                                            {activePages.map((p, idx) => {
+                                                const sourceDoc = activeDoc || sourceDocs[p.docIndex] || sourceDocs[0];
                                                 const docIdx = p.docIndex ?? 0;
                                                 const pageDim = pageDimensions[`${docIdx}_${p.originalPageNum}`] || pageDimensions[p.id];
                                                 const isRotated90 = (p.rotation || 0) % 180 !== 0;
@@ -7953,7 +7909,7 @@ return (
                                                     >
                                                         {/* Page Number Label */}
                                                         <div className="text-[11px] font-mono font-bold text-slate-400 mb-1 flex items-center gap-2">
-                                                            <span>Page {idx + 1} of {pages.length}</span>
+                                                            <span>Page {idx + 1} of {activePages.length}</span>
                                                             <span className="text-[10px] text-slate-500 truncate max-w-xs">({sourceDoc?.name})</span>
                                                         </div>
 
@@ -8286,641 +8242,7 @@ return (
                             )}
                             </div>
                         </div>
-                    )}
-
-                    {/* TAB 2: EXTRACT PAGES (Visual Cards with Checkboxes & Range Input) */}
-                    {activeTab === 'extract' && (
-                        <div className="w-full max-w-5xl space-y-5">
-                            {sourceDocs.length === 0 ? (
-                                <div className={`border-2 border-dashed rounded-3xl p-12 text-center transition flex flex-col items-center justify-center gap-4 ${
-                                    isDark ? 'border-slate-800 bg-slate-900/40' : 'border-slate-300 bg-white/90 shadow-md'
-                                }`}>
-                                    <Scissors size={32} className="text-rose-500" />
-                                    <div>
-                                        <h3 className="text-base font-bold mb-1">Upload a PDF to Extract Pages</h3>
-                                        <p className="text-xs text-slate-400">Select which pages you want to extract into a standalone merged PDF or individual pages.</p>
-                                    </div>
-                                    <MultiSourceUploadDropdown
-                                        onSelectLocalFiles={handleFilesSelect}
-                                        onOpenPickerModal={handleOpenPicker}
-                                        isDark={isDark}
-                                    />
-                                </div>
-                            ) : (
-                                <div className={`border rounded-3xl p-5 shadow-xl space-y-4 ${
-                                    isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-                                }`}>
-                                    {/* Action Bar */}
-                                    <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
-                                        <div className="flex items-center gap-2">
-                                            {/* View Mode Toggle: Grid vs Scroll (Icon Only with Tooltip) */}
-                                            <div className={`flex items-center rounded-lg border p-0.5 text-xs ${isDark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-100'}`}>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setExtractViewMode('grid')}
-                                                    className={`p-1.5 rounded-md transition flex items-center justify-center ${
-                                                        extractViewMode === 'grid'
-                                                            ? 'bg-rose-600 text-white shadow-xs'
-                                                            : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
-                                                    }`}
-                                                    title="Grid View"
-                                                >
-                                                    <LayoutGrid size={15} />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setExtractViewMode('scroll')}
-                                                    className={`p-1.5 rounded-md transition flex items-center justify-center ${
-                                                        extractViewMode === 'scroll'
-                                                            ? 'bg-rose-600 text-white shadow-xs'
-                                                            : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
-                                                    }`}
-                                                    title="Continuous Scroll View"
-                                                >
-                                                    <ScrollText size={15} />
-                                                </button>
-                                            </div>
-
-                                            {/* Select All / Deselect All (Icon Only with Tooltip) */}
-                                            <button
-                                                type="button"
-                                                onClick={handleSelectAllExtractPages}
-                                                className={`p-1.5 rounded-xl border transition flex items-center justify-center ${
-                                                    selectedExtractPages.length === pages.length
-                                                        ? 'bg-rose-600 text-white border-rose-500 shadow-xs'
-                                                        : isDark ? 'border-slate-800 hover:bg-slate-800 text-slate-300' : 'border-slate-200 hover:bg-slate-100 text-slate-700'
-                                                }`}
-                                                title={selectedExtractPages.length === pages.length ? 'Deselect All Pages' : 'Select All Pages'}
-                                            >
-                                                <CheckSquare size={16} />
-                                            </button>
-                                            <span className="text-xs font-mono text-slate-400">
-                                                <strong className="text-rose-500">{selectedExtractPages.length}</strong> of {pages.length} selected
-                                            </span>
-                                        </div>
-
-                                        {/* Bidirectional Range Input */}
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold text-slate-400">Range:</span>
-                                            <input
-                                                type="text"
-                                                value={splitRange}
-                                                onChange={(e) => handleSplitRangeChange(e.target.value)}
-                                                placeholder="e.g. 1-3, 5"
-                                                className={`border rounded-xl px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-rose-500 w-36 ${
-                                                    isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-                                                }`}
-                                            />
-                                        </div>
-
-                                        {/* Action Buttons: Merged PDF & Extract Actions Dropdown */}
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleExecuteExtractPages}
-                                                disabled={processing || selectedExtractPages.length === 0}
-                                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                                                title={`Download ${selectedExtractPages.length || pages.length} Selected Pages as Merged PDF`}
-                                            >
-                                                <Scissors size={14} className="text-rose-500" />
-                                                <span className="hidden sm:inline">Merged PDF</span>
-                                            </button>
-
-                                            <div className="relative extract-dropdown-container">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowExtractDropdown(!showExtractDropdown)}
-                                                    disabled={processing || pages.length === 0}
-                                                    className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition"
-                                                >
-                                                    {processing ? <RefreshCw size={14} className="animate-spin" /> : <Archive size={14} />}
-                                                    <span>Extract Actions</span>
-                                                    <ChevronDown size={12} />
-                                                </button>
-
-                                                {showExtractDropdown && (
-                                                    <div className={`absolute right-0 mt-1.5 w-72 rounded-2xl border p-1.5 shadow-2xl z-50 ${
-                                                        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
-                                                    }`}>
-                                                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                                            ZIP Archive
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShowExtractDropdown(false);
-                                                                handleExtractZipAndSaveToOffice();
-                                                            }}
-                                                            disabled={processing}
-                                                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 transition ${
-                                                                isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                                                            }`}
-                                                        >
-                                                            <Cloud size={15} className="text-rose-500 shrink-0" />
-                                                            <div>
-                                                                <div className="font-bold text-xs">Zip & Save to Office Zip Folder</div>
-                                                                <div className="text-[10px] text-slate-400">Stores in CloudVault &rarr; Zip Archives</div>
-                                                            </div>
-                                                        </button>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShowExtractDropdown(false);
-                                                                handleExtractDownloadZip();
-                                                            }}
-                                                            disabled={processing}
-                                                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 transition ${
-                                                                isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                                                            }`}
-                                                        >
-                                                            <Archive size={15} className="text-emerald-500 shrink-0" />
-                                                            <div>
-                                                                <div className="font-bold text-xs">Download ZIP</div>
-                                                                <div className="text-[10px] text-slate-400">Downloads ZIP file directly to computer</div>
-                                                            </div>
-                                                        </button>
-
-                                                        <div className={`my-1 border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`} />
-
-                                                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                                            Separate Single Pages
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShowExtractDropdown(false);
-                                                                handleExtractDownloadSeparatePages();
-                                                            }}
-                                                            disabled={processing}
-                                                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 transition ${
-                                                                isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                                                            }`}
-                                                        >
-                                                            <Layers size={15} className="text-blue-500 shrink-0" />
-                                                            <div>
-                                                                <div className="font-bold text-xs">Download Separate Pages</div>
-                                                                <div className="text-[10px] text-slate-400">Downloads each page as separate PDF</div>
-                                                            </div>
-                                                        </button>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setShowExtractDropdown(false);
-                                                                handleExtractSaveSeparatePagesToCloud();
-                                                            }}
-                                                            disabled={processing}
-                                                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2.5 transition ${
-                                                                isDark ? 'hover:bg-slate-800 text-slate-200' : 'hover:bg-slate-100 text-slate-800'
-                                                            }`}
-                                                        >
-                                                            <FolderPlus size={15} className="text-amber-500 shrink-0" />
-                                                            <div>
-                                                                <div className="font-bold text-xs">Save Separate Pages to Cloud PDF</div>
-                                                                <div className="text-[10px] text-slate-400">Saves in timestamped datetime folder</div>
-                                                            </div>
-                                                        </button>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* GRID VIEW */}
-                                    {extractViewMode === 'grid' && (
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5 max-h-[600px] overflow-y-auto p-1">
-                                            {pages.map((p, idx) => {
-                                                const pageNum = idx + 1;
-                                                const isSelected = selectedExtractPages.includes(pageNum);
-                                                const sourceDoc = sourceDocs[p.docIndex] || sourceDocs[0];
-
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        onClick={() => handleToggleExtractPage(pageNum)}
-                                                        className={`border rounded-2xl p-2.5 flex flex-col justify-between cursor-pointer transition shadow-xs hover:shadow-md relative ${
-                                                            isSelected
-                                                                ? 'border-rose-500 ring-2 ring-rose-500/30 bg-rose-500/5'
-                                                                : isDark ? 'bg-slate-950 border-slate-800 hover:border-slate-700' : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                                                        }`}
-                                                    >
-                                                        <div className="flex items-center justify-between text-[11px] font-mono mb-2">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isSelected}
-                                                                    onChange={() => {}}
-                                                                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer pointer-events-none"
-                                                                />
-                                                                <span className="font-bold text-rose-500">Page {pageNum}</span>
-                                                            </div>
-                                                            <span className="text-slate-400 text-[10px] truncate max-w-[80px]">
-                                                                {sourceDoc?.name}
-                                                            </span>
-                                                        </div>
-
-                                                        <div className="h-44 bg-white rounded-xl border border-slate-200 overflow-hidden flex items-center justify-center relative">
-                                                            <PdfPageCanvas
-                                                                pdfDoc={sourceDoc?.pdfDoc}
-                                                                pageNumber={p.originalPageNum}
-                                                                rotation={p.rotation}
-                                                                targetWidth={200}
-                                                            />
-                                                        </div>
-
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleDownloadSinglePage(p.originalPageNum);
-                                                            }}
-                                                            disabled={processing}
-                                                            className="mt-2 w-full py-1.5 text-xs font-bold rounded-lg bg-rose-600/10 hover:bg-rose-600 text-rose-600 hover:text-white transition flex items-center justify-center"
-                                                            title={`Download Page ${pageNum} as Standalone PDF`}
-                                                        >
-                                                            <Download size={14} />
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {/* SCROLL STREAM VIEW */}
-                                    {extractViewMode === 'scroll' && (
-                                        <div className="flex flex-col items-center gap-6 max-h-[600px] overflow-y-auto p-2">
-                                            {pages.map((p, idx) => {
-                                                const pageNum = idx + 1;
-                                                const isSelected = selectedExtractPages.includes(pageNum);
-                                                const sourceDoc = sourceDocs[p.docIndex] || sourceDocs[0];
-                                                const containerWidth = 520;
-                                                const containerHeight = Math.round(containerWidth * 1.33);
-
-                                                return (
-                                                    <div
-                                                        key={p.id}
-                                                        className="flex flex-col items-center w-full"
-                                                    >
-                                                        <div className="w-[520px] flex items-center justify-between mb-1.5 px-1 text-xs">
-                                                            <label
-                                                                onClick={() => handleToggleExtractPage(pageNum)}
-                                                                className="flex items-center gap-2 cursor-pointer font-bold"
-                                                            >
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isSelected}
-                                                                    onChange={() => {}}
-                                                                    className="w-4 h-4 rounded text-rose-600 focus:ring-rose-500 cursor-pointer pointer-events-none"
-                                                                />
-                                                                <span className={isSelected ? 'text-rose-500 font-bold' : 'text-slate-400'}>
-                                                                    Select Page {pageNum} of {pages.length}
-                                                                </span>
-                                                            </label>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleDownloadSinglePage(p.originalPageNum)}
-                                                                disabled={processing}
-                                                                className="p-1 rounded-md text-rose-500 hover:bg-rose-500/10 transition flex items-center justify-center"
-                                                                title={`Download Page ${pageNum} as Standalone PDF`}
-                                                            >
-                                                                <Download size={15} />
-                                                            </button>
-                                                        </div>
-
-                                                        <div
-                                                            onClick={() => handleToggleExtractPage(pageNum)}
-                                                            className={`relative bg-white shadow-xl rounded-sm border-2 transition cursor-pointer overflow-hidden ${
-                                                                isSelected ? 'border-rose-500 ring-2 ring-rose-500/30' : 'border-black dark:border-slate-700'
-                                                            }`}
-                                                            style={{ width: `${containerWidth}px`, height: `${containerHeight}px` }}
-                                                        >
-                                                            <PdfPageCanvas
-                                                                pdfDoc={sourceDoc?.pdfDoc}
-                                                                pageNumber={p.originalPageNum}
-                                                                rotation={p.rotation}
-                                                                targetWidth={containerWidth}
-                                                            />
-                                                        </div>
-
-                                                        {idx < pages.length - 1 && (
-                                                            <div className="w-full flex items-center justify-center my-4">
-                                                                <div className="w-full max-w-md border-b-2 border-dashed border-slate-300 dark:border-slate-700 relative flex justify-center">
-                                                                    <span className="absolute -top-3 px-2 py-0.5 rounded-full text-[9px] font-mono bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                                                        Page Break
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* TAB 3: COMPRESSOR */}
-                    {activeTab === 'compress' && (
-                        <div className="w-full max-w-xl space-y-6">
-                            <div className={`border rounded-3xl p-6 shadow-xl space-y-5 ${
-                                isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-                            }`}>
-                                <div className={`flex items-center justify-between border-b pb-3 ${
-                                    isDark ? 'border-slate-800' : 'border-slate-200'
-                                }`}>
-                                    <div className="flex items-center gap-2">
-                                        <Sliders size={18} className="text-rose-500" />
-                                        <h3 className="text-sm font-bold">Compress PDF</h3>
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                                        PDF Utilities
-                                    </span>
-                                </div>
-
-                                {!activeFile ? (
-                                    <label className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 transition ${
-                                        isDark ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40' : 'border-slate-300 hover:border-slate-400 bg-slate-50'
-                                    }`}>
-                                        <Upload size={24} className="text-rose-500" />
-                                        <span className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                                            Select PDF Document to Compress
-                                        </span>
-                                        <input
-                                            type="file"
-                                            accept="application/pdf,.pdf"
-                                            className="hidden"
-                                            onChange={(e) => e.target.files?.length > 0 && handleFilesSelect(e.target.files)}
-                                        />
-                                    </label>
-                                ) : (
-                                    <div className="space-y-4">
-                                        {/* Multi-Document Selection */}
-                                        {sourceDocs.length > 1 && (
-                                            <div>
-                                                <label className={`text-xs font-bold block mb-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                                                    Select Target PDF Document
-                                                </label>
-                                                <select
-                                                    value={compressTargetDoc}
-                                                    onChange={(e) => setCompressTargetDoc(e.target.value)}
-                                                    className={`w-full border rounded-xl p-2.5 text-xs focus:outline-none focus:border-rose-500 ${
-                                                        isDark ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-                                                    }`}
-                                                >
-                                                    <option value="all">All Documents (Merged & Reorganized) — {totalFileSizeMb} MB</option>
-                                                    {sourceDocs.map((doc, dIdx) => (
-                                                        <option key={doc.id} value={dIdx}>
-                                                            Doc {dIdx + 1}: {doc.name} ({doc.size} MB)
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        )}
-
-                                        <div className={`border rounded-xl p-3 flex items-center justify-between text-xs ${
-                                            isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                                        }`}>
-                                            <span className={`font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                                                {compressTargetDoc === 'all' ? (sourceDocs.length > 1 ? 'Merged Studio Output' : activeFileName) : sourceDocs[parseInt(compressTargetDoc, 10)]?.name}
-                                            </span>
-                                            <span className="text-slate-400 font-mono">
-                                                {compressTargetDoc === 'all' ? `${totalFileSizeMb} MB` : `${sourceDocs[parseInt(compressTargetDoc, 10)]?.size} MB`}
-                                            </span>
-                                        </div>
-
-                                        {/* 3 Compression Tiers */}
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => setCompressLevel('basic')}
-                                                className={`p-2.5 rounded-2xl border text-left transition ${
-                                                    compressLevel === 'basic'
-                                                        ? 'border-rose-500 bg-rose-500/10 text-rose-400 shadow-sm'
-                                                        : isDark ? 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
-                                                }`}
-                                            >
-                                                <div className="font-bold text-xs">Basic</div>
-                                                <div className="text-[10px] opacity-75 mt-0.5">~40% savings</div>
-                                                <div className="text-[9px] text-slate-400 mt-1">Crisp print quality</div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setCompressLevel('medium')}
-                                                className={`p-2.5 rounded-2xl border text-left transition ${
-                                                    compressLevel === 'medium'
-                                                        ? 'border-rose-500 bg-rose-500/10 text-rose-400 shadow-sm'
-                                                        : isDark ? 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
-                                                }`}
-                                            >
-                                                <div className="font-bold text-xs">Balanced</div>
-                                                <div className="text-[10px] opacity-75 mt-0.5">~60% savings</div>
-                                                <div className="text-[9px] text-slate-400 mt-1">Optimal sharing</div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setCompressLevel('strong')}
-                                                className={`p-2.5 rounded-2xl border text-left transition ${
-                                                    compressLevel === 'strong'
-                                                        ? 'border-rose-500 bg-rose-500/10 text-rose-400 shadow-sm'
-                                                        : isDark ? 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300'
-                                                }`}
-                                            >
-                                                <div className="font-bold text-xs">Strong</div>
-                                                <div className="text-[10px] opacity-75 mt-0.5">~75-80% savings</div>
-                                                <div className="text-[9px] text-slate-400 mt-1">Email / LMS ready</div>
-                                            </button>
-                                        </div>
-
-                                        {/* Compression Stats Banner */}
-                                        {compressStats && (
-                                            <div className={`p-3.5 rounded-2xl border flex items-center justify-between text-xs ${
-                                                isDark ? 'bg-emerald-950/20 border-emerald-800/40 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                            }`}>
-                                                <div>
-                                                    <div className="font-bold flex items-center gap-1.5">
-                                                        <Check size={14} className="text-emerald-500" />
-                                                        <span>Compression Complete</span>
-                                                    </div>
-                                                    <div className="text-[11px] opacity-80 mt-0.5">
-                                                        {(compressStats.originalSize / (1024 * 1024)).toFixed(2)} MB &rarr; {(compressStats.compressedSize / (1024 * 1024)).toFixed(2)} MB
-                                                    </div>
-                                                </div>
-                                                <span className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white font-mono font-bold text-xs shadow-xs">
-                                                    -{compressStats.savingsPercent}% Reduced
-                                                </span>
-                                            </div>
-                                        )}
-
-                                        {/* Dual Action Buttons: Local Download & Cloud Save */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleCompressPdf('local')}
-                                                disabled={processing}
-                                                className="w-full py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition"
-                                            >
-                                                {compressing ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-                                                <span>Download Locally</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => handleCompressPdf('cloud')}
-                                                disabled={processing}
-                                                className={`w-full py-2.5 border rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
-                                                    isDark ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-200' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
-                                                }`}
-                                            >
-                                                {compressing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} className="text-rose-500" />}
-                                                <span>Save to Cloud Vault</span>
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* TAB 4: OCR & TEXT EXTRACTOR */}
-                    {activeTab === 'ocr' && (
-                        <div className="w-full max-w-2xl space-y-6">
-                            <div className={`border rounded-3xl p-6 shadow-xl space-y-5 ${
-                                isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-                            }`}>
-                                <div className={`flex items-center justify-between border-b pb-3 ${
-                                    isDark ? 'border-slate-800' : 'border-slate-200'
-                                }`}>
-                                    <div className="flex items-center gap-2">
-                                        <FileSearch size={18} className="text-rose-500" />
-                                        <h3 className="text-sm font-bold">OCR & Text Extractor</h3>
-                                    </div>
-                                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                                        PDF Utilities
-                                    </span>
-                                </div>
-
-                                {!activeFile ? (
-                                    <label className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 transition ${
-                                        isDark ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40' : 'border-slate-300 hover:border-slate-400 bg-slate-50'
-                                    }`}>
-                                        <Upload size={24} className="text-rose-500" />
-                                        <span className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                                            Select PDF Document to Extract Text
-                                        </span>
-                                        <input
-                                            type="file"
-                                            accept="application/pdf,.pdf"
-                                            className="hidden"
-                                            onChange={(e) => e.target.files?.length > 0 && handleFilesSelect(e.target.files)}
-                                        />
-                                    </label>
-                                ) : (
-                                    <div className="space-y-4">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={handleRunOcr}
-                                                disabled={ocrLoading}
-                                                className="py-3 px-3 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition"
-                                            >
-                                                {ocrLoading ? <RefreshCw size={14} className="animate-spin" /> : <FileSearch size={14} />}
-                                                <span>Fast Digital Text Extraction</span>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={handleRunVisionOcr}
-                                                disabled={ocrLoading}
-                                                className={`py-3 px-3 border rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition ${
-                                                    isDark ? 'border-slate-800 bg-slate-950 hover:bg-slate-800 text-slate-200' : 'border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800'
-                                                }`}
-                                            >
-                                                {ocrLoading ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} className="text-amber-500" />}
-                                                <span>Multimodal AI Vision OCR</span>
-                                            </button>
-                                        </div>
-
-                                        {/* Scanned PDF warning card */}
-                                        {ocrResult && ocrResult.wordCount === 0 && (
-                                            <div className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row items-center justify-between gap-3 ${
-                                                isDark ? 'bg-amber-950/20 border-amber-800/40 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'
-                                            }`}>
-                                                <div className="flex items-start gap-2">
-                                                    <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" />
-                                                    <div>
-                                                        <div className="font-bold">0 Selectable Words Detected</div>
-                                                        <div className="text-[11px] opacity-80">This document contains images or scanned pages without selectable text streams. Run Multimodal AI Vision OCR.</div>
-                                                    </div>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={handleRunVisionOcr}
-                                                    disabled={ocrLoading}
-                                                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold shrink-0 transition"
-                                                >
-                                                    Run AI Vision OCR
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {ocrResult && (
-                                            <div className="space-y-3">
-                                                <div className="grid grid-cols-4 gap-2 text-center">
-                                                    <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="text-[10px] text-slate-400 uppercase font-bold">Pages</div>
-                                                        <div className="font-bold text-sm text-rose-500">{ocrResult.pageCount}</div>
-                                                    </div>
-                                                    <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="text-[10px] text-slate-400 uppercase font-bold">Words</div>
-                                                        <div className="font-bold text-sm text-emerald-500">{ocrResult.wordCount.toLocaleString()}</div>
-                                                    </div>
-                                                    <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="text-[10px] text-slate-400 uppercase font-bold">Characters</div>
-                                                        <div className="font-bold text-sm text-blue-500">{ocrResult.charCount.toLocaleString()}</div>
-                                                    </div>
-                                                    <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                                                        <div className="text-[10px] text-slate-400 uppercase font-bold">Lines</div>
-                                                        <div className="font-bold text-sm text-amber-500">{ocrResult.lineCount.toLocaleString()}</div>
-                                                    </div>
-                                                </div>
-
-                                                <div>
-                                                    <div className="flex items-center justify-between mb-1.5">
-                                                        <span className="text-xs font-bold text-slate-400">Extracted Text Output</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                                                                    navigator.clipboard.writeText(ocrResult.text);
-                                                                    toast.success('Copied all text to clipboard!');
-                                                                }
-                                                            }}
-                                                            className="text-xs text-rose-500 hover:underline font-semibold flex items-center gap-1"
-                                                        >
-                                                            <Copy size={12} /> Copy All Text
-                                                        </button>
-                                                    </div>
-                                                    <textarea
-                                                        readOnly
-                                                        value={ocrResult.text}
-                                                        rows={12}
-                                                        className={`w-full border rounded-2xl p-3 font-mono text-xs focus:outline-none ${
-                                                            isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
-                                                        }`}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    
                 </main>
             </div>
 
@@ -9318,6 +8640,26 @@ return (
                     router.push('/documents');
                 }}
             />
+
+            {/* PDF Processing & Export Overlay Modal */}
+            <PdfProcessingExportOverlay
+                isOpen={showProcessingOverlay}
+                onClose={() => setShowProcessingOverlay(false)}
+                isDark={isDark}
+                activeDoc={activeDoc}
+                allDocs={sourceDocs}
+                activePages={activePages}
+                checkedPageIds={checkedPageIds}
+                onClearChecked={() => setCheckedPageIds(new Set())}
+                onSaveToOfficeCloud={handleSaveToOfficeMediaFiles}
+                onOpenInStudio={(file) => handleFilesSelect([file])}
+                annotations={annotations}
+                appliedWatermarkText={appliedWatermarkText}
+                appliedWatermarkColor={appliedWatermarkColor}
+                appliedWatermarkOpacity={watermarkOpacity}
+                appliedWatermarkImageDataUrl={appliedWatermarkImageDataUrl}
+            />
+
         </div>
     );
 }

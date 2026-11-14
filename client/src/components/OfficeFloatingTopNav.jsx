@@ -322,20 +322,6 @@ export default function OfficeFloatingTopNav() {
 
                         <div className={`h-4 w-px mx-0.5 ${isDark ? 'bg-slate-700' : 'bg-slate-300'}`} />
 
-                        {/* Fast Theme Toggle in Top Bar */}
-                        <button
-                            type="button"
-                            onClick={toggleTheme}
-                            className={`p-1.5 rounded-xl transition-all shrink-0 border ${
-                                isDark
-                                    ? 'bg-slate-800 hover:bg-slate-700 text-amber-400 border-slate-700'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
-                            }`}
-                            title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-                        >
-                            {isDark ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-                        </button>
-
                         {/* Minimize / Collapse Bar Button */}
                         <button
                             type="button"

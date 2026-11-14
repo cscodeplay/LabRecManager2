@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
-import OfficeThemeToggle from '@/components/OfficeThemeToggle';
+
 import { useThemeStore } from '@/lib/store';
 
 export default function MediaStudioPage() {
@@ -457,9 +457,6 @@ export default function MediaStudioPage() {
                                 <span>Image</span>
                             </button>
                         </div>
-
-                        {/* Theme Toggle */}
-                        <OfficeThemeToggle />
                     </div>
                 </div>
             </header>
