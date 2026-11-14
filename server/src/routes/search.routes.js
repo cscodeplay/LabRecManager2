@@ -109,6 +109,26 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         ];
     }
 
+    // Format-aware queries for office files & code
+    const lowerQuery = query.toLowerCase();
+    const docFormatFilters = [];
+    if (lowerQuery.includes('word') || lowerQuery.includes('doc')) {
+        docFormatFilters.push({ fileType: { in: ['doc', 'docx', 'txt', 'rtf'] } });
+    }
+    if (lowerQuery.includes('excel') || lowerQuery.includes('sheet') || lowerQuery.includes('calc') || lowerQuery.includes('csv')) {
+        docFormatFilters.push({ fileType: { in: ['xls', 'xlsx', 'csv', 'ods'] } });
+    }
+    if (lowerQuery.includes('pdf')) {
+        docFormatFilters.push({ fileType: 'pdf' });
+    }
+    if (lowerQuery.includes('slide') || lowerQuery.includes('presentation') || lowerQuery.includes('ppt')) {
+        docFormatFilters.push({ fileType: { in: ['ppt', 'pptx', 'odp'] } });
+    }
+    if (lowerQuery.includes('code') || lowerQuery.includes('python') || lowerQuery.includes('py') || lowerQuery.includes('sql')) {
+        docFormatFilters.push({ fileType: { in: ['py', 'sql', 'js', 'ts', 'java', 'c', 'cpp'] } });
+        docFormatFilters.push({ category: 'code' });
+    }
+
     const documentWhere = {
         schoolId,
         deletedAt: null,
@@ -116,7 +136,9 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             { name: textFilter },
             { fileName: textFilter },
             { description: textFilter },
-            { category: textFilter }
+            { category: textFilter },
+            { fileType: textFilter },
+            ...docFormatFilters
         ]
     };
     if (isStudent) {
@@ -283,10 +305,10 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             return [];
         }),
 
-        // 3. Documents
+        // 3. Documents & Office Files
         prisma.document.findMany({
             where: documentWhere,
-            take: 8,
+            take: 12,
             select: {
                 id: true,
                 name: true,
@@ -295,6 +317,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
                 category: true,
                 fileType: true,
                 fileSize: true,
+                url: true,
                 folder: { select: { name: true } },
                 createdAt: true
             },

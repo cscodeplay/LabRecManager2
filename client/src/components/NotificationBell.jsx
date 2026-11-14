@@ -244,8 +244,16 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                 onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
                 className={
                     isCircle
-                        ? `relative w-11 h-11 rounded-full bg-white/95 dark:bg-slate-900/95 ${lowMemory ? '' : 'backdrop-blur-sm'} border border-slate-200 dark:border-slate-700 shadow-lg hover:scale-105 active:scale-95 transition-transform flex items-center justify-center cursor-pointer`
-                        : 'relative p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center justify-center cursor-pointer'
+                        ? `relative w-11 h-11 rounded-full ${
+                            isMuted
+                                ? 'bg-rose-600 hover:bg-rose-700 border-rose-500 shadow-lg shadow-rose-600/30 text-white'
+                                : `bg-white/95 dark:bg-slate-900/95 ${lowMemory ? '' : 'backdrop-blur-sm'} border-slate-200 dark:border-slate-700 shadow-lg text-slate-700 dark:text-slate-200`
+                        } border hover:scale-105 active:scale-95 transition-all flex items-center justify-center cursor-pointer`
+                        : `relative p-2 rounded-lg ${
+                            isMuted
+                                ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200'
+                        } transition flex items-center justify-center cursor-pointer`
                 }
                 title={
                     isMuted
@@ -260,15 +268,18 @@ export default function NotificationBell({ variant = 'default', onOpenChange, lo
                 aria-expanded={isOpen}
             >
                 {isMuted ? (
-                    <div className="relative flex items-center justify-center">
-                        <BellOff className="w-5 h-5 text-slate-500 dark:text-slate-400 shrink-0" />
-                        <span className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border border-white dark:border-slate-900 shadow-xs" title="Chime Muted" />
-                    </div>
+                    <BellOff className="w-5 h-5 text-white shrink-0" />
                 ) : (
                     <FluentNotificationBellIcon className="w-5 h-5 shrink-0" hasUnread={unreadCount > 0} />
                 )}
                 {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center animate-pulse shadow-sm">
+                    <span
+                        className={`absolute -top-1 -right-1 min-w-5 h-5 px-1 ${
+                            isMuted
+                                ? 'bg-white text-rose-600 font-black shadow-md border border-rose-200'
+                                : 'bg-red-500 text-white font-extrabold animate-pulse shadow-sm'
+                        } text-[10px] rounded-full flex items-center justify-center`}
+                    >
                         {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                 )}

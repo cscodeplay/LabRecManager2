@@ -8,6 +8,14 @@ import {
     Sparkles, HelpCircle, Ticket, Wrench, Video, ArrowRight,
     CornerDownLeft, Clock, RotateCcw
 } from 'lucide-react';
+import {
+    FluentWordDocIcon,
+    FluentExcelDocIcon,
+    FluentPdfDocIcon,
+    FluentSlidesDocIcon,
+    FluentTerminalIcon,
+    FluentLabSuiteIcon
+} from '@/components/FluentAppIcons';
 import api from '@/lib/api';
 import SessionSelector from './SessionSelector';
 import { useAuthStore } from '@/lib/store';
@@ -202,7 +210,8 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                 const res = await api.get(`/search?q=${encodeURIComponent(query.trim())}${categoryParam}${sessionParam}`);
 
                 if (res.data?.success && res.data?.data) {
-                    setResults(res.data.data);
+                    const payload = res.data.data.results || res.data.data;
+                    setResults(payload);
                 }
             } catch (err) {
                 console.error('[UnifiedTopBar] search failed:', err);
@@ -260,18 +269,67 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
             }));
         }
 
-        // Documents
+        // Documents & Office Files (Word, Excel, PDF, Slides, Code)
         if (activeCategory === 'all' || activeCategory === 'documents') {
-            (results.documents || []).forEach(item => items.push({
-                ...item,
-                type: 'documents',
-                title: item.title || item.name,
-                subtitle: `${(item.fileType || item.mimeType || 'DOC').toUpperCase()} Document`,
-                badge: (item.fileType || 'DOC').toUpperCase(),
-                badgeColor: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
-                icon: Folder,
-                url: `/documents`
-            }));
+            (results.documents || []).forEach(item => {
+                const ext = (item.fileType || item.fileName?.split('.').pop() || item.name?.split('.').pop() || '').toLowerCase();
+                const isCode = item.category === 'code' || ['py', 'sql', 'js', 'ts', 'java', 'c', 'cpp', 'html', 'css'].includes(ext) || item.name?.endsWith('.py') || item.name?.endsWith('.sql');
+                const isPdf = ext === 'pdf';
+                const isWord = ['doc', 'docx', 'txt', 'rtf', 'odt'].includes(ext);
+                const isExcel = ['xls', 'xlsx', 'csv', 'ods', 'sheet'].includes(ext);
+                const isSlides = ['ppt', 'pptx', 'odp'].includes(ext);
+
+                const title = item.name || item.fileName || 'Document';
+                const qs = new URLSearchParams({
+                    docId: item.id,
+                    id: item.id,
+                    ...(item.url ? { fileUrl: item.url } : {}),
+                    title
+                }).toString();
+
+                let directUrl = `/view-document/${item.id}`;
+                let badgeLabel = ext ? ext.toUpperCase() : 'DOC';
+                let badgeColor = 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+                let docIcon = Folder;
+
+                if (isCode) {
+                    directUrl = `/practice-ide?${qs}`;
+                    badgeLabel = ext ? ext.toUpperCase() : 'CODE';
+                    badgeColor = 'bg-slate-900 text-emerald-400 dark:bg-black dark:text-emerald-300';
+                    docIcon = FluentTerminalIcon;
+                } else if (isPdf) {
+                    directUrl = `/documents/pdf-studio?${qs}`;
+                    badgeLabel = 'PDF';
+                    badgeColor = 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300';
+                    docIcon = FluentPdfDocIcon;
+                } else if (isWord) {
+                    directUrl = `/documents/word-editor?${qs}`;
+                    badgeLabel = 'WORD';
+                    badgeColor = 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300';
+                    docIcon = FluentWordDocIcon;
+                } else if (isExcel) {
+                    directUrl = `/documents/excel-editor?${qs}`;
+                    badgeLabel = 'EXCEL';
+                    badgeColor = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300';
+                    docIcon = FluentExcelDocIcon;
+                } else if (isSlides) {
+                    directUrl = `/documents/slides-editor?${qs}`;
+                    badgeLabel = 'SLIDES';
+                    badgeColor = 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300';
+                    docIcon = FluentSlidesDocIcon;
+                }
+
+                items.push({
+                    ...item,
+                    type: 'documents',
+                    title,
+                    subtitle: `${badgeLabel} • ${item.folder?.name ? `Folder: ${item.folder.name}` : 'Document Library'}${item.fileSize ? ` • ${(item.fileSize / 1024).toFixed(0)} KB` : ''}`,
+                    badge: badgeLabel,
+                    badgeColor,
+                    icon: docIcon,
+                    url: directUrl
+                });
+            });
         }
 
         // Quizzes
@@ -347,15 +405,38 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
         return items;
     }, [results, activeCategory]);
 
-    const handleSelectResult = (item) => {
+    const saveRecentSearch = (term) => {
+        const clean = term?.trim();
+        if (!clean || clean.length < 2) return;
         try {
-            const updatedRecent = [
-                { query: item.title, timestamp: Date.now() },
-                ...recentSearches.filter(r => r.query !== item.title)
-            ].slice(0, 6);
-            setRecentSearches(updatedRecent);
-            localStorage.setItem('labrec_recent_searches', JSON.stringify(updatedRecent));
+            const updated = [
+                { query: clean, timestamp: Date.now() },
+                ...recentSearches.filter(r => r.query.toLowerCase() !== clean.toLowerCase())
+            ].slice(0, 8);
+            setRecentSearches(updated);
+            localStorage.setItem('labrec_recent_searches', JSON.stringify(updated));
         } catch {}
+    };
+
+    const clearRecentSearches = (e) => {
+        e?.stopPropagation();
+        setRecentSearches([]);
+        try {
+            localStorage.removeItem('labrec_recent_searches');
+        } catch {}
+    };
+
+    const removeRecentItem = (termToRemove, e) => {
+        e?.stopPropagation();
+        try {
+            const updated = recentSearches.filter(r => r.query.toLowerCase() !== termToRemove.toLowerCase());
+            setRecentSearches(updated);
+            localStorage.setItem('labrec_recent_searches', JSON.stringify(updated));
+        } catch {}
+    };
+
+    const handleSelectResult = (item) => {
+        saveRecentSearch(query.trim() || item.title);
 
         setIsFocused(false);
         setQuery('');
@@ -425,6 +506,11 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             onFocus={() => setIsFocused(true)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && query.trim().length >= 2) {
+                                    saveRecentSearch(query.trim());
+                                }
+                            }}
                             placeholder="Search labs, docs, assignments, users..."
                             aria-label="Global search with category filters"
                             className="w-full bg-transparent border-0 outline-none text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 min-w-0"
@@ -545,15 +631,133 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
                                 )}
                             </div>
                         ) : (
-                            <div className="p-3 text-xs text-slate-400 flex items-center justify-between">
-                                <span>Type 2 or more characters to search instantly</span>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsFocused(false)}
-                                    className="text-indigo-500 hover:underline cursor-pointer"
-                                >
-                                    Dismiss
-                                </button>
+                            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                                {/* Recent Searches Section (Persisted in LocalStorage) */}
+                                {recentSearches.length > 0 ? (
+                                    <div className="space-y-1.5 px-1">
+                                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                            <span className="flex items-center gap-1.5">
+                                                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                                                Recent Searches
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={clearRecentSearches}
+                                                className="text-[11px] lowercase font-medium text-slate-400 hover:text-rose-500 transition cursor-pointer"
+                                            >
+                                                Clear history
+                                            </button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 pt-1">
+                                            {recentSearches.map((item, idx) => (
+                                                <div
+                                                    key={`${item.query}-${idx}`}
+                                                    className="group flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-xs text-slate-700 dark:text-slate-200 hover:border-indigo-500/50 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition cursor-pointer"
+                                                    onClick={() => {
+                                                        setQuery(item.query);
+                                                        inputRef.current?.focus();
+                                                    }}
+                                                >
+                                                    <Clock className="w-3 h-3 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                                                    <span className="font-medium">{item.query}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => removeRecentItem(item.query, e)}
+                                                        className="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+                                                        aria-label={`Remove ${item.query} from recent searches`}
+                                                    >
+                                                        <X className="w-2.5 h-2.5" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : null}
+
+                                {/* Quick Document & Office Format Shortcuts */}
+                                <div className="space-y-1.5 px-1">
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                        <Sparkles className="w-3 h-3 text-amber-500" />
+                                        <span>Search by Format & Studio</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-0.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveCategory('documents');
+                                                setQuery('docx');
+                                                inputRef.current?.focus();
+                                            }}
+                                            className="flex items-center gap-2 p-2 rounded-xl bg-blue-50/70 hover:bg-blue-100/80 dark:bg-blue-950/30 dark:hover:bg-blue-900/40 border border-blue-200/70 dark:border-blue-800/40 transition text-left cursor-pointer group"
+                                        >
+                                            <FluentWordDocIcon className="w-4 h-4 shrink-0" />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-blue-900 dark:text-blue-200 group-hover:text-blue-700 transition">Word Docs</p>
+                                                <p className="text-[10px] text-blue-600/70 dark:text-blue-400/70">.docx, .doc</p>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveCategory('documents');
+                                                setQuery('xlsx');
+                                                inputRef.current?.focus();
+                                            }}
+                                            className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50/70 hover:bg-emerald-100/80 dark:bg-emerald-950/30 dark:hover:bg-emerald-900/40 border border-emerald-200/70 dark:border-emerald-800/40 transition text-left cursor-pointer group"
+                                        >
+                                            <FluentExcelDocIcon className="w-4 h-4 shrink-0" />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200 group-hover:text-emerald-700 transition">Excel Sheets</p>
+                                                <p className="text-[10px] text-emerald-600/70 dark:text-emerald-400/70">.xlsx, .csv</p>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveCategory('documents');
+                                                setQuery('pdf');
+                                                inputRef.current?.focus();
+                                            }}
+                                            className="flex items-center gap-2 p-2 rounded-xl bg-rose-50/70 hover:bg-rose-100/80 dark:bg-rose-950/30 dark:hover:bg-rose-900/40 border border-rose-200/70 dark:border-rose-800/40 transition text-left cursor-pointer group"
+                                        >
+                                            <FluentPdfDocIcon className="w-4 h-4 shrink-0" />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-rose-900 dark:text-rose-200 group-hover:text-rose-700 transition">PDF Files</p>
+                                                <p className="text-[10px] text-rose-600/70 dark:text-rose-400/70">Studio & Annotate</p>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setActiveCategory('documents');
+                                                setQuery('code');
+                                                inputRef.current?.focus();
+                                            }}
+                                            className="flex items-center gap-2 p-2 rounded-xl bg-slate-900/5 hover:bg-slate-900/10 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-300/70 dark:border-slate-700/70 transition text-left cursor-pointer group"
+                                        >
+                                            <FluentTerminalIcon className="w-4 h-4 shrink-0 text-emerald-500" />
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition">Code Files</p>
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400">Python, SQL, IDE</p>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Footer Tip & Dismiss */}
+                                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-400 px-1">
+                                    <span>Type to search across labs, assignments, office docs, and people</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsFocused(false)}
+                                        className="text-indigo-500 hover:underline cursor-pointer font-medium"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
