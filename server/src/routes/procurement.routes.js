@@ -7,6 +7,8 @@ const asyncHandler = (fn) => (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+const isValidUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(val);
+
 // ============================================================
 // VENDOR MANAGEMENT
 // ============================================================
@@ -20,10 +22,51 @@ router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
         console.log('Fetching vendors for schoolId:', req.user.schoolId);
         const vendors = await prisma.vendor.findMany({
             where: { schoolId: req.user.schoolId },
+            include: {
+                approvedItems: {
+                    select: {
+                        id: true,
+                        quantity: true,
+                        approvedUnitPrice: true,
+                        requestId: true,
+                        request: {
+                            select: {
+                                id: true,
+                                title: true,
+                                status: true,
+                                academicYearId: true
+                            }
+                        }
+                    }
+                },
+                quotations: {
+                    select: {
+                        id: true,
+                        totalAmount: true,
+                        requestId: true
+                    }
+                }
+            },
             orderBy: { name: 'asc' }
         });
+
+        // Compute financial cost per vendor
+        const vendorsWithFinancials = vendors.map(v => {
+            const totalCost = (v.approvedItems || []).reduce((sum, item) => {
+                const price = parseFloat(item.approvedUnitPrice || 0);
+                const qty = item.quantity || 1;
+                return sum + (price * qty);
+            }, 0);
+            return {
+                ...v,
+                totalCost,
+                approvedItemsCount: v.approvedItems?.length || 0,
+                quotationsCount: v.quotations?.length || 0
+            };
+        });
+
         console.log('Found vendors:', vendors.length);
-        res.json({ success: true, data: vendors });
+        res.json({ success: true, data: vendorsWithFinancials });
     } catch (error) {
         console.error('GET vendors error:', error);
         res.status(500).json({ success: false, message: 'Failed to load vendors', error: error.message });
