@@ -700,7 +700,7 @@ router.delete('/requests/:id/committee/:memberId', authenticate, authorize('admi
  */
 router.get('/requests/:id/preview', authenticate, asyncHandler(async (req, res) => {
     // Get school with letterhead and contact details
-    const school = await prisma.school.findFirst({
+    let school = req.user?.schoolId ? await prisma.school.findFirst({
         where: { id: req.user.schoolId },
         select: {
             name: true,
@@ -712,11 +712,26 @@ router.get('/requests/:id/preview', authenticate, asyncHandler(async (req, res) 
             phone1: true,
             phone2: true
         }
-    });
+    }) : null;
+
+    if (!school) {
+        school = await prisma.school.findFirst({
+            select: {
+                name: true,
+                address: true,
+                letterheadUrl: true,
+                logoUrl: true,
+                pinCode: true,
+                email: true,
+                phone1: true,
+                phone2: true
+            }
+        });
+    }
 
     // Get request with all details
     const request = await prisma.procurementRequest.findFirst({
-        where: { id: req.params.id, schoolId: req.user.schoolId },
+        where: { id: req.params.id, ...(req.user?.schoolId ? { schoolId: req.user.schoolId } : {}) },
         include: {
             createdBy: { select: { firstName: true, lastName: true } },
             approvedBy: { select: { firstName: true, lastName: true } },

@@ -708,11 +708,12 @@ export default function ProcurementPage() {
         const isComplete = request.status === 'received' || request.status === 'completed';
 
         // Helper to render letterhead at the top of every generated institutional A4 page
+        const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
         const renderLetterhead = (sectionTitle) => `
             <div class="letterhead-container">
-                ${school?.letterheadUrl ? `
-                    <div class="letterhead-img-wrapper">
-                        <img src="${school.letterheadUrl}" alt="${school.name || 'Institution Letterhead'}" style="width: 100%; max-height: 120px; object-fit: contain; margin-bottom: 10px;" />
+                ${letterheadSrc ? `
+                    <div class="letterhead-img-wrapper" style="text-align: center; margin-bottom: 12px; border-bottom: 2px solid #1e3a8a; padding-bottom: 8px;">
+                        <img src="${letterheadSrc}" alt="${school?.name || 'Senior Secondary Residential School for Meritorious Students'}" style="width: 100%; max-height: 125px; object-fit: contain;" />
                     </div>
                 ` : `
                     <div class="letterhead-header">
@@ -1449,6 +1450,7 @@ export default function ProcurementPage() {
             }
             const today = formatDate(new Date());
             const deadlineStr = formatDate(lastDateToSubmit);
+            const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
 
             const html = `
             <!DOCTYPE html>
@@ -1478,9 +1480,9 @@ export default function ProcurementPage() {
                 </style>
             </head>
             <body>
-                ${school?.letterheadUrl ? `
+                ${letterheadSrc ? `
                     <div style="text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">
-                        <img src="${school.letterheadUrl}" style="max-width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
                     </div>
                 ` : `
                     <div class="letterhead">
@@ -1591,6 +1593,7 @@ export default function ProcurementPage() {
             const selectedVendors = vendors.filter(v => selectedVendorIds.includes(v.id));
             const today = formatDate(new Date());
             const deadlineStr = formatDate(lastDateToSubmit);
+            const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
 
             const html = `
             <!DOCTYPE html>
@@ -1630,9 +1633,9 @@ export default function ProcurementPage() {
                 ${selectedVendors.map((vendor, vIdx) => `
                 <div class="vendor-page">
                     <div>
-                        ${school?.letterheadUrl ? `
+                        ${letterheadSrc ? `
                             <div style="text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">
-                                <img src="${school.letterheadUrl}" style="max-width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                                <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
                             </div>
                         ` : `
                             <div class="header">
@@ -1779,6 +1782,7 @@ export default function ProcurementPage() {
             const quoteNumber = vendorQuotationNumbers[selectedVendorForPurchase] || quoteObj?.quotationNumber || 'QT-' + request.id?.slice(0, 6).toUpperCase();
             const quoteDate = quoteObj?.quotationDate ? formatDate(quoteObj.quotationDate) : formatDate(new Date());
             const today = formatDate(new Date());
+            const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
 
             const grandTotal = calculatePOTotal();
             const defaultGstRate = vendorGlobalGst[selectedVendorForPurchase] ?? (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18);
@@ -1825,9 +1829,9 @@ export default function ProcurementPage() {
                 </style>
             </head>
             <body>
-                ${school?.letterheadUrl ? `
+                ${letterheadSrc ? `
                     <div style="text-align: center; margin-bottom: 14px; border-bottom: 2px solid #0f172a; padding-bottom: 10px;">
-                        <img src="${school.letterheadUrl}" style="max-width: 100%; max-height: 120px; object-fit: contain; margin-bottom: 6px;" alt="Letterhead" />
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain; margin-bottom: 6px;" alt="Letterhead" />
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding: 0 8px;">
                             <span style="font-size: 18px; font-weight: bold; color: #2563eb; letter-spacing: 1px;">PURCHASE ORDER</span>
                             <span style="font-size: 13.5px; color: #334155;"><strong>PO No:</strong> ${orderForm.poNumber || request.poNumber || 'PO-' + request.id?.slice(0, 8).toUpperCase()} | <strong>Date:</strong> ${today}</span>
