@@ -248,6 +248,10 @@ export default function AdminStudentsPage() {
                                         <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs rounded-full font-medium">
                                             Current Session
                                         </span>
+                                    ) : (selectedSession.isAll || selectedSession.id === 'all') ? (
+                                        <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full font-medium">
+                                            All Sessions
+                                        </span>
                                     ) : (
                                         <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full font-medium flex items-center gap-1">
                                             <Lock className="w-3 h-3" />
@@ -256,7 +260,9 @@ export default function AdminStudentsPage() {
                                     )}
                                 </div>
                                 <p className="text-sm text-slate-500">
-                                    {formatDateRange(selectedSession.startDate, selectedSession.endDate, true)}
+                                    {(selectedSession.isAll || selectedSession.id === 'all')
+                                        ? 'Viewing data across all academic sessions'
+                                        : formatDateRange(selectedSession.startDate, selectedSession.endDate, true)}
                                 </p>
                             </div>
                         </div>

@@ -11,9 +11,9 @@ exports.getLecturePlans = async (req, res, next) => {
         const { schoolId } = req.user;
         const { classId, subjectId, instructorId, date, academicYearId: qAcademicYearId } = req.query;
 
-        // Resolve academicYearId: use query param or find the current active one
+        // Resolve academicYearId: use query param or find current active one (skip if requesting all sessions)
         let academicYearId = qAcademicYearId;
-        if (!academicYearId) {
+        if (!req.isAllSessions && !academicYearId) {
             const currentYear = await prisma.academicYear.findFirst({
                 where: { schoolId, isCurrent: true },
                 select: { id: true }
@@ -23,7 +23,7 @@ exports.getLecturePlans = async (req, res, next) => {
 
         const where = {
             schoolId,
-            academicYearId
+            ...(academicYearId && { academicYearId })
         };
         
         if (classId) where.classId = classId;

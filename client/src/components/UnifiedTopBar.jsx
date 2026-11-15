@@ -233,7 +233,7 @@ export default function UnifiedTopBar({ isLowMemory = false }) {
         debounceTimerRef.current = setTimeout(async () => {
             try {
                 const categoryParam = activeCategory === 'all' ? '' : `&category=${activeCategory}`;
-                const sessionParam = selectedSession?.id ? `&sessionId=${selectedSession.id}` : '';
+                const sessionParam = (selectedSession?.id && selectedSession.id !== 'all') ? `&sessionId=${selectedSession.id}` : '';
                 const res = await api.get(`/search?q=${encodeURIComponent(query.trim())}${categoryParam}${sessionParam}`);
 
                 if (res.data?.success && res.data?.data) {

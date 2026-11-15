@@ -571,7 +571,7 @@ export default function ProcurementPage() {
         try {
             console.log('Loading procurement data...');
             const reqQuery = {};
-            if (selectedSessionId) {
+            if (selectedSessionId && selectedSessionId !== 'all') {
                 reqQuery.academicYearId = selectedSessionId;
             }
 
@@ -2062,7 +2062,7 @@ export default function ProcurementPage() {
         try {
             const res = await procurementAPI.createRequest({
                 ...requestForm,
-                academicYearId: selectedSessionId || undefined
+                academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined
             });
             toast.success('Request created! Proceeding to next steps...');
             // After creation, load the new request and continue with the flow

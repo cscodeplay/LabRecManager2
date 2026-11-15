@@ -32,7 +32,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Use X-Academic-Session header for session filtering
-    const sessionId = academicYearId || req.headers['x-academic-session'];
+    const sessionId = (req.isAllSessions || academicYearId === 'all') ? null : (academicYearId || req.headers['x-academic-session']);
 
     let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
@@ -122,6 +122,9 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
         },
         lab: {
             select: { id: true, name: true, nameHindi: true }
+        },
+        academicYear: {
+            select: { id: true, yearLabel: true }
         },
         createdBy: {
             select: { id: true, firstName: true, lastName: true }

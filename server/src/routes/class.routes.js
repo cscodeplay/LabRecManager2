@@ -13,8 +13,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { academicYearId, gradeLevel, all } = req.query;
     // Use X-Academic-Session header if no explicit academicYearId provided
-    // Skip session filter if 'all' is passed (for sharing across sessions)
-    const sessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    // Skip session filter if 'all' is passed (for sharing across sessions or global all-session view)
+    const sessionId = (all === 'true' || req.isAllSessions) ? null : (academicYearId || req.headers['x-academic-session']);
 
     let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 

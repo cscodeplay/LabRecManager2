@@ -142,6 +142,26 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 app.use(requestLogger);
 
+// Normalize academic session header / queries so 'all' displays data across all sessions safely
+app.use((req, res, next) => {
+    const sessionHeader = req.headers['x-academic-session'];
+    if (sessionHeader === 'all' || sessionHeader === 'null' || sessionHeader === 'undefined' || sessionHeader === '') {
+        req.isAllSessions = true;
+        delete req.headers['x-academic-session'];
+    }
+    if (req.query) {
+        if (req.query.academicYearId === 'all' || req.query.academicYearId === 'null' || req.query.academicYearId === 'undefined') {
+            req.isAllSessions = true;
+            delete req.query.academicYearId;
+        }
+        if (req.query.sessionId === 'all' || req.query.sessionId === 'null' || req.query.sessionId === 'undefined') {
+            req.isAllSessions = true;
+            delete req.query.sessionId;
+        }
+    }
+    next();
+});
+
 // Static files for uploads & RAG documents
 app.use('/uploads', express.static(path.join(__dirname, '../uploads'), {
     setHeaders: (res, filePath) => {

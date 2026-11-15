@@ -48,6 +48,13 @@ export const useAuthStore = create(
                 // If selectedSession has no yearLabel or is just an ID, resolve it from availableSessions
                 const currentSession = get().selectedSession;
                 const currentSessionId = get().selectedSessionId;
+                if (currentSessionId === 'all') {
+                    set({
+                        selectedSession: { id: 'all', yearLabel: 'All Sessions', isCurrent: false, isAll: true },
+                        isReadOnlyMode: false,
+                    });
+                    return;
+                }
                 if (currentSessionId && (!currentSession || !currentSession.yearLabel)) {
                     const matched = sessions?.find(s => s.id === currentSessionId);
                     if (matched) {
@@ -60,6 +67,14 @@ export const useAuthStore = create(
             },
 
             setSession: (session) => {
+                if (session === 'all' || session?.id === 'all') {
+                    set({
+                        selectedSessionId: 'all',
+                        selectedSession: { id: 'all', yearLabel: 'All Sessions', isCurrent: false, isAll: true },
+                        isReadOnlyMode: false,
+                    });
+                    return;
+                }
                 const sessionObj = typeof session === 'string'
                     ? (get().availableSessions || []).find(s => s.id === session) || { id: session, yearLabel: 'Active' }
                     : session;

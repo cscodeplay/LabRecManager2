@@ -225,7 +225,7 @@ router.post('/', authenticate, [
  */
 router.get('/', authenticate, asyncHandler(async (req, res) => {
     const { status, priority, category, labId, myTickets, academicYearId, all, page = 1, limit = 20 } = req.query;
-    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = (all === 'true' || req.isAllSessions) ? null : (academicYearId || req.headers['x-academic-session']);
     const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const where = {};
 
@@ -357,7 +357,7 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
  */
 router.get('/stats', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
     const { academicYearId, all } = req.query;
-    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = (all === 'true' || req.isAllSessions) ? null : (academicYearId || req.headers['x-academic-session']);
     const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const statsWhere = sessionId ? { academicYearId: sessionId } : {};
 

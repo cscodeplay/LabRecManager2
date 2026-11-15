@@ -189,7 +189,7 @@ export default function TicketsPage() {
                 description: form.description.trim(),
                 category: form.category || 'other',
                 priority: form.priority || 'medium',
-                academicYearId: selectedSessionId || undefined
+                academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined
             };
             // For students, auto-use their assigned PC if available
             if (user?.role === 'student' && studentProfile?.assignedPc) {

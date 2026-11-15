@@ -351,7 +351,7 @@ export default function AdminTimetablePage() {
 
         setSaving(true);
         try {
-            const academicYearId = user?.currentAcademicYearId || selectedSessionId;
+            const academicYearId = user?.currentAcademicYearId || (selectedSessionId !== 'all' ? selectedSessionId : undefined);
             const payload = {
                 classId: selectedClassId,
                 academicYearId,

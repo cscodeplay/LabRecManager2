@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown, Sparkles, Presentation, Layers, Cloud } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown, Sparkles, Presentation, Layers, Cloud, Info } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -2578,53 +2578,55 @@ export default function DocumentsPage() {
                             )}
                         </div>
 
-                        {/* System Folder: Whiteboard Recordings (Grid) - Nested inside Office Media Files */}
+                        {/* Whiteboard Recordings Folder (Grid) - Nested inside Office Media Files */}
                         {activeTab === 'my' && isInsideOfficeMediaFolder && (
                             <div
-                                className={`card p-4 hover:shadow-md transition-all border border-indigo-100 bg-indigo-50/40 hover:bg-indigo-50/70 relative ${selectedFolders.has('recordings') ? 'ring-2 ring-indigo-500' : ''}`}
+                                className={`card p-4 hover:shadow-md transition-all border border-slate-100 bg-slate-50/50 relative ${selectedFolders.has('recordings') ? 'ring-2 ring-primary-500' : ''}`}
                             >
                                 <input
                                     type="checkbox"
                                     checked={selectedFolders.has('recordings')}
                                     onChange={() => toggleFolderSelection('recordings')}
-                                    className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                    className="absolute top-3 right-3 z-10 w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                     aria-label="Select Whiteboard Recordings Folder"
                                 />
                                 <div
-                                    className="flex items-start justify-between cursor-pointer group"
+                                    className="flex items-start justify-between cursor-pointer"
                                     onClick={() => setActiveTab('recordings')}
                                 >
                                     <div className="flex items-center gap-3">
                                         <div
                                             style={{ width: '40px', height: '40px', minWidth: '40px', minHeight: '40px' }}
-                                            className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform"
+                                            className="w-10 h-10 shrink-0 flex items-center justify-center"
                                         >
-                                            <Film style={{ width: 24, height: 24 }} className="w-6 h-6 shrink-0" />
+                                            <Folder style={{ width: 40, height: 40 }} className="w-10 h-10 text-yellow-400 fill-yellow-100 shrink-0" />
                                         </div>
                                         <div className="overflow-hidden">
                                             <div className="flex items-center gap-1.5">
-                                                <h3 className="font-semibold text-slate-800 truncate">🎥 Whiteboard Recordings</h3>
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">System Folder</span>
+                                                <h3 className="font-semibold text-slate-800 truncate" title="Whiteboard Recordings">🎥 Whiteboard Recordings</h3>
+                                                {/* Additional information in i tag for future extension */}
+                                                <span
+                                                    title={`${recordings.length} recordings • Recorded canvas sessions`}
+                                                    className="inline-flex items-center text-slate-400 hover:text-indigo-600 transition-colors cursor-help"
+                                                >
+                                                    <Info className="w-3.5 h-3.5" />
+                                                </span>
                                             </div>
                                             <p className="text-xs text-slate-500 mt-0.5">
-                                                {recordings.length} {recordings.length === 1 ? 'recording' : 'recordings'} • Canvas video sessions
+                                                {formatDate(currentFolder?.createdAt || (recordings[0]?.createdAt || new Date()))}
                                             </p>
                                         </div>
                                     </div>
                                 </div>
-                                {/* Folder Actions */}
-                                <div className="flex items-center gap-1 mt-3 pt-3 border-t border-indigo-100/70">
+                                <div className="flex gap-1 mt-3 pt-3 border-t border-slate-100">
                                     <button
-                                        type="button"
                                         onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
-                                        className="flex-1 p-1.5 text-xs text-indigo-700 hover:text-indigo-900 hover:bg-indigo-100/70 rounded-lg flex items-center justify-center gap-1 font-medium transition"
-                                        title="Browse Recordings"
+                                        className="flex-1 p-1.5 text-xs text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded flex items-center justify-center gap-1"
+                                        title="View Contents"
                                     >
                                         <Eye className="w-4 h-4" />
-                                        <span>Open</span>
                                     </button>
                                     <button
-                                        type="button"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             if (recordings.length > 0) {
@@ -2633,10 +2635,30 @@ export default function DocumentsPage() {
                                                 toast('No recordings to share yet');
                                             }
                                         }}
-                                        className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100/70 rounded-lg transition"
-                                        title="Share Recordings"
+                                        className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded flex items-center justify-center"
+                                        title="Share"
                                     >
                                         <Share2 className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toast('Whiteboard Recordings is integrated into Office Media Files');
+                                        }}
+                                        className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded flex items-center justify-center"
+                                        title="Move"
+                                    >
+                                        <FolderInput className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toast('Whiteboard Recordings folder is managed by whiteboard sessions');
+                                        }}
+                                        className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded flex items-center justify-center"
+                                        title="Delete"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -2887,53 +2909,66 @@ export default function DocumentsPage() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {/* System Folder: Whiteboard Recordings (List) - Nested inside Office Media Files */}
+                                    {/* Whiteboard Recordings Folder (List) - Nested inside Office Media Files */}
                                     {activeTab === 'my' && isInsideOfficeMediaFolder && (
                                         <tr
                                             onClick={() => setActiveTab('recordings')}
-                                            className={`border-b border-indigo-50 bg-indigo-50/20 hover:bg-indigo-50/60 cursor-pointer group transition ${selectedFolders.has('recordings') ? 'bg-indigo-50/80 ring-1 ring-indigo-400' : ''}`}
+                                            className={`border-b border-slate-100 hover:bg-slate-50 cursor-pointer group ${selectedFolders.has('recordings') ? 'bg-primary-50' : ''}`}
                                         >
-                                            <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                                            <td className="p-3">
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedFolders.has('recordings')}
                                                     onChange={() => toggleFolderSelection('recordings')}
-                                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                                    className="rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
                                                     aria-label="Select Whiteboard Recordings Folder"
+                                                    onClick={(e) => e.stopPropagation()}
                                                 />
                                             </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-3">
-                                                    <div
-                                                        style={{ width: '32px', height: '32px', minWidth: '32px', minHeight: '32px' }}
-                                                        className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 shadow-2xs"
-                                                    >
-                                                        <Film style={{ width: 16, height: 16 }} className="w-4 h-4 shrink-0" />
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <p className="font-semibold text-slate-900 group-hover:text-indigo-600 transition-colors">🎥 Whiteboard Recordings</p>
-                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">System Folder</span>
-                                                        </div>
-                                                        <span className="text-xs text-slate-500">{recordings.length} recordings • Recorded canvas sessions</span>
+                                                    <Folder className="w-6 h-6 text-yellow-400 fill-yellow-100 shrink-0" />
+                                                    <div className="flex items-center gap-1.5">
+                                                        <p className="font-medium text-slate-900 group-hover:text-primary-600 transition-colors">
+                                                            🎥 Whiteboard Recordings
+                                                        </p>
+                                                        {/* Additional information in i tag for future extension */}
+                                                        <span
+                                                            title={`${recordings.length} recordings • Recorded canvas sessions`}
+                                                            className="inline-flex items-center text-slate-400 hover:text-indigo-600 transition-colors cursor-help"
+                                                        >
+                                                            <Info className="w-3.5 h-3.5" />
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">Video Sessions</td>
+                                            <td className="p-3 text-sm text-slate-600 hidden md:table-cell">Folder</td>
                                             <td className="p-3 text-sm text-slate-600 hidden md:table-cell">{recordings.length} items</td>
-                                            {activeTab === 'my' && <td className="p-3 text-sm text-slate-500 hidden sm:table-cell">System</td>}
-                                            <td className="p-3 text-sm text-slate-500 hidden lg:table-cell">--</td>
+                                            {activeTab === 'my' && (
+                                                <>
+                                                    <td className="p-3 hidden lg:table-cell">
+                                                        <span className="px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
+                                                            Folder
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 hidden lg:table-cell">
+                                                        <span className="text-xs text-slate-400">—</span>
+                                                    </td>
+                                                </>
+                                            )}
+                                            <td className="p-3 text-sm text-slate-600 hidden lg:table-cell">
+                                                {formatDate(currentFolder?.createdAt || (recordings[0]?.createdAt || new Date()))}
+                                            </td>
                                             <td className="p-3">
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex gap-1">
                                                     <button
-                                                        type="button"
                                                         onClick={(e) => { e.stopPropagation(); setActiveTab('recordings'); }}
-                                                        className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                                                        className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                                                        title="View Contents"
                                                     >
-                                                        Open
+                                                        <Eye className="w-4 h-4" />
                                                     </button>
                                                     <button
-                                                        type="button"
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             if (recordings.length > 0) {
@@ -2942,10 +2977,30 @@ export default function DocumentsPage() {
                                                                 toast('No recordings to share yet');
                                                             }
                                                         }}
-                                                        className="p-1 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition"
-                                                        title="Share Recordings"
+                                                        className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded"
+                                                        title="Share"
                                                     >
-                                                        <Share2 className="w-3.5 h-3.5" />
+                                                        <Share2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toast('Whiteboard Recordings is integrated into Office Media Files');
+                                                        }}
+                                                        className="p-1.5 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded"
+                                                        title="Move"
+                                                    >
+                                                        <FolderInput className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            toast('Whiteboard Recordings folder is managed by whiteboard sessions');
+                                                        }}
+                                                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                        title="Delete"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             </td>
@@ -3150,52 +3205,85 @@ export default function DocumentsPage() {
 
                         {/* Mobile Collapsible Records View */}
                         <div className="md:hidden divide-y divide-slate-100">
-                            {/* System Folder: Whiteboard Recordings (Mobile) - Nested inside Office Media Files */}
-                            {activeTab === 'my' && isInsideOfficeMediaFolder && (
-                                <div
-                                    className={`p-4 bg-indigo-50/30 hover:bg-indigo-50/60 transition ${selectedFolders.has('recordings') ? 'bg-indigo-50/80 ring-1 ring-indigo-400' : ''}`}
-                                >
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div
-                                            className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
-                                            onClick={() => setActiveTab('recordings')}
-                                        >
-                                            <div
-                                                style={{ width: '32px', height: '32px', minWidth: '32px', minHeight: '32px' }}
-                                                className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0"
-                                            >
-                                                <Film style={{ width: 16, height: 16 }} className="w-4 h-4 shrink-0" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <p className="font-semibold text-slate-900 truncate">🎥 Whiteboard Recordings</p>
-                                                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-700">System</span>
+                            {/* Whiteboard Recordings Folder (Mobile Collapsible Records) - Nested inside Office Media Files */}
+                            {activeTab === 'my' && isInsideOfficeMediaFolder && (() => {
+                                const isExpanded = expandedMobileDocId === 'folder-recordings';
+                                return (
+                                    <div key="mob-folder-recordings" className={`p-4 bg-white hover:bg-slate-50 transition ${selectedFolders.has('recordings') ? 'bg-primary-50/60' : ''}`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-start gap-3 flex-1 min-w-0" onClick={() => setActiveTab('recordings')}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedFolders.has('recordings')}
+                                                    onChange={() => toggleFolderSelection('recordings')}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500 shrink-0"
+                                                    aria-label="Select Whiteboard Recordings"
+                                                />
+                                                <Folder className="w-8 h-8 text-yellow-500 fill-yellow-100 shrink-0 mt-0.5" />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <p className="font-semibold text-slate-900 truncate">🎥 Whiteboard Recordings</p>
+                                                        {/* Additional information in i tag for future extension */}
+                                                        <span
+                                                            title={`${recordings.length} recordings • Recorded canvas sessions`}
+                                                            className="inline-flex items-center text-slate-400 hover:text-indigo-600 transition-colors cursor-help"
+                                                        >
+                                                            <Info className="w-3.5 h-3.5" />
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                        {formatDate(currentFolder?.createdAt || (recordings[0]?.createdAt || new Date()))}
+                                                    </p>
                                                 </div>
-                                                <p className="text-xs text-slate-500 mt-0.5">
-                                                    {recordings.length} recordings • Video sessions
-                                                </p>
                                             </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedFolders.has('recordings')}
-                                                onChange={() => toggleFolderSelection('recordings')}
-                                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                                aria-label="Select Whiteboard Recordings"
-                                            />
                                             <button
-                                                type="button"
-                                                onClick={() => setActiveTab('recordings')}
-                                                className="p-1 text-indigo-600 hover:bg-indigo-100 rounded-lg transition"
-                                                title="Open Recordings"
+                                                onClick={() => setExpandedMobileDocId(isExpanded ? null : 'folder-recordings')}
+                                                className={`py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center gap-1 transition ${isExpanded ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-700'}`}
                                             >
-                                                <ChevronRight className="w-4 h-4 text-indigo-500 shrink-0" />
+                                                Options
+                                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                             </button>
                                         </div>
+
+                                        {/* Collapsible Action Tray */}
+                                        {isExpanded && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-2">
+                                                <button
+                                                    onClick={() => setActiveTab('recordings')}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" /> View Contents
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        if (recordings.length > 0) {
+                                                            setShareModal(recordings[0]);
+                                                        } else {
+                                                            toast('No recordings to share yet');
+                                                        }
+                                                    }}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100"
+                                                >
+                                                    <Share2 className="w-3.5 h-3.5" /> Share
+                                                </button>
+                                                <button
+                                                    onClick={() => toast('Whiteboard Recordings is integrated into Office Media Files')}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-orange-50 text-orange-700 hover:bg-orange-100"
+                                                >
+                                                    <FolderInput className="w-3.5 h-3.5" /> Move
+                                                </button>
+                                                <button
+                                                    onClick={() => toast('Whiteboard Recordings folder is managed by whiteboard sessions')}
+                                                    className="flex items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-medium bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                                >
+                                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
 
                             {/* Folders (Mobile Collapsible Records) */}
                             {activeTab === 'my' && folders.map(folder => {

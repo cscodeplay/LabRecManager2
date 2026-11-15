@@ -187,7 +187,7 @@ export default function DashboardPage() {
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    Academic Session {selectedSession?.yearLabel || availableSessions?.find(s => s.id === selectedSessionId)?.yearLabel || 'Active'}
+                                    Academic Session {selectedSession?.id === 'all' ? 'All Sessions' : (selectedSession?.yearLabel || availableSessions?.find(s => s.id === selectedSessionId)?.yearLabel || 'Active')}
                                 </span>
                                 <span className="text-slate-500">•</span>
                                 <span className="px-2.5 py-1 rounded-full bg-white/10 text-slate-300 font-mono capitalize">

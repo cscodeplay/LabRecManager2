@@ -179,7 +179,7 @@ router.delete('/vendors/:id', authenticate, authorize('admin', 'principal', 'lab
  */
 router.get('/requests', authenticate, asyncHandler(async (req, res) => {
     const { status, academicYearId, all } = req.query;
-    const rawSessionId = all === 'true' ? null : (academicYearId || req.headers['x-academic-session']);
+    const rawSessionId = (all === 'true' || req.isAllSessions) ? null : (academicYearId || req.headers['x-academic-session']);
     const sessionId = isValidUuid(rawSessionId) ? rawSessionId : null;
     const where = { schoolId: req.user.schoolId };
     if (status) where.status = status;

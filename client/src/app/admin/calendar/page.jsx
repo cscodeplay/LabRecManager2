@@ -74,7 +74,7 @@ export default function AdminCalendarPage() {
             const res = await calendarAPI.getEvents({
                 month: currentMonth,
                 year: currentYear,
-                academicYearId: selectedSessionId
+                academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined
             });
             setEvents(res.data.data.events || []);
         } catch (error) {
@@ -153,7 +153,7 @@ export default function AdminCalendarPage() {
             } else {
                 await calendarAPI.addEvent({
                     ...form,
-                    academicYearId: selectedSessionId
+                    academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined
                 });
                 toast.success(form.isHoliday ? 'Holiday added' : 'Event scheduled');
             }
@@ -193,7 +193,7 @@ export default function AdminCalendarPage() {
         setSeeding(true);
         try {
             const res = await calendarAPI.seedPunjabHolidays({
-                academicYearId: selectedSessionId,
+                academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined,
                 year: currentYear
             });
             toast.success(res.data.message);
@@ -219,7 +219,7 @@ export default function AdminCalendarPage() {
         setSeeding(true);
         try {
             const res = await calendarAPI.seedWeekendHolidays({
-                academicYearId: selectedSessionId,
+                academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined,
                 year: currentYear
             });
             toast.success(res.data.message);

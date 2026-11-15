@@ -17,8 +17,8 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
     const { page = 1, limit = 20, role, search, isActive, classId, accessStatus, all } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get academic session from header (skip if 'all' is passed for sharing across sessions)
-    const sessionId = all === 'true' ? null : req.headers['x-academic-session'];
+    // Get academic session from header (skip if 'all' is passed for sharing across sessions or global all-session view)
+    const sessionId = (all === 'true' || req.isAllSessions) ? null : req.headers['x-academic-session'];
 
     let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 

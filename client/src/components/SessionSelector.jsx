@@ -66,7 +66,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
             setAvailableSessions(sessions);
 
             // Auto-select current session if none selected or if selected session does not exist in available sessions
-            const isValidSelected = selectedSession && sessions.some(s => s.id === selectedSession.id);
+            const isValidSelected = selectedSession && (selectedSession.id === 'all' || sessions.some(s => s.id === selectedSession.id));
             if (!isValidSelected && sessions.length > 0) {
                 // Prefer session marked isCurrent, then latest by startDate
                 const current = sessions.find(s => s.isCurrent)
@@ -107,7 +107,9 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                         : 'gap-2 px-3 py-2 rounded-lg border'
                 } ${isReadOnlyMode
                         ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200'
-                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-primary-300'
+                        : selectedSession?.id === 'all'
+                            ? 'bg-indigo-50/80 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:border-indigo-300'
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-primary-300'
                     }`}
             >
                 <span className="w-4 h-4 min-w-[16px] max-w-[16px] h-4 max-h-[16px] flex items-center justify-center shrink-0">
@@ -146,6 +148,47 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                         </div>
 
                         <div className="max-h-64 overflow-y-auto">
+                            {/* All Sessions Option */}
+                            <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSelectSession({
+                                        id: 'all',
+                                        yearLabel: 'All Sessions',
+                                        isCurrent: false,
+                                        isAll: true
+                                    });
+                                }}
+                                className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition border-b border-slate-100 dark:border-slate-800 ${selectedSession?.id === 'all' ? 'bg-indigo-50 dark:bg-indigo-950/40' : ''
+                                    }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <FluentAcademicSessionIcon className="w-4 h-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                                    <div className="text-left">
+                                        <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                            All Sessions
+                                        </p>
+                                        <p className="text-xs text-slate-500">
+                                            View data across all sessions
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {selectedSession?.id === 'all' ? (
+                                        <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-xs rounded-full font-medium">
+                                            Active
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-slate-400 font-mono uppercase">
+                                            All
+                                        </span>
+                                    )}
+                                </div>
+                            </button>
+
                             {availableSessions.length === 0 ? (
                                 <div className="p-4 text-center text-sm text-slate-500">
                                     No sessions available
@@ -191,7 +234,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
                         <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-850">
                             <div className="flex items-start gap-2 text-xs text-slate-500">
                                 <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                                <span>Historical sessions are read-only. Switch to current session to make changes.</span>
+                                <span>Historical sessions are read-only. Switch to current session to make changes, or All Sessions to view all data.</span>
                             </div>
                         </div>
                     </div>
@@ -205,7 +248,7 @@ export default function SessionSelector({ onOpenChange, variant = 'default' }) {
 export function ReadOnlyBanner() {
     const { isReadOnlyMode, selectedSession } = useAuthStore();
 
-    if (!isReadOnlyMode) return null;
+    if (!isReadOnlyMode || selectedSession?.id === 'all') return null;
 
     return (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2">
