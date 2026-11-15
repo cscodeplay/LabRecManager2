@@ -161,4 +161,53 @@ router.post('/quotation/:quotationId', authenticate, upload.single('file'), asyn
     }
 });
 
+/**
+ * @route   POST /api/upload/procurement/:requestId/vendor-quotation/:vendorId
+ * @desc    Upload quotation document for a vendor under a request
+ */
+router.post('/procurement/:requestId/vendor-quotation/:vendorId', authenticate, upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+
+        const { requestId, vendorId } = req.params;
+        const result = await uploadToCloudinary(req.file.path);
+
+        const existing = await prisma.vendorQuotation.findFirst({
+            where: { requestId, vendorId }
+        });
+
+        let quotation;
+        if (existing) {
+            quotation = await prisma.vendorQuotation.update({
+                where: { id: existing.id },
+                data: { documentUrl: result.secure_url }
+            });
+        } else {
+            quotation = await prisma.vendorQuotation.create({
+                data: {
+                    requestId,
+                    vendorId,
+                    documentUrl: result.secure_url,
+                    quotationNumber: req.body.quotationNumber || `QT-${Date.now().toString(36).toUpperCase()}`
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                url: result.secure_url,
+                name: req.file.originalname,
+                quotation
+            },
+            message: 'Quotation document uploaded'
+        });
+    } catch (error) {
+        console.error('Vendor quotation upload error:', error);
+        res.status(500).json({ success: false, message: 'Upload failed: ' + error.message });
+    }
+});
+
 module.exports = router;

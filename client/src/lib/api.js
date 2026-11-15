@@ -708,6 +708,14 @@ export const uploadAPI = {
         return api.post(`/upload/quotation/${quotationId}`, formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
+    },
+    // Upload vendor quotation document by request ID & vendor ID
+    uploadVendorQuotationDoc: (requestId, vendorId, file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        return api.post(`/upload/procurement/${requestId}/vendor-quotation/${vendorId}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
     }
 };
 
