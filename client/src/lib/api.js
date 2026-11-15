@@ -645,7 +645,9 @@ export const procurementAPI = {
     createRequest: (data) => api.post('/procurement/requests', data),
     updateRequest: (id, data) => api.put(`/procurement/requests/${id}`, data),
     addItem: (requestId, data) => api.post(`/procurement/requests/${requestId}/items`, data),
+    updateItem: (requestId, itemId, data) => api.put(`/procurement/requests/${requestId}/items/${itemId}`, data),
     removeItem: (requestId, itemId) => api.delete(`/procurement/requests/${requestId}/items/${itemId}`),
+    emailCallQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/email-call-quotation`, data),
     // Quotations
     addQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/quotations`, data),
     // Approval

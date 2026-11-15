@@ -457,7 +457,7 @@ router.get('/requests/:id/vendor-requirements', authenticate, asyncHandler(async
  * @desc    Add item to procurement request
  */
 router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) => {
-    const { itemName, description, specifications, quantity, unit, estimatedUnitPrice } = req.body;
+    const { itemName, description, specifications, warranty, quantity, unit, estimatedUnitPrice } = req.body;
 
     const item = await prisma.procurementItem.create({
         data: {
@@ -465,13 +465,37 @@ router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) =
             itemName,
             description,
             specifications,
-            quantity: quantity || 1,
+            warranty: warranty || null,
+            quantity: quantity ? parseInt(quantity) : 1,
             unit: unit || 'pcs',
-            estimatedUnitPrice
+            estimatedUnitPrice: estimatedUnitPrice ? parseFloat(estimatedUnitPrice) : null
         }
     });
 
     res.status(201).json({ success: true, data: item, message: 'Item added' });
+}));
+
+/**
+ * @route   PUT /api/procurement/requests/:id/items/:itemId
+ * @desc    Update item in procurement request
+ */
+router.put('/requests/:id/items/:itemId', authenticate, asyncHandler(async (req, res) => {
+    const { itemName, description, specifications, warranty, quantity, unit, estimatedUnitPrice } = req.body;
+
+    const item = await prisma.procurementItem.update({
+        where: { id: req.params.itemId },
+        data: {
+            itemName,
+            description,
+            specifications,
+            warranty: warranty || null,
+            quantity: quantity ? parseInt(quantity) : 1,
+            unit: unit || 'pcs',
+            estimatedUnitPrice: estimatedUnitPrice ? parseFloat(estimatedUnitPrice) : null
+        }
+    });
+
+    res.json({ success: true, data: item, message: 'Item updated' });
 }));
 
 /**
@@ -1035,6 +1059,113 @@ router.get('/labs', authenticate, asyncHandler(async (req, res) => {
         select: { id: true, name: true, roomNumber: true }
     });
     res.json({ success: true, data: labs });
+}));
+
+/**
+ * @route   POST /api/procurement/requests/:id/email-call-quotation
+ * @desc    Send Call for Quotation email to a vendor
+ */
+router.post('/requests/:id/email-call-quotation', authenticate, asyncHandler(async (req, res) => {
+    const { vendorId, recipientEmail, deadlineDate, customNotes } = req.body;
+    const emailService = require('../services/email.service');
+
+    const request = await prisma.procurementRequest.findUnique({
+        where: { id: req.params.id },
+        include: {
+            items: true,
+            school: true,
+            committee: { include: { user: true } }
+        }
+    });
+
+    if (!request) {
+        return res.status(404).json({ success: false, message: 'Procurement request not found' });
+    }
+
+    const vendor = await prisma.vendor.findUnique({
+        where: { id: vendorId }
+    });
+
+    if (!vendor) {
+        return res.status(404).json({ success: false, message: 'Vendor not found' });
+    }
+
+    const toEmail = recipientEmail || vendor.email;
+    if (!toEmail) {
+        return res.status(400).json({ success: false, message: 'Vendor email address is required' });
+    }
+
+    const formattedDeadline = deadlineDate ? new Date(deadlineDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '15 days from today';
+
+    const itemsHtml = request.items.map((item, idx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 8px; text-align: center;">${idx + 1}</td>
+            <td style="padding: 8px; font-weight: 600;">${item.itemName}</td>
+            <td style="padding: 8px;">${item.specifications || '-'}</td>
+            <td style="padding: 8px;">${item.warranty || 'Standard'}</td>
+            <td style="padding: 8px; text-align: center;">${item.quantity} ${item.unit || 'pcs'}</td>
+        </tr>
+    `).join('');
+
+    const emailSubject = `Call for Quotation: ${request.title} - ${request.school.name}`;
+    const emailHtml = `
+    <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff;">
+        <div style="text-align: center; border-bottom: 2px solid #2563eb; padding-bottom: 16px; margin-bottom: 20px;">
+            <h2 style="color: #1e3a8a; margin: 0 0 6px 0;">${request.school.name}</h2>
+            <p style="color: #64748b; font-size: 13px; margin: 0;">${request.school.address || ''}</p>
+        </div>
+
+        <p style="font-size: 14px; color: #334155;"><strong>To:</strong> ${vendor.name}</p>
+        <p style="font-size: 14px; color: #334155;"><strong>Date:</strong> ${new Date().toLocaleDateString('en-IN')}</p>
+        <p style="font-size: 14px; color: #334155;"><strong>Subject:</strong> Invitation for Quotation — ${request.title}</p>
+
+        <p style="font-size: 14px; line-height: 1.5; color: #334155;">
+            Dear Sir/Madam,<br/><br/>
+            You are cordially invited to submit your competitive quotation for the institutional procurement requirement detailed below:
+        </p>
+
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 13px;">
+            <thead>
+                <tr style="background: #f1f5f9; color: #1e293b; text-align: left;">
+                    <th style="padding: 8px; text-align: center; border: 1px solid #cbd5e1;">#</th>
+                    <th style="padding: 8px; border: 1px solid #cbd5e1;">Item Name</th>
+                    <th style="padding: 8px; border: 1px solid #cbd5e1;">Specifications</th>
+                    <th style="padding: 8px; border: 1px solid #cbd5e1;">Warranty</th>
+                    <th style="padding: 8px; text-align: center; border: 1px solid #cbd5e1;">Qty</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${itemsHtml}
+            </tbody>
+        </table>
+
+        <div style="background: #f8fafc; border-left: 4px solid #2563eb; padding: 12px; margin: 16px 0; font-size: 13px; color: #334155;">
+            <p style="margin: 0 0 6px 0;"><strong>Last Date for Submission of Quotation:</strong> <span style="color: #b91c1c; font-weight: bold;">${formattedDeadline}</span></p>
+            ${customNotes ? `<p style="margin: 6px 0 0 0;"><strong>Additional Note:</strong> ${customNotes}</p>` : ''}
+        </div>
+
+        <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-top: 24px;">
+            Please ensure the quotation includes GST rates, warranty terms, and estimated delivery timeline. Quotations may be mailed to ${request.school.email || 'the institution'} or submitted in a sealed envelope.
+        </p>
+
+        <div style="margin-top: 32px; border-top: 1px solid #e2e8f0; padding-top: 16px; text-align: right;">
+            <p style="font-size: 13px; font-weight: bold; color: #1e293b; margin: 0;">Authorized Signatory</p>
+            <p style="font-size: 12px; color: #64748b; margin: 2px 0 0 0;">${request.school.name}</p>
+        </div>
+    </div>
+    `;
+
+    const result = await emailService.sendGenericEmail({
+        to: toEmail,
+        subject: emailSubject,
+        html: emailHtml
+    });
+
+    res.json({
+        success: true,
+        data: result,
+        message: `Call for Quotation sent to ${toEmail}`
+    });
 }));
 
 module.exports = router;

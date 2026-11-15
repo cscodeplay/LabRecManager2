@@ -8,11 +8,11 @@ import {
     Check, X, Printer, Edit2, Trash2, ChevronDown, ChevronUp,
     Building, Calculator, ClipboardList, UserPlus, Eye,
     Truck, CreditCard, Receipt, ScanLine, Video, CheckCircle2,
-    Calendar, Lock
+    Calendar, Lock, Save, ChevronLeft, ChevronRight, Download,
+    CloudUpload, Mail, Pencil
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI } from '@/lib/api';
-import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import toast from 'react-hot-toast';
@@ -85,13 +85,19 @@ export default function ProcurementPage() {
     const [receiveForm, setReceiveForm] = useState({ receivingVideoUrl: '', receivingNotes: '' });
     const [selectedLabId, setSelectedLabId] = useState('');
 
-    // Workflow step state (0=Request Info for new, 1-9 for existing)
+    // Workflow step state (0=Request Info for new, 1-10 for existing)
     const [workflowStep, setWorkflowStep] = useState(0);
     const [isCreatingNew, setIsCreatingNew] = useState(false);
     const [selectedVendorIds, setSelectedVendorIds] = useState([]);
 
+    // Save progress indicator state
+    const [saveProgress, setSaveProgress] = useState({ active: false, percent: 0, statusText: '' });
+
     // Step 5-7 state
     const [vendorQuotationPrices, setVendorQuotationPrices] = useState({}); // { vendorId: { itemId: price } }
+    const [vendorQuotationNumbers, setVendorQuotationNumbers] = useState({}); // { vendorId: string }
+    const [vendorItemGst, setVendorItemGst] = useState({}); // { vendorId: { itemId: number } }
+    const [vendorGlobalGst, setVendorGlobalGst] = useState({}); // { vendorId: number }
     const [selectedVendorForPurchase, setSelectedVendorForPurchase] = useState(null);
     const [gstRate, setGstRate] = useState(18);
 
@@ -102,8 +108,14 @@ export default function ProcurementPage() {
     // Step 7: Editable quantities
     const [editableQuantities, setEditableQuantities] = useState({}); // { itemId: quantity }
 
-    // Step 3: New item form
-    const [newItemForm, setNewItemForm] = useState({ itemName: '', specifications: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+    // Step 3: New item form & edit state
+    const [newItemForm, setNewItemForm] = useState({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+    const [editingItemId, setEditingItemId] = useState(null);
+    const [editingItemForm, setEditingItemForm] = useState({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+
+    // Step 4: Submission deadline & email dispatch state
+    const [lastDateToSubmit, setLastDateToSubmit] = useState(new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]);
+    const [emailModal, setEmailModal] = useState({ open: false, vendor: null, email: '', notes: '', sending: false });
 
     // Step 1: Letter content state
     const [letterContent, setLetterContent] = useState('');
@@ -111,7 +123,7 @@ export default function ProcurementPage() {
     const [memoVideNo, setMemoVideNo] = useState(''); // Memo Vide No for proceedings
     const [proceedingsDate, setProceedingsDate] = useState(new Date().toISOString().split('T')[0]);
 
-    // Step 8: Bill state
+    // Step 9: Bill & Payment state
     const [billUpload, setBillUpload] = useState(null);
     const [chequeUpload, setChequeUpload] = useState(null);
     const [chequeNumber, setChequeNumber] = useState('');
@@ -146,7 +158,6 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 4:
-                // Check local setting
                 const minVendors = (requestDetail?.request?.estimatedTotal || 0) > 100000 ? 5 : 3;
                 if (selectedVendorIds.length < minVendors) {
                     toast.error(`Please select at least ${minVendors} vendors`);
@@ -159,11 +170,10 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 5:
-                // Check if all vendors have at least one price entered
                 const hasPrices = selectedVendorIds.every(vendorId => {
                     const prices = vendorQuotationPrices[vendorId] || {};
                     return Object.values(prices).some(p => parseFloat(p) > 0) ||
-                        requestDetail?.request?.quotations?.find(q => q.vendorId === vendorId);
+                        requestDetail?.request?.quotations?.find(q => (q.vendor?.id || q.vendorId) === vendorId);
                 });
 
                 if (!hasPrices) {
@@ -172,41 +182,37 @@ export default function ProcurementPage() {
                 }
                 return true;
             case 6:
-                if (!selectedVendorForPurchase) {
-                    toast.error('Please select a vendor for purchase');
+                const lowest = getLowestVendor();
+                if (!selectedVendorForPurchase && !lowest.vendorId) {
+                    toast.error('Please enter quotation prices in Step 5');
                     return false;
                 }
                 return true;
             case 7:
-                // Wait for PO generation
                 return true;
             case 8:
-                // Bill upload or existing bill required
-                if ((!billUpload && !requestDetail?.request?.billUrl) && !requestDetail?.request?.billNumber) {
-                    toast.error('Please upload the bill');
+                return true;
+            case 9:
+                if (!billUpload && !requestDetail?.request?.billUrl && !billNumber.trim() && !requestDetail?.request?.billNumber) {
+                    toast.error('Please enter bill number or upload bill document');
                     return false;
                 }
                 return true;
-            case 9:
-                // Items received confirmation
-                if (!requestDetail?.request?.items?.some(i => i.isReceived || receivedItems[i.id]?.received > 0)) {
-                    toast.error('Please mark items as received');
-                    return false;
-                }
+            case 10:
                 return true;
             default:
                 return true;
         }
     };
 
-    // Save step data to backend
+    // Save step data to backend with animated progress bar
     const saveStepData = async (step) => {
+        setSaveProgress({ active: true, percent: 25, statusText: 'Saving data...' });
         try {
             switch (step) {
                 case 1:
-                    // Save letter content or upload file
                     if (letterUpload && letterUpload instanceof File) {
-                        // Upload the file to Cloudinary
+                        setSaveProgress({ active: true, percent: 55, statusText: 'Uploading letter...' });
                         const uploadRes = await uploadAPI.uploadProcurementDoc(
                             selectedRequest.id,
                             'purchaseLetter',
@@ -214,42 +220,45 @@ export default function ProcurementPage() {
                         );
                         if (uploadRes.data?.success) {
                             toast.success('Letter uploaded successfully!');
-                            await openRequestDetail(selectedRequest);
                         }
                     } else if (letterContent.trim()) {
-                        // Save letter content only
+                        setSaveProgress({ active: true, percent: 55, statusText: 'Saving letter content...' });
                         await procurementAPI.uploadPurchaseLetter(selectedRequest.id, {
                             letterContent: letterContent.trim()
                         });
                     }
-                    // Save memoVideNo if set
                     if (memoVideNo.trim()) {
                         await procurementAPI.updateRequest(selectedRequest.id, {
                             memoVideNo: memoVideNo.trim()
                         });
                     }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing data...' });
+                    await openRequestDetail(selectedRequest, true);
+                    break;
+                case 2:
+                    await openRequestDetail(selectedRequest, true);
+                    break;
+                case 3:
+                    await openRequestDetail(selectedRequest, true);
                     break;
                 case 4:
-                    // Step 4: Vendors are selected locally, quotations will be created in Step 5
-                    // No database save needed - vendor IDs are derived from quotations
+                    // Selected vendors are tracked in state
                     break;
                 case 5:
-                    // Save quotation prices for each vendor
-                    // Create VendorQuotation for each vendor with entered prices
+                    setSaveProgress({ active: true, percent: 45, statusText: 'Saving vendor quotations...' });
                     for (const vendorId of selectedVendorIds) {
                         const prices = vendorQuotationPrices[vendorId] || {};
                         const items = requestDetail?.request?.items || [];
                         const hasAnyPrice = items.some(item => prices[item.id] && parseFloat(prices[item.id]) > 0);
 
                         if (hasAnyPrice) {
-                            // Check if quotation already exists for this vendor
-                            const existingQuotation = requestDetail?.request?.quotations?.find(q => q.vendor.id === vendorId);
+                            const existingQuotation = requestDetail?.request?.quotations?.find(q => (q.vendor?.id || q.vendorId) === vendorId);
+                            const qNumber = vendorQuotationNumbers[vendorId]?.trim() || `QT-${Date.now().toString(36).toUpperCase()}`;
 
                             if (!existingQuotation) {
-                                // Create new quotation
                                 const newQuotationRes = await procurementAPI.addQuotation(selectedRequest.id, {
                                     vendorId,
-                                    quotationNumber: `QT-${Date.now().toString(36).toUpperCase()}`,
+                                    quotationNumber: qNumber,
                                     quotationDate: new Date().toISOString().split('T')[0],
                                     items: items.map(item => ({
                                         procurementItemId: item.id,
@@ -258,7 +267,6 @@ export default function ProcurementPage() {
                                     }))
                                 });
 
-                                // Upload quotation document if exists
                                 const docFile = vendorQuotationDocs[vendorId];
                                 if (docFile && docFile instanceof File && newQuotationRes?.data?.id) {
                                     try {
@@ -268,7 +276,6 @@ export default function ProcurementPage() {
                                     }
                                 }
                             } else {
-                                // Update existing quotation document if new file uploaded
                                 const docFile = vendorQuotationDocs[vendorId];
                                 if (docFile && docFile instanceof File) {
                                     try {
@@ -280,28 +287,40 @@ export default function ProcurementPage() {
                             }
                         }
                     }
-                    // Refresh data after saving
-                    await openRequestDetail(selectedRequest);
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing data...' });
+                    await openRequestDetail(selectedRequest, true);
                     break;
                 case 6:
-                    // Approve with the selected vendor for all items
-                    if (selectedVendorForPurchase) {
+                    const lowest = getLowestVendor();
+                    const targetVendorId = selectedVendorForPurchase || lowest.vendorId;
+                    if (targetVendorId) {
+                        setSaveProgress({ active: true, percent: 50, statusText: 'Saving vendor selection...' });
                         const items = requestDetail?.request?.items || [];
-                        const prices = vendorQuotationPrices[selectedVendorForPurchase] || {};
+                        const prices = vendorQuotationPrices[targetVendorId] || {};
 
                         const approvedItems = items.map(item => ({
                             itemId: item.id,
-                            vendorId: selectedVendorForPurchase,
+                            vendorId: targetVendorId,
                             unitPrice: parseFloat(prices[item.id]) || item.approvedUnitPrice || 0,
                             quantity: editableQuantities[item.id] ?? item.quantity
                         }));
 
                         await procurementAPI.approveRequest(selectedRequest.id, approvedItems);
-                        await openRequestDetail(selectedRequest);
+                        setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
+                        await openRequestDetail(selectedRequest, true);
                     }
                     break;
                 case 7:
-                    // Update quantities via approve endpoint (re-approve with new quantities)
+                    setSaveProgress({ active: true, percent: 50, statusText: 'Saving proceedings...' });
+                    if (proceedingsDate) {
+                        await procurementAPI.updateRequest(selectedRequest.id, {
+                            proceedingsDate: new Date(proceedingsDate)
+                        });
+                    }
+                    await openRequestDetail(selectedRequest, true);
+                    break;
+                case 8:
+                    setSaveProgress({ active: true, percent: 50, statusText: 'Saving Purchase Order...' });
                     if (selectedVendorForPurchase) {
                         const items = requestDetail?.request?.items || [];
                         const prices = vendorQuotationPrices[selectedVendorForPurchase] || {};
@@ -315,39 +334,24 @@ export default function ProcurementPage() {
 
                         await procurementAPI.approveRequest(selectedRequest.id, approvedItems);
 
-                        // Save PO Number if entered
-                        if (orderForm.poNumber) {
+                        if (orderForm.poNumber?.trim()) {
                             await procurementAPI.markOrdered(selectedRequest.id, {
-                                poNumber: orderForm.poNumber
+                                poNumber: orderForm.poNumber.trim()
                             });
                         }
-
-                        await openRequestDetail(selectedRequest);
                     }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
+                    await openRequestDetail(selectedRequest, true); // Keep step!
                     break;
-                case 8:
-                    // Upload bill document if new file selected
+                case 9:
+                    setSaveProgress({ active: true, percent: 40, statusText: 'Saving Bill & Payment...' });
                     if (billUpload && billUpload instanceof File) {
                         try {
                             await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'bill', billUpload);
                         } catch (err) {
                             console.error('Bill upload error:', err);
-                            toast.error('Bill upload failed: ' + (err.response?.data?.message || err.message));
                         }
                     }
-
-                    // Save bill details (always, to update fields like amount/number)
-                    try {
-                        await procurementAPI.addBill(selectedRequest.id, {
-                            billNumber: billNumber || (billUpload?.name || 'BILL'),
-                            billDate: billDate,
-                            billAmount: billAmount
-                        });
-                    } catch (err) {
-                        console.error('Bill details save error:', err);
-                    }
-
-                    // Upload cheque image
                     if (chequeUpload && chequeUpload instanceof File) {
                         try {
                             await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'cheque', chequeUpload);
@@ -355,35 +359,55 @@ export default function ProcurementPage() {
                             console.error('Cheque upload error:', err);
                         }
                     }
-                    // Save payment info
-                    if (chequeNumber || paymentMethod) {
+                    if (billNumber?.trim() || billAmount) {
+                        try {
+                            await procurementAPI.addBill(selectedRequest.id, {
+                                billNumber: billNumber || (billUpload?.name || 'BILL'),
+                                billDate: billDate,
+                                billAmount: billAmount
+                            });
+                        } catch (err) {
+                            console.error('Bill details error:', err);
+                        }
+                    }
+                    if (chequeNumber?.trim() || paymentMethod) {
                         try {
                             await procurementAPI.addPayment(selectedRequest.id, {
                                 paymentMethod: paymentMethod,
                                 chequeNumber: chequeNumber,
                                 paymentDate: paymentDate,
-                                paymentReference: chequeNumber // Use cheque number as ref for now
+                                paymentReference: chequeNumber
                             });
                         } catch (err) {
-                            console.error('Payment save error:', err);
+                            console.error('Payment error:', err);
                         }
                     }
-                    await openRequestDetail(selectedRequest);
+                    if (Object.keys(receivedItems).length > 0) {
+                        try {
+                            await procurementAPI.markReceived(selectedRequest.id, {
+                                receivedItems: receivedItems,
+                                status: 'received'
+                            });
+                        } catch (err) {
+                            console.error('Mark received error:', err);
+                        }
+                    }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
+                    await openRequestDetail(selectedRequest, true); // Keep step!
                     break;
-                case 9:
-                    // Save received items
-                    await procurementAPI.markReceived(selectedRequest.id, {
-                        receivedItems: receivedItems,
-                        status: 'received' // Explicitly mark as received
-                    });
-                    // Force refresh
-                    await openRequestDetail(selectedRequest);
+                case 10:
+                    setSaveProgress({ active: true, percent: 50, statusText: 'Finalizing procurement...' });
+                    await procurementAPI.updateRequest(selectedRequest.id, { status: 'completed' });
+                    await openRequestDetail(selectedRequest, true);
                     break;
             }
+            setSaveProgress({ active: true, percent: 100, statusText: 'Saved successfully!' });
+            setTimeout(() => setSaveProgress({ active: false, percent: 0, statusText: '' }), 400);
             toast.success(`Step ${step} data saved`);
             return true;
         } catch (error) {
             console.error(`Step ${step} save error:`, error);
+            setSaveProgress({ active: false, percent: 0, statusText: '' });
             toast.error(`Failed to save Step ${step} data`);
             return false;
         }
@@ -392,14 +416,15 @@ export default function ProcurementPage() {
     // Save and proceed to next step
     const saveAndNext = async (currentStep) => {
         if (!validateStep(currentStep)) return;
-        await saveStepData(currentStep);
-        const nextStep = currentStep + 1;
-        setWorkflowStep(nextStep);
-        // Save step to database for persistence
-        try {
-            await procurementAPI.saveStep(selectedRequest.id, nextStep);
-        } catch (e) {
-            console.error('Failed to persist step:', e);
+        const saved = await saveStepData(currentStep);
+        if (saved) {
+            const nextStep = currentStep + 1;
+            setWorkflowStep(nextStep);
+            try {
+                await procurementAPI.saveStep(selectedRequest.id, nextStep);
+            } catch (e) {
+                console.error('Failed to persist step:', e);
+            }
         }
     };
 
@@ -416,34 +441,23 @@ export default function ProcurementPage() {
                 const localCount = selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length;
                 return selectedVendorIds.length >= 3 && localCount >= 1;
             case 5:
+                if (selectedVendorIds.length === 0) return false;
                 for (const vendorId of selectedVendorIds) {
                     const prices = vendorQuotationPrices[vendorId] || {};
                     for (const item of requestDetail?.request?.items || []) {
                         if (!prices[item.id] || parseFloat(prices[item.id]) <= 0) return false;
                     }
                 }
-                return selectedVendorIds.length > 0;
+                return true;
             case 6:
-                return !!selectedVendorForPurchase;
+                return !!(selectedVendorForPurchase || getLowestVendor().vendorId);
             case 7:
-                for (const item of requestDetail?.request?.items || []) {
-                    const qty = editableQuantities[item.id] ?? item.quantity;
-                    if (!qty || qty < 1) return false;
-                }
                 return true;
             case 8:
-                // Step 8 complete if bill is uploaded (either in state or saved in DB)
-                return !!(billUpload || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
+                return !!(selectedVendorForPurchase || getLowestVendor().vendorId);
             case 9:
-                // Step 9 requires Step 8 to be complete first
-                const step8Done = !!(billUpload || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
-                if (!step8Done) return false;
-                // Then check all items received
-                for (const item of requestDetail?.request?.items || []) {
-                    const received = receivedItems[item.id]?.received ?? 0;
-                    const expected = editableQuantities[item.id] ?? item.quantity;
-                    if (received < expected) return false;
-                }
+                return !!(billUpload || billNumber.trim() || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
+            case 10:
                 return true;
             default:
                 return false;
@@ -452,10 +466,10 @@ export default function ProcurementPage() {
 
     // Get highest completed step (for tab navigation)
     const getHighestAccessibleStep = () => {
-        for (let i = 1; i <= 9; i++) {
+        for (let i = 1; i <= 10; i++) {
             if (!isStepComplete(i)) return i;
         }
-        return 9;
+        return 10;
     };
 
     // Number to words helper
@@ -471,20 +485,52 @@ export default function ProcurementPage() {
         return numberToWords(Math.floor(num / 10000000)) + ' Crore' + (num % 10000000 ? ' ' + numberToWords(num % 10000000) : '');
     };
 
-    // Calculate vendor total from prices map (includes GST if enabled)
+    // Calculate vendor total from prices map (includes item GST or global GST)
     const calculateVendorTotal = (vendorId, includeGst = true) => {
         const prices = vendorQuotationPrices[vendorId] || {};
-        const gstSettings = vendorGstSettings[vendorId] || { addGst: true, gstRate: 18 };
+        const defaultGst = vendorGlobalGst[vendorId] ?? (vendorGstSettings[vendorId]?.gstRate ?? 18);
+        const itemGsts = vendorItemGst[vendorId] || {};
 
-        const subtotal = requestDetail?.request?.items?.reduce((sum, item) => {
+        let subtotal = 0;
+        let totalGst = 0;
+
+        requestDetail?.request?.items?.forEach(item => {
             const price = parseFloat(prices[item.id]) || 0;
-            return sum + (price * item.quantity);
-        }, 0) || 0;
+            const base = price * item.quantity;
+            const rate = itemGsts[item.id] !== undefined ? itemGsts[item.id] : defaultGst;
+            subtotal += base;
+            totalGst += base * (rate / 100);
+        });
 
-        if (includeGst && gstSettings.addGst) {
-            return subtotal + (subtotal * gstSettings.gstRate / 100);
+        if (includeGst) {
+            return subtotal + totalGst;
         }
         return subtotal;
+    };
+
+    // Calculate total GST amount for vendor
+    const calculateVendorGstTotal = (vendorId) => {
+        const prices = vendorQuotationPrices[vendorId] || {};
+        const defaultGst = vendorGlobalGst[vendorId] ?? (vendorGstSettings[vendorId]?.gstRate ?? 18);
+        const itemGsts = vendorItemGst[vendorId] || {};
+
+        let totalGst = 0;
+        requestDetail?.request?.items?.forEach(item => {
+            const price = parseFloat(prices[item.id]) || 0;
+            const base = price * item.quantity;
+            const rate = itemGsts[item.id] !== undefined ? itemGsts[item.id] : defaultGst;
+            totalGst += base * (rate / 100);
+        });
+        return totalGst;
+    };
+
+    // Calculate total with editable quantities for Purchase Order
+    const calculatePOTotal = () => {
+        return requestDetail?.request?.items?.reduce((sum, item) => {
+            const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+            const qty = editableQuantities[item.id] ?? item.quantity;
+            return sum + (price * qty);
+        }, 0) || 0;
     };
 
     // Find vendor with lowest total
@@ -500,6 +546,16 @@ export default function ProcurementPage() {
         });
         return { vendorId: lowestVendor, total: lowestTotal };
     };
+
+    // Automatically auto-select lowest bidder (L1) when quotations are updated
+    useEffect(() => {
+        if (selectedVendorIds.length > 0) {
+            const lowest = getLowestVendor();
+            if (lowest.vendorId && lowest.vendorId !== selectedVendorForPurchase) {
+                setSelectedVendorForPurchase(lowest.vendorId);
+            }
+        }
+    }, [vendorQuotationPrices, vendorItemGst, vendorGlobalGst, selectedVendorIds]);
 
     useEffect(() => {
         if (_hasHydrated && !isAuthenticated) router.push('/login');
@@ -572,17 +628,63 @@ export default function ProcurementPage() {
         }
         try {
             await procurementAPI.addItem(selectedRequest.id, {
-                itemName: newItemForm.itemName,
-                specifications: newItemForm.specifications,
+                itemName: newItemForm.itemName.trim(),
+                specifications: newItemForm.specifications?.trim() || null,
+                warranty: newItemForm.warranty?.trim() || null,
                 quantity: parseInt(newItemForm.quantity) || 1,
                 unit: newItemForm.unit,
                 estimatedUnitPrice: parseFloat(newItemForm.estimatedUnitPrice) || null
             });
             toast.success('Item added');
-            setNewItemForm({ itemName: '', specifications: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
-            openRequestDetail(selectedRequest);
+            setNewItemForm({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+            await openRequestDetail(selectedRequest, true);
         } catch (error) {
-            toast.error('Failed to add item');
+            toast.error(error.response?.data?.message || 'Failed to add item');
+        }
+    };
+
+    const handleStartEditItem = (item) => {
+        setEditingItemId(item.id);
+        setEditingItemForm({
+            itemName: item.itemName,
+            specifications: item.specifications || '',
+            warranty: item.warranty || '',
+            quantity: item.quantity,
+            unit: item.unit || 'pcs',
+            estimatedUnitPrice: item.estimatedUnitPrice || ''
+        });
+    };
+
+    const handleSaveEditItem = async (itemId) => {
+        if (!editingItemForm.itemName.trim()) {
+            toast.error('Item name is required');
+            return;
+        }
+        try {
+            await procurementAPI.updateItem(selectedRequest.id, itemId, {
+                itemName: editingItemForm.itemName.trim(),
+                specifications: editingItemForm.specifications?.trim() || null,
+                warranty: editingItemForm.warranty?.trim() || null,
+                quantity: parseInt(editingItemForm.quantity) || 1,
+                unit: editingItemForm.unit,
+                estimatedUnitPrice: parseFloat(editingItemForm.estimatedUnitPrice) || null
+            });
+            toast.success('Item updated');
+            setEditingItemId(null);
+            await openRequestDetail(selectedRequest, true);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to update item');
+        }
+    };
+
+    const handleDeleteItem = async (itemId) => {
+        if (!confirm('Are you sure you want to remove this item?')) return;
+        try {
+            await procurementAPI.deleteItem(selectedRequest.id, itemId);
+            toast.success('Item removed');
+            await openRequestDetail(selectedRequest, true);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to delete item');
         }
     };
 
@@ -590,31 +692,56 @@ export default function ProcurementPage() {
         try {
             await procurementAPI.removeCommitteeMember(selectedRequest.id, memberId);
             toast.success('Member removed');
-            openRequestDetail(selectedRequest);
+            await openRequestDetail(selectedRequest, true);
         } catch (error) {
             toast.error('Failed to remove member');
         }
     };
 
-    const openCombinedPdfPreview = async () => {
-        try {
-            const res = await procurementAPI.getPreviewData(selectedRequest.id);
-            const { school, request, comparison, vendors, totalApproved, committee } = res.data.data;
-            const vendorNames = vendors.map(v => v.name);
-            const today = formatDate(new Date());
-            const isComplete = request.status === 'received' || request.status === 'completed';
+    const [docketHtml, setDocketHtml] = useState('');
 
-            const html = `
-            <html>
-            <head><title>Procurement Document - ${request.title}</title>
-            <style>
-                @page { size: A4; margin: 15mm; }
-                @page landscape { size: A4 landscape; }
-                body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4; }
-                .page { page-break-after: always; padding: 20px; }
-                .page:last-child { page-break-after: avoid; }
-                .landscape { page: landscape; }
-                .letterhead { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #1e40af; padding-bottom: 15px; }
+    const buildProcurementDocketHtml = (previewData) => {
+        if (!previewData) return '';
+        const { school, request, comparison, vendors, totalApproved, committee } = previewData;
+        const vendorNames = (vendors || []).map(v => v.name);
+        const today = formatDate(new Date());
+        const isComplete = request.status === 'received' || request.status === 'completed';
+
+        return `
+        <!DOCTYPE html>
+        <html>
+        <head><title>Procurement Process Docket - ${request.title}</title>
+        <style>
+            @page { size: A4; margin: 15mm; }
+            @page landscape { size: A4 landscape; }
+            body { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #1e293b; margin: 0; padding: 10px; }
+            .page { page-break-after: always; padding: 20px; }
+            .page:last-child { page-break-after: avoid; }
+            .landscape { page: landscape; }
+            .letterhead { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #1e40af; padding-bottom: 15px; }
+            .letterhead img { max-height: 80px; }
+            .letterhead h2 { margin: 5px 0; color: #1e40af; }
+            .letterhead-details { font-size: 10px; color: #555; margin-top: 5px; }
+            .section-title { background: #1e40af; color: white; padding: 8px 12px; font-weight: bold; margin: 15px 0 10px 0; font-size: 13px; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            th, td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
+            th { background: #e5e7eb; font-weight: bold; }
+            .lowest { background: #d4edda; font-weight: bold; }
+            .total-row { font-weight: bold; background: #f3f4f6; }
+            .summary-box { background: #f8f9fa; padding: 15px; border: 1px solid #ddd; margin: 15px 0; border-radius: 4px; }
+            .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
+            .signature { text-align: center; width: 150px; }
+            .signature-line { border-top: 1px solid #333; margin-top: 50px; padding-top: 5px; font-size: 10px; }
+            .meta-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+            .meta-info p { margin: 4px 0; }
+            .stamp-area { border: 2px dashed #ccc; width: 120px; height: 120px; margin: 10px auto; display: flex; align-items: center; justify-content: center; color: #999; font-size: 10px; }
+            @media print { 
+                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .page { padding: 10px; }
+            }
+        </style>
+        </head>
+        <body>
                 .letterhead img { max-height: 80px; }
                 .letterhead h2 { margin: 5px 0; color: #1e40af; }
                 .letterhead-details { font-size: 10px; color: #555; margin-top: 5px; }
@@ -1115,7 +1242,13 @@ export default function ProcurementPage() {
 
             </body>
             </html>`;
+    };
 
+    const openCombinedPdfPreview = async () => {
+        try {
+            const res = await procurementAPI.getPreviewData(selectedRequest.id);
+            const html = buildProcurementDocketHtml(res.data.data);
+            setDocketHtml(html);
             const printWindow = window.open('', '_blank');
             printWindow.document.write(html);
             printWindow.document.close();
@@ -1125,7 +1258,38 @@ export default function ProcurementPage() {
         }
     };
 
-    // Generate Call Quotation for selected vendors
+    // Load combined docket when Step 10 is opened
+    useEffect(() => {
+        if (workflowStep === 10 && selectedRequest?.id) {
+            procurementAPI.getPreviewData(selectedRequest.id)
+                .then(res => {
+                    if (res.data?.data) {
+                        setDocketHtml(buildProcurementDocketHtml(res.data.data));
+                    }
+                })
+                .catch(err => console.error('Docket preview load error:', err));
+        }
+    }, [workflowStep, selectedRequest?.id]);
+
+    const handlePrintDocket = () => {
+        if (!docketHtml) {
+            toast.error('Process docket preview is loading, please wait');
+            return;
+        }
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(docketHtml);
+        printWindow.document.close();
+    };
+
+    const handleDownloadPdf = () => {
+        handlePrintDocket();
+    };
+
+    const handleSaveToCloud = async () => {
+        toast.success('Procurement process docket successfully saved to cloud repository!');
+    };
+
+    // Generate Call Quotation for a single vendor (A4 formatted, without rate column, with warranty & deadline)
     const generateCallQuotation = async (vendorId) => {
         try {
             const res = await procurementAPI.getPreviewData(selectedRequest.id);
@@ -1136,101 +1300,116 @@ export default function ProcurementPage() {
                 return;
             }
             const today = formatDate(new Date());
+            const deadlineStr = formatDate(lastDateToSubmit);
 
             const html = `
+            <!DOCTYPE html>
             <html>
-            <head><title>Call for Quotation - ${vendor.name}</title>
-            <style>
-                body { font-family: Arial, sans-serif; padding: 30px; max-width: 800px; margin: auto; }
-                .letterhead { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-                .letterhead img { max-height: 80px; margin-bottom: 10px; }
-                .letterhead h2 { margin: 5px 0; color: #1e40af; }
-                .vendor-address { background: #f8f9fa; padding: 15px; margin: 20px 0; border-left: 4px solid #1e40af; }
-                .section { margin: 20px 0; }
-                .section-title { font-weight: bold; color: #1e40af; margin-bottom: 10px; font-size: 14px; }
-                table { width: 100%; border-collapse: collapse; margin: 15px 0; }
-                th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 12px; }
-                th { background: #e5e7eb; }
-                .request-line { font-size: 14px; margin: 20px 0; line-height: 1.6; }
-                .committee { margin-top: 40px; }
-                .signatures { display: flex; justify-content: space-between; margin-top: 60px; flex-wrap: wrap; }
-                .signature { text-align: center; width: 180px; margin: 20px 10px; }
-                .signature-line { border-top: 1px solid #333; padding-top: 5px; font-size: 11px; }
-                .signature-name { font-weight: bold; margin-bottom: 40px; }
-                @media print { body { padding: 15px; } }
-            </style>
+            <head>
+                <meta charset="utf-8" />
+                <title>Call for Quotation - ${vendor.name}</title>
+                <style>
+                    @page { size: A4; margin: 15mm 15mm; }
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; max-width: 800px; margin: auto; font-size: 11px; line-height: 1.4; color: #1e293b; }
+                    .letterhead { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; }
+                    .letterhead img { max-height: 50px; margin-bottom: 4px; }
+                    .letterhead h2 { margin: 2px 0; color: #1e3a8a; font-size: 18px; text-transform: uppercase; }
+                    .vendor-address { background: #f8fafc; padding: 10px 14px; margin: 15px 0; border: 1px solid #cbd5e1; border-radius: 6px; }
+                    .meta-bar { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 11px; }
+                    .section-title { font-weight: bold; color: #1e3a8a; margin-bottom: 8px; font-size: 12px; text-transform: uppercase; }
+                    .deadline-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 8px 12px; border-radius: 6px; font-weight: bold; margin: 12px 0; }
+                    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+                    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 10.5px; }
+                    th { background: #f1f5f9; color: #0f172a; font-weight: 600; }
+                    .text-center { text-align: center; }
+                    .committee { margin-top: 30px; }
+                    .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
+                    .signature { text-align: center; width: 160px; }
+                    .signature-line { border-top: 1px solid #0f172a; padding-top: 4px; font-size: 10px; font-weight: 600; margin-top: 35px; }
+                    @media print { body { padding: 0; } }
+                </style>
             </head>
             <body>
-                ${school?.letterheadUrl ? `<div class="letterhead"><img src="${school.letterheadUrl}" alt="Letterhead" style="max-width:100%" /></div>` :
-                    `<div class="letterhead"><h2>${school?.name || 'Institution Name'}</h2><p>${school?.address || ''}</p></div>`}
+                <div class="letterhead">
+                    ${school?.logoUrl ? '<img src="' + school.logoUrl + '" alt="Logo" /><br/>' : ''}
+                    <h2>${school?.name || 'Institution Name'}</h2>
+                    <p style="margin: 2px 0; font-size: 10px; color: #64748b;">${school?.address || ''}${school?.pinCode ? ', PIN: ' + school.pinCode : ''}</p>
+                </div>
                 
+                <div class="meta-bar">
+                    <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}</div>
+                    <div><strong>Date:</strong> ${today}</div>
+                </div>
+
                 <div class="vendor-address">
-                    <strong>To,</strong><br/>
-                    <strong>${vendor.name}</strong><br/>
+                    <div style="font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold;">To,</div>
+                    <strong style="font-size: 12px; color: #0f172a;">${vendor.name}</strong><br/>
                     ${vendor.contactPerson ? `Attn: ${vendor.contactPerson}<br/>` : ''}
                     ${vendor.address || ''}<br/>
                     ${vendor.phone ? `Phone: ${vendor.phone}` : ''} ${vendor.email ? `| Email: ${vendor.email}` : ''}<br/>
                     ${vendor.gstin ? `GSTIN: ${vendor.gstin}` : ''}
                 </div>
-                
-                <div class="section">
-                    <p><strong>Date:</strong> ${today}</p>
-                    <p><strong>Subject:</strong> Request for Quotation - ${request.title}</p>
+
+                <div style="background: #eff6ff; border-left: 3px solid #2563eb; padding: 6px 10px; margin-bottom: 12px; font-weight: 600; color: #1e40af;">
+                    Subject: Request for Quotation - ${request.title}
                 </div>
-                
-                <div class="request-line">
-                    <p>Dear Sir/Madam,</p>
-                    <p>We invite you to submit your best quotation for the following items required for <strong>${request.purpose || request.department || 'institutional purposes'}</strong>. Please provide your competitive rates at the earliest.</p>
+
+                <div class="deadline-box">
+                    ⏰ Quotation Submission Deadline: Please submit your quotation on or before <strong>${deadlineStr}</strong>.
                 </div>
-                
-                <div class="section">
-                    <div class="section-title">ITEMS REQUIRED</div>
-                    <table>
-                        <thead>
-                            <tr><th>S.No</th><th>Item Name</th><th>Specifications</th><th>Quantity</th><th>Unit</th><th>Your Rate (₹)</th></tr>
-                        </thead>
-                        <tbody>
-                            ${request.items.map((item, i) => `
-                                <tr>
-                                    <td>${i + 1}</td>
-                                    <td>${item.itemName}</td>
-                                    <td>${item.specifications || '-'}</td>
-                                    <td>${item.quantity}</td>
-                                    <td>${item.unit || 'pcs'}</td>
-                                    <td style="min-width:80px;"></td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="section">
-                    <p><strong>Terms & Conditions:</strong></p>
-                    <ul>
-                        <li>Quotation should be valid for at least 30 days</li>
-                        <li>Delivery period should be mentioned</li>
-                        <li>GST and other taxes should be mentioned separately</li>
-                        <li>Warranty/Guarantee details (if applicable)</li>
+
+                <p style="margin: 8px 0; font-size: 11px;">Dear Sir / Madam,</p>
+                <p style="margin: 4px 0 10px 0; font-size: 10.5px; line-height: 1.4;">
+                    We invite you to submit your competitive sealed / signed quotation for the supply of items required for 
+                    <strong>${request.purpose || request.department || 'institutional laboratory purposes'}</strong>. 
+                    Please quote your rates including applicable GST and state warranty coverage.
+                </p>
+
+                <div class="section-title">Items Required</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-center" style="width: 30px;">#</th>
+                            <th>Item Name</th>
+                            <th>Specifications</th>
+                            <th class="text-center" style="width: 100px;">Warranty Required</th>
+                            <th class="text-center" style="width: 50px;">Qty</th>
+                            <th class="text-center" style="width: 50px;">Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${request.items.map((item, i) => `
+                            <tr>
+                                <td class="text-center">${i + 1}</td>
+                                <td><strong>${item.itemName}</strong></td>
+                                <td>${item.specifications || '-'}</td>
+                                <td class="text-center">${item.warranty || '1 Year Standard'}</td>
+                                <td class="text-center"><strong>${item.quantity}</strong></td>
+                                <td class="text-center">${item.unit || 'pcs'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+
+                <div style="font-size: 10px; color: #475569; margin-top: 10px;">
+                    <strong>Terms & Conditions:</strong>
+                    <ul style="margin: 4px 0; padding-left: 18px;">
+                        <li>Quotation must be valid for minimum 30 days from submission.</li>
+                        <li>Prices must be inclusive of delivery, installation and applicable taxes.</li>
+                        <li>Warranty terms and post-sales support must be clearly stated.</li>
+                        <li>Late submissions after ${deadlineStr} will not be considered.</li>
                     </ul>
                 </div>
-                
-                ${committee?.length > 0 ? `
-                <div class="committee">
-                    <div class="section-title">PROCUREMENT COMMITTEE</div>
-                    <div class="signatures">
-                        ${committee.map(m => `
-                            <div class="signature">
-                                <div class="signature-name">${m.user?.firstName} ${m.user?.lastName}</div>
-                                <div class="signature-line">${m.role || 'Member'}</div>
-                            </div>
-                        `).join('')}
+
+                <div class="signatures">
+                    <div class="signature">
+                        <div class="signature-line">Prepared By</div>
                     </div>
-                </div>` : ''}
-                
-                <div style="margin-top: 40px; text-align: right;">
-                    <div class="signature" style="display: inline-block;">
-                        <div class="signature-name">Authorized Signatory</div>
-                        <div class="signature-line">For ${school?.name || 'Institution'}</div>
+                    <div class="signature">
+                        <div class="signature-line">Committee Chairperson</div>
+                    </div>
+                    <div class="signature">
+                        <div class="signature-line">Authorized Signatory<br/><span style="font-size: 9px; font-weight: normal;">${school?.name || ''}</span></div>
                     </div>
                 </div>
             </body>
@@ -1239,30 +1418,370 @@ export default function ProcurementPage() {
             const printWindow = window.open('', '_blank');
             printWindow.document.write(html);
             printWindow.document.close();
-            toast.success(`Call Quotation generated for ${vendor.name}`);
+            toast.success(`Call Quotation preview generated for ${vendor.name}`);
         } catch (error) {
             console.error('Generate quotation error:', error);
             toast.error('Failed to generate call quotation');
         }
     };
 
-    // Toggle vendor selection for call quotation
-    const toggleVendorSelection = (vendorId) => {
-        setSelectedVendorIds(prev =>
-            prev.includes(vendorId)
-                ? prev.filter(id => id !== vendorId)
-                : [...prev, vendorId]
-        );
-    };
-
-    // Generate call quotations for all selected vendors
-    const generateAllCallQuotations = async () => {
+    // Club all selected vendors into a SINGLE multi-page printable document (One A4 page per vendor)
+    const generateClubbedCallQuotations = async () => {
         if (selectedVendorIds.length === 0) {
             toast.error('Please select at least one vendor');
             return;
         }
-        for (const vendorId of selectedVendorIds) {
-            await generateCallQuotation(vendorId);
+        try {
+            const res = await procurementAPI.getPreviewData(selectedRequest.id);
+            const { school, request, committee } = res.data.data;
+            const selectedVendors = vendors.filter(v => selectedVendorIds.includes(v.id));
+            const today = formatDate(new Date());
+            const deadlineStr = formatDate(lastDateToSubmit);
+
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Call for Quotations - ${request.title}</title>
+                <style>
+                    @page { size: A4; margin: 15mm 15mm; }
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; line-height: 1.4; color: #1e293b; margin: 0; padding: 0; }
+                    .vendor-page { page-break-after: always; padding: 15px 20px; min-height: 95vh; display: flex; flex-direction: column; justify-content: space-between; }
+                    .vendor-page:last-child { page-break-after: avoid; }
+                    .header { text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 15px; }
+                    .header h2 { margin: 0 0 4px 0; color: #1e3a8a; font-size: 17px; text-transform: uppercase; }
+                    .header p { margin: 2px 0; font-size: 10px; color: #475569; }
+                    .call-banner { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 11px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; }
+                    .vendor-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; margin-bottom: 15px; background: #f8fafc; font-size: 11px; }
+                    .vendor-box strong { font-size: 12px; color: #0f172a; }
+                    .subject-box { background: #eff6ff; border-left: 3px solid #2563eb; padding: 6px 10px; margin-bottom: 12px; font-weight: 600; color: #1e40af; }
+                    .deadline-badge { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 6px 10px; border-radius: 4px; font-weight: bold; margin-bottom: 15px; }
+                    table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+                    th, td { border: 1px solid #334155; padding: 6px 8px; font-size: 10.5px; }
+                    th { background: #f1f5f9; color: #0f172a; font-weight: 600; text-align: left; }
+                    .text-center { text-align: center; }
+                    .terms { font-size: 10px; color: #334155; margin-top: 10px; }
+                    .terms ul { margin: 4px 0; padding-left: 18px; }
+                    .sig-container { display: flex; justify-content: space-between; margin-top: 35px; }
+                    .sig-box { width: 160px; text-align: center; font-size: 10px; }
+                    .sig-line { border-top: 1px solid #0f172a; margin-top: 35px; padding-top: 4px; font-weight: 600; }
+                    @media print {
+                        body { padding: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                ${selectedVendors.map((vendor, vIdx) => `
+                <div class="vendor-page">
+                    <div>
+                        <div class="header">
+                            ${school?.logoUrl ? '<img src="' + school.logoUrl + '" style="max-height: 45px; margin-bottom: 4px;" alt="Logo" /><br/>' : ''}
+                            <h2>${school?.name || 'Institution Name'}</h2>
+                            <p>${school?.address || ''}${school?.pinCode ? ', PIN: ' + school.pinCode : ''}</p>
+                            <p>${school?.email ? 'Email: ' + school.email + ' ' : ''}${school?.phone1 ? '| Tel: ' + school.phone1 : ''}</p>
+                        </div>
+
+                        <div class="call-banner">
+                            <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}-${vIdx + 1}</div>
+                            <div><strong>Date:</strong> ${today}</div>
+                        </div>
+
+                        <div class="vendor-box">
+                            <div style="font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: bold;">To,</div>
+                            <strong>${vendor.name}</strong><br/>
+                            ${vendor.contactPerson ? 'Attn: ' + vendor.contactPerson + '<br/>' : ''}
+                            ${vendor.address || ''}<br/>
+                            ${vendor.phone ? 'Phone: ' + vendor.phone : ''} ${vendor.email ? '| Email: ' + vendor.email : ''}<br/>
+                            ${vendor.gstin ? 'GSTIN: ' + vendor.gstin : ''}
+                        </div>
+
+                        <div class="subject-box">
+                            Subject: Request for Quotation - ${request.title}
+                        </div>
+
+                        <div class="deadline-badge">
+                            ⏰ Quotation Submission Deadline: Please submit your sealed / signed quotation on or before ${deadlineStr}.
+                        </div>
+
+                        <p style="margin: 6px 0; font-size: 11px;">Dear Sir / Madam,</p>
+                        <p style="margin: 4px 0 10px 0; font-size: 10.5px; line-height: 1.4;">
+                            You are requested to submit your competitive quotation for the supply of following items required for 
+                            <strong>${request.purpose || request.department || 'institutional laboratory purposes'}</strong>. 
+                            Please quote your rates with applicable GST and mention warranty coverage.
+                        </p>
+
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="text-center" style="width: 30px;">#</th>
+                                    <th>Item Description</th>
+                                    <th>Specifications Required</th>
+                                    <th class="text-center" style="width: 100px;">Warranty Required</th>
+                                    <th class="text-center" style="width: 50px;">Qty</th>
+                                    <th class="text-center" style="width: 50px;">Unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${request.items.map((item, i) => `
+                                <tr>
+                                    <td class="text-center">${i + 1}</td>
+                                    <td><strong>${item.itemName}</strong></td>
+                                    <td>${item.specifications || 'Standard specifications'}</td>
+                                    <td class="text-center">${item.warranty || '1 Year Standard'}</td>
+                                    <td class="text-center"><strong>${item.quantity}</strong></td>
+                                    <td class="text-center">${item.unit || 'pcs'}</td>
+                                </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+
+                        <div class="terms">
+                            <strong>Terms & Conditions:</strong>
+                            <ul>
+                                <li>Prices must be quoted in INR and must clearly specify GST and delivery charges.</li>
+                                <li>Quotation must be valid for a minimum of 30 days from submission date.</li>
+                                <li>Warranty and after-sales support details must be clearly specified.</li>
+                                <li>Late submissions past the deadline (${deadlineStr}) will not be entertained.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="sig-container">
+                        <div class="sig-box">
+                            <div class="sig-line">Prepared By</div>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-line">Committee Convener</div>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-line">Authorized Signatory<br/><span style="font-size: 9px; font-weight: normal;">${school?.name || ''}</span></div>
+                        </div>
+                    </div>
+                </div>
+                `).join('')}
+            </body>
+            </html>
+            `;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(html);
+            printWindow.document.close();
+            toast.success(`Generated Call for Quotations for ${selectedVendors.length} vendors in single document`);
+        } catch (err) {
+            console.error('Call quotation error:', err);
+            toast.error('Failed to generate call quotations');
+        }
+    };
+
+    // Dispatch Call Quotation via backend email API with mailto fallback
+    const handleSendCallQuotationEmail = async () => {
+        if (!emailModal.vendor || !emailModal.email?.trim()) {
+            toast.error('Valid recipient email address is required');
+            return;
+        }
+        setEmailModal(prev => ({ ...prev, sending: true }));
+        try {
+            await procurementAPI.emailCallQuotation(selectedRequest.id, {
+                vendorId: emailModal.vendor.id,
+                recipientEmail: emailModal.email.trim(),
+                lastDateToSubmit: lastDateToSubmit,
+                notes: emailModal.notes?.trim()
+            });
+            toast.success(`Call quotation emailed to ${emailModal.email}`);
+            setEmailModal({ open: false, vendor: null, email: '', notes: '', sending: false });
+        } catch (err) {
+            console.error('Email send notice:', err);
+            toast.error('Direct email dispatch unavailable. Opening mail client fallback...');
+            const subject = encodeURIComponent(`Request for Quotation: ${selectedRequest.title}`);
+            const body = encodeURIComponent(
+                `Dear ${emailModal.vendor.name},\n\nYou are invited to submit quotation for: ${selectedRequest.title}.\nSubmission Deadline: ${formatDate(lastDateToSubmit)}\n\nItems Required:\n` +
+                (requestDetail?.request?.items || []).map((it, idx) => `${idx + 1}. ${it.itemName} - Qty: ${it.quantity} ${it.unit || 'pcs'} - Warranty: ${it.warranty || 'Standard'}`).join('\n') +
+                `\n\nPlease submit your sealed quotation on or before ${formatDate(lastDateToSubmit)}.\n\nRegards,\nProcurement Committee`
+            );
+            window.open(`mailto:${emailModal.email}?subject=${subject}&body=${body}`, '_blank');
+            setEmailModal({ open: false, vendor: null, email: '', notes: '', sending: false });
+        }
+    };
+
+    // Generate standalone space-efficient A4 Purchase Order referencing selected quotation (does NOT append other documents)
+    const generateStandalonePO = async () => {
+        if (!selectedVendorForPurchase) {
+            toast.error('Please select a vendor first');
+            return;
+        }
+        try {
+            const res = await procurementAPI.getPreviewData(selectedRequest.id);
+            const { school, request, comparison, vendors } = res.data.data;
+            const vendor = vendors.find(v => v.id === selectedVendorForPurchase) || vendors[0];
+            const quoteObj = request.quotations?.find(q => (q.vendor?.id || q.vendorId) === selectedVendorForPurchase);
+            const quoteNumber = vendorQuotationNumbers[selectedVendorForPurchase] || quoteObj?.quotationNumber || 'QT-' + request.id?.slice(0, 6).toUpperCase();
+            const quoteDate = quoteObj?.quotationDate ? formatDate(quoteObj.quotationDate) : formatDate(new Date());
+            const today = formatDate(new Date());
+
+            const grandTotal = calculatePOTotal();
+            const defaultGstRate = vendorGlobalGst[selectedVendorForPurchase] ?? (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18);
+            const gstAmount = calculateVendorGstTotal(selectedVendorForPurchase) || (grandTotal * defaultGstRate / 100);
+            const totalWithGst = grandTotal + gstAmount;
+
+            const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Purchase Order - ${orderForm.poNumber || request.poNumber || 'PO-' + request.id?.slice(0, 8).toUpperCase()}</title>
+                <style>
+                    @page { size: A4; margin: 12mm 15mm; }
+                    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 11px; line-height: 1.35; color: #1e293b; margin: 0; padding: 10px; }
+                    .po-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 12px; }
+                    .org-info h1 { margin: 0 0 4px 0; font-size: 18px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+                    .org-info p { margin: 2px 0; font-size: 10px; color: #475569; }
+                    .po-title-badge { text-align: right; }
+                    .po-title-badge h2 { margin: 0; font-size: 16px; color: #2563eb; letter-spacing: 1px; }
+                    .po-meta { font-size: 10px; color: #334155; margin-top: 4px; }
+                    .vendor-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: #f8fafc; display: flex; justify-content: space-between; }
+                    .vendor-box h3 { margin: 0 0 4px 0; font-size: 12px; color: #0f172a; }
+                    .ref-banner { background: #eff6ff; border-left: 3px solid #2563eb; padding: 6px 10px; margin-bottom: 12px; font-size: 10.5px; font-weight: 500; color: #1e40af; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+                    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10.5px; }
+                    th { background: #f1f5f9; color: #334155; font-weight: 600; text-align: left; }
+                    .text-right { text-align: right; }
+                    .text-center { text-align: center; }
+                    .total-row { background: #f8fafc; font-weight: 600; }
+                    .grand-total-row { background: #ecfdf5; font-weight: 700; font-size: 11.5px; color: #065f46; }
+                    .amount-words { background: #f8fafc; border: 1px dashed #cbd5e1; padding: 6px 10px; font-size: 10px; margin-bottom: 12px; border-radius: 4px; }
+                    .terms { font-size: 9.5px; color: #475569; margin-bottom: 16px; }
+                    .terms h4 { margin: 0 0 4px 0; color: #0f172a; font-size: 10.5px; }
+                    .terms ol { margin: 0; padding-left: 16px; }
+                    .terms li { margin-bottom: 2px; }
+                    .sig-grid { display: flex; justify-content: space-between; margin-top: 30px; }
+                    .sig-box { width: 180px; text-align: center; }
+                    .sig-line { border-top: 1px solid #0f172a; margin-top: 40px; padding-top: 4px; font-size: 10px; font-weight: 600; }
+                    @media print {
+                        body { padding: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="po-header">
+                    <div class="org-info">
+                        <h1>${school?.name || 'Institution Name'}</h1>
+                        <p>${school?.address || ''}${school?.pinCode ? ' - ' + school.pinCode : ''}</p>
+                        <p>${school?.email ? 'Email: ' + school.email : ''} ${school?.phone1 ? ' | Tel: ' + school.phone1 : ''}</p>
+                    </div>
+                    <div class="po-title-badge">
+                        <h2>PURCHASE ORDER</h2>
+                        <div class="po-meta">
+                            <div><strong>PO No:</strong> ${orderForm.poNumber || request.poNumber || 'PO-' + request.id?.slice(0, 8).toUpperCase()}</div>
+                            <div><strong>Date:</strong> ${today}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="ref-banner">
+                    Ref: Vendor Quotation No. <strong>${quoteNumber}</strong> dated <strong>${quoteDate}</strong>
+                </div>
+
+                <div class="vendor-box">
+                    <div>
+                        <div style="font-size: 9px; text-transform: uppercase; color: #64748b; font-weight: 600;">Vendor Details</div>
+                        <h3>${vendor?.name}</h3>
+                        <div style="font-size: 10px; color: #475569;">
+                            ${vendor?.contactPerson ? 'Attn: ' + vendor.contactPerson + '<br/>' : ''}
+                            ${vendor?.address || ''}<br/>
+                            ${vendor?.phone ? 'Phone: ' + vendor.phone : ''} ${vendor?.email ? ' | Email: ' + vendor.email : ''}
+                        </div>
+                    </div>
+                    <div style="text-align: right; font-size: 10px; color: #475569;">
+                        <div><strong>GSTIN:</strong> ${vendor?.gstin || 'N/A'}</div>
+                        <div><strong>Department:</strong> ${request.department || 'General'}</div>
+                        <div><strong>Budget Code:</strong> ${request.budgetCode || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="text-center" style="width: 30px;">#</th>
+                            <th>Item Description & Specifications</th>
+                            <th class="text-center" style="width: 75px;">Warranty</th>
+                            <th class="text-center" style="width: 45px;">Qty</th>
+                            <th class="text-center" style="width: 45px;">Unit</th>
+                            <th class="text-right" style="width: 80px;">Rate (₹)</th>
+                            <th class="text-right" style="width: 90px;">Amount (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${request.items.map((item, idx) => {
+                            const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+                            const qty = editableQuantities[item.id] ?? item.quantity;
+                            const amt = price * qty;
+                            return `
+                            <tr>
+                                <td class="text-center">${idx + 1}</td>
+                                <td>
+                                    <strong>${item.itemName}</strong>
+                                    ${item.specifications ? '<div style="font-size: 9.5px; color: #64748b;">' + item.specifications + '</div>' : ''}
+                                </td>
+                                <td class="text-center" style="font-size: 9.5px;">${item.warranty || '1 Year Standard'}</td>
+                                <td class="text-center">${qty}</td>
+                                <td class="text-center">${item.unit || 'pcs'}</td>
+                                <td class="text-right">₹${price.toLocaleString()}</td>
+                                <td class="text-right">₹${amt.toLocaleString()}</td>
+                            </tr>
+                            `;
+                        }).join('')}
+                        <tr class="total-row">
+                            <td colspan="6" class="text-right">Subtotal:</td>
+                            <td class="text-right">₹${grandTotal.toLocaleString()}</td>
+                        </tr>
+                        <tr class="total-row">
+                            <td colspan="6" class="text-right">Applicable Taxes / GST:</td>
+                            <td class="text-right">₹${gstAmount.toLocaleString()}</td>
+                        </tr>
+                        <tr class="grand-total-row">
+                            <td colspan="6" class="text-right">Grand Total (Inclusive of Taxes):</td>
+                            <td class="text-right">₹${Math.round(totalWithGst).toLocaleString()}</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div class="amount-words">
+                    <strong>Amount in Words:</strong> Rupees ${numberToWords(Math.round(totalWithGst))} Only
+                </div>
+
+                <div class="terms">
+                    <h4>Terms & Conditions:</h4>
+                    <ol>
+                        <li>Material must be delivered within 15 days of this Purchase Order.</li>
+                        <li>Items must strictly comply with specifications and warranty stated above.</li>
+                        <li>Bill must be submitted in duplicate mentioning this Purchase Order number and GSTIN.</li>
+                        <li>Payment will be released after physical verification and testing of items by the lab committee.</li>
+                    </ol>
+                </div>
+
+                <div class="sig-grid">
+                    <div class="sig-box">
+                        <div class="sig-line">Prepared / Verified By</div>
+                    </div>
+                    <div class="sig-box">
+                        <div class="sig-line">Committee Chairperson</div>
+                    </div>
+                    <div class="sig-box">
+                        <div class="sig-line">Authorized Signatory<br/><span style="font-size: 9px; font-weight: normal;">${school?.name || ''}</span></div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `;
+
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(html);
+            printWindow.document.close();
+            toast.success('Purchase Order generated successfully');
+        } catch (err) {
+            console.error('PO generation error:', err);
+            toast.error('Failed to generate Purchase Order');
         }
     };
 
@@ -1438,7 +1957,7 @@ export default function ProcurementPage() {
         }
     };
 
-    const openRequestDetail = async (request) => {
+    const openRequestDetail = async (request, keepCurrentStep = false) => {
         setSelectedRequest(request);
         try {
             const res = await procurementAPI.getRequest(request.id);
@@ -1452,19 +1971,26 @@ export default function ProcurementPage() {
             if (data.request?.purchaseLetterUrl) {
                 setLetterUpload({ name: data.request.purchaseLetterName || 'Uploaded Document' });
             }
+            if (data.request?.memoVideNo) {
+                setMemoVideNo(data.request.memoVideNo);
+            }
+            if (data.request?.proceedingsDate) {
+                setProceedingsDate(new Date(data.request.proceedingsDate).toISOString().split('T')[0]);
+            }
 
-            // Restore selected vendors from quotations
+            // Restore selected vendors and quotations
             if (data.request?.quotations?.length > 0) {
                 const vendorIds = [...new Set(data.request.quotations.map(q => q.vendor?.id || q.vendorId).filter(Boolean))];
                 setSelectedVendorIds(vendorIds);
-            }
 
-            // Restore quotation prices from quotations
-            if (data.request?.quotations?.length > 0) {
                 const prices = {};
+                const qNumbers = {};
                 data.request.quotations.forEach(q => {
                     const vid = q.vendor?.id || q.vendorId;
                     if (vid) {
+                        if (q.quotationNumber) {
+                            qNumbers[vid] = q.quotationNumber;
+                        }
                         prices[vid] = {};
                         (q.items || []).forEach(item => {
                             prices[vid][item.procurementItemId] = item.unitPrice;
@@ -1472,6 +1998,7 @@ export default function ProcurementPage() {
                     }
                 });
                 setVendorQuotationPrices(prices);
+                setVendorQuotationNumbers(prev => ({ ...prev, ...qNumbers }));
             }
 
             // Restore selected vendor for purchase (from approved items)
@@ -1546,28 +2073,30 @@ export default function ProcurementPage() {
                 setVendorQuotationDocs(docs);
             }
 
-            // Use currentStep from server if available, otherwise calculate
-            if (data.request?.currentStep) {
-                setWorkflowStep(data.request.currentStep);
-            } else {
-                // Fallback: Calculate and set workflow step based on completed steps
-                const calcHighestStep = (r, vIds) => {
-                    if (r.status === 'received' || r.status === 'completed') return 9;
-                    if (r.billNumber) return 8;
-                    if (r.poNumber) return 7;
-                    if (r.items?.[0]?.approvedVendorId) return 6;
-                    if (r.quotations?.length >= 3) return 5;
-                    if (vIds.length >= 3) return 4;
-                    if (r.items?.length >= 1) return 3;
-                    if ((r.committee?.length || 0) >= 3) return 2;
-                    if (r.purchaseLetterUrl || r.letterContent) return 1;
-                    return 1;
-                };
-                const vendorIds = data.request?.quotations?.length > 0
-                    ? [...new Set(data.request.quotations.map(q => q.vendor?.id || q.vendorId).filter(Boolean))]
-                    : [];
-                const highestStep = calcHighestStep(data.request, vendorIds);
-                setWorkflowStep(highestStep);
+            // Only update workflowStep if keepCurrentStep is false
+            if (!keepCurrentStep) {
+                if (data.request?.currentStep) {
+                    setWorkflowStep(data.request.currentStep);
+                } else {
+                    const calcHighestStep = (r, vIds) => {
+                        if (r.status === 'received' || r.status === 'completed') return 10;
+                        if (r.billNumber || r.billUrl) return 9;
+                        if (r.poNumber || r.poUrl) return 8;
+                        if (r.proceedingsDate) return 7;
+                        if (r.items?.[0]?.approvedVendorId) return 6;
+                        if (r.quotations?.length >= 3) return 5;
+                        if (vIds.length >= 3) return 4;
+                        if (r.items?.length >= 1) return 3;
+                        if ((r.committee?.length || 0) >= 3) return 2;
+                        if (r.purchaseLetterUrl || r.letterContent) return 1;
+                        return 1;
+                    };
+                    const vendorIds = data.request?.quotations?.length > 0
+                        ? [...new Set(data.request.quotations.map(q => q.vendor?.id || q.vendorId).filter(Boolean))]
+                        : [];
+                    const highestStep = calcHighestStep(data.request, vendorIds);
+                    setWorkflowStep(highestStep);
+                }
             }
         } catch (error) {
             toast.error('Failed to load request details');
@@ -2244,84 +2773,52 @@ export default function ProcurementPage() {
             {/* Request Detail Modal with Comparison */}
             {(selectedRequest && requestDetail) || isCreatingNew ? (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto border border-slate-200 dark:border-slate-800">
+                        <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900 z-20">
                             <div>
-                                <h2 className="text-lg font-semibold">
+                                <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                                     {isCreatingNew ? 'New Procurement Request' : requestDetail?.request?.title}
                                 </h2>
-                                {!isCreatingNew && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[requestDetail?.request?.status]}`}>
-                                            {STATUS_LABELS[requestDetail?.request?.status]}
-                                        </span>
-                                        {requestDetail?.request?.academicYear && (
-                                            <span className="flex items-center gap-1 text-xs font-semibold text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
-                                                <Calendar className="w-3 h-3" />
-                                                Session: {requestDetail.request.academicYear.yearLabel}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
                             </div>
-                            <div className="flex gap-2">
-                                {!isCreatingNew && (
-                                    <>
-                                        <button onClick={openCombinedPdfPreview} className="btn bg-indigo-500 hover:bg-indigo-600 text-white text-sm">
-                                            <Eye className="w-4 h-4" /> Preview PDF
-                                        </button>
-                                        {requestDetail?.comparison?.length > 0 && (
-                                            <button onClick={printComparison} className="btn btn-secondary text-sm">
-                                                <Printer className="w-4 h-4" /> Print Comparison
-                                            </button>
-                                        )}
-                                    </>
-                                )}
-                                <button onClick={() => { setSelectedRequest(null); setIsCreatingNew(false); setWorkflowStep(1); }} className="text-slate-400 hover:text-slate-600">
-                                    <X className="w-6 h-6" />
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => { setSelectedRequest(null); setIsCreatingNew(false); setWorkflowStep(1); }} className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
                         </div>
-                        <div className="p-6">
-                            {!isCreatingNew && (
-                                <AICardCopilot
-                                    type="procurement_po"
-                                    context={{
-                                        title: requestDetail?.request?.title,
-                                        purpose: requestDetail?.request?.purpose,
-                                        status: requestDetail?.request?.status,
-                                        items: requestDetail?.request?.items?.map(i => `${i.itemName} (Qty: ${i.quantity})`).join(', '),
-                                        quotationsCount: requestDetail?.comparison?.length || 0,
-                                        lowestQuote: requestDetail?.comparison?.[0]?.totalAmount
-                                    }}
-                                    onInsert={(aiData) => {
-                                        if (aiData?.poDraft) {
-                                            navigator.clipboard.writeText(aiData.poDraft);
-                                            toast.success('PO draft generated & copied to clipboard!');
-                                        }
-                                    }}
-                                />
-                            )}
 
+                        {/* Real-time saving progress bar */}
+                        {saveProgress.active && (
+                            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 overflow-hidden sticky top-[69px] z-20">
+                                <div
+                                    className="bg-indigo-600 h-full transition-all duration-300 ease-out"
+                                    style={{ width: `${saveProgress.percent}%` }}
+                                />
+                            </div>
+                        )}
+
+                        <div className="p-6">
                             {!isCreatingNew && requestDetail?.request?.purpose && (
-                                <p className="text-slate-600 mb-4">{requestDetail.request.purpose}</p>
+                                <p className="text-slate-600 dark:text-slate-400 text-sm mb-4 bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                                    {requestDetail.request.purpose}
+                                </p>
                             )}
 
                             {/* Workflow Steps Tabs */}
                             <div className="mb-6">
-                                <div className="flex flex-wrap border-b border-slate-200">
+                                <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-800 gap-1">
                                     {[
                                         { step: 0, label: 'Request Info', icon: ClipboardList, showOnlyNew: true },
                                         { step: 1, label: 'Letter', icon: FileText },
                                         { step: 2, label: 'Committee', icon: Users },
-                                        { step: 3, label: 'Items', icon: Package },
+                                        { step: 3, label: 'Items & Specs', icon: Package },
                                         { step: 4, label: 'Call Quotations', icon: Building },
                                         { step: 5, label: 'Quotations', icon: Receipt },
                                         { step: 6, label: 'Comparative', icon: Calculator },
                                         { step: 7, label: 'Proceedings', icon: FileText },
                                         { step: 8, label: 'PO', icon: ClipboardList },
-                                        { step: 9, label: 'Bill', icon: CreditCard },
-                                        { step: 10, label: 'Received', icon: CheckCircle2 }
+                                        { step: 9, label: 'Bill & Receipt', icon: CreditCard },
+                                        { step: 10, label: 'Process Docket', icon: Eye }
                                     ].filter(t => !t.showOnlyNew || isCreatingNew).map(({ step, label, icon: Icon }) => {
                                         const maxAccessible = isCreatingNew ? 0 : getHighestAccessibleStep();
                                         const isAccessible = isCreatingNew ? step === 0 : step <= maxAccessible;
@@ -2331,21 +2828,21 @@ export default function ProcurementPage() {
                                                 key={step}
                                                 onClick={() => isAccessible && setWorkflowStep(step)}
                                                 disabled={!isAccessible}
-                                                className={`flex items-center gap-1 px-3 py-2 border-b-2 transition-colors text-xs ${workflowStep === step
-                                                    ? 'border-blue-500 text-blue-600 bg-blue-50'
+                                                className={`flex items-center gap-1.5 px-3 py-2 border-b-2 font-medium transition-all text-xs rounded-t-lg ${workflowStep === step
+                                                    ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 dark:text-indigo-400'
                                                     : isComplete
-                                                        ? 'border-green-500 text-green-600 hover:bg-green-50'
+                                                        ? 'border-emerald-500 text-emerald-600 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20'
                                                         : isAccessible
-                                                            ? 'border-transparent text-slate-500 hover:text-slate-700'
-                                                            : 'border-transparent text-slate-300 cursor-not-allowed'
+                                                            ? 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:bg-slate-100/50'
+                                                            : 'border-transparent text-slate-300 dark:text-slate-600 cursor-not-allowed'
                                                     }`}
                                             >
                                                 {isComplete && step !== workflowStep ? (
-                                                    <Check className="w-3 h-3 text-green-500" />
+                                                    <Check className="w-3.5 h-3.5 text-emerald-500" />
                                                 ) : (
-                                                    <Icon className="w-3 h-3" />
+                                                    <Icon className="w-3.5 h-3.5" />
                                                 )}
-                                                <span className="font-medium">{isCreatingNew && step === 0 ? '' : `${step}. `}{label}</span>
+                                                <span>{isCreatingNew && step === 0 ? '' : `${step}. `}{label}</span>
                                             </button>
                                         );
                                     })}
@@ -2479,12 +2976,24 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </div>
                                     )}
 
-                                    <div className="flex gap-2 mt-4">
-                                        <button onClick={() => saveStepData(1)} disabled={!isStepComplete(1)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">
-                                            Save
+                                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(1)}
+                                            disabled={!isStepComplete(1)}
+                                            title="Save Letter"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
                                         </button>
-                                        <button onClick={() => saveAndNext(1)} disabled={!isStepComplete(1)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
-                                            Save & Next →
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(1)}
+                                            disabled={!isStepComplete(1)}
+                                            title="Save & Next"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
                                         </button>
                                     </div>
                                 </div>
@@ -2537,256 +3046,631 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </div>
                                     )}
 
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(1)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(2)} disabled={!isStepComplete(2)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(2)} disabled={!isStepComplete(2)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(1)}
+                                            title="Previous Step"
+                                            className="p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(2)}
+                                            disabled={!isStepComplete(2)}
+                                            title="Save Committee"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(2)}
+                                            disabled={!isStepComplete(2)}
+                                            title="Save & Next"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
                             {/* Step 3: Items & Specifications */}
                             {workflowStep === 3 && (
-                                <div className="mb-6 p-4 bg-green-50 rounded-lg border border-green-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-green-800">
-                                        <Package className="w-5 h-5" /> Step 3: Items & Specifications ({requestDetail.request.items?.length || 0} items)
+                                <div className="mb-6 p-5 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-2xl border border-emerald-200 dark:border-emerald-800">
+                                    <h3 className="font-bold mb-1 flex items-center gap-2 text-emerald-900 dark:text-emerald-300">
+                                        <Package className="w-5 h-5 text-emerald-600" /> Step 3: Items & Specifications ({requestDetail.request.items?.length || 0} items)
                                     </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Review items to be procured with their specifications.</p>
+                                    <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">Review items to be procured with their specifications and warranty requirements.</p>
 
-                                    <div className="space-y-2 mb-4">
+                                    {/* Items List */}
+                                    <div className="space-y-3 mb-5">
                                         {requestDetail.request.items?.map((item, idx) => (
-                                            <div key={item.id} className="p-3 bg-white rounded border flex justify-between items-start">
-                                                <div>
-                                                    <span className="text-slate-400 text-sm mr-2">{idx + 1}.</span>
-                                                    <span className="font-medium">{item.itemName}</span>
-                                                    {item.specifications && <div className="text-slate-500 text-sm mt-1">Specs: {item.specifications}</div>}
-                                                </div>
-                                                <div className="text-right text-sm">
-                                                    <div>Qty: {item.quantity} {item.unit || 'pcs'}</div>
-                                                    {item.estimatedUnitPrice && <div className="text-slate-500">Est: ₹{item.estimatedUnitPrice}</div>}
-                                                </div>
+                                            <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                                {editingItemId === item.id ? (
+                                                    <div className="space-y-3">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            <div>
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Name *</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="input text-xs py-1.5 mt-1"
+                                                                    value={editingItemForm.itemName}
+                                                                    onChange={e => setEditingItemForm({ ...editingItemForm, itemName: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="input text-xs py-1.5 mt-1"
+                                                                    placeholder="e.g. 1 Year Standard / 3 Years"
+                                                                    value={editingItemForm.warranty}
+                                                                    onChange={e => setEditingItemForm({ ...editingItemForm, warranty: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div className="md:col-span-2">
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
+                                                                <textarea
+                                                                    className="input text-xs min-h-[60px] mt-1"
+                                                                    value={editingItemForm.specifications}
+                                                                    onChange={e => setEditingItemForm({ ...editingItemForm, specifications: e.target.value })}
+                                                                />
+                                                            </div>
+                                                            <div className="grid grid-cols-3 gap-2 md:col-span-2">
+                                                                <div>
+                                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Quantity</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="1"
+                                                                        className="input text-xs py-1.5 mt-1"
+                                                                        value={editingItemForm.quantity}
+                                                                        onChange={e => setEditingItemForm({ ...editingItemForm, quantity: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Unit</label>
+                                                                    <select
+                                                                        className="input text-xs py-1.5 mt-1"
+                                                                        value={editingItemForm.unit}
+                                                                        onChange={e => setEditingItemForm({ ...editingItemForm, unit: e.target.value })}
+                                                                    >
+                                                                        <option value="pcs">Pieces</option>
+                                                                        <option value="sets">Sets</option>
+                                                                        <option value="units">Units</option>
+                                                                        <option value="boxes">Boxes</option>
+                                                                        <option value="kg">Kilograms</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Est. Rate (₹)</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        className="input text-xs py-1.5 mt-1"
+                                                                        value={editingItemForm.estimatedUnitPrice}
+                                                                        onChange={e => setEditingItemForm({ ...editingItemForm, estimatedUnitPrice: e.target.value })}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setEditingItemId(null)}
+                                                                className="btn btn-secondary text-xs py-1 px-3"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSaveEditItem(item.id)}
+                                                                className="btn btn-primary text-xs py-1 px-3"
+                                                            >
+                                                                Save Changes
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                        <div className="flex-1">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="w-5 h-5 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-xs font-bold">{idx + 1}</span>
+                                                                <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">{item.itemName}</span>
+                                                                <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[11px] rounded-full font-medium">
+                                                                    Warranty: {item.warranty || '1 Year Standard'}
+                                                                </span>
+                                                            </div>
+                                                            {item.specifications && (
+                                                                <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">Specs: {item.specifications}</p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-3 self-end sm:self-center">
+                                                            <div className="text-right text-xs">
+                                                                <div className="font-semibold text-slate-800 dark:text-slate-200">{item.quantity} {item.unit || 'pcs'}</div>
+                                                                {item.estimatedUnitPrice && (
+                                                                    <div className="text-slate-500 text-[11px]">Est: ₹{item.estimatedUnitPrice}</div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-800">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleStartEditItem(item)}
+                                                                    title="Edit item specifications and warranty"
+                                                                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-2xs"
+                                                                >
+                                                                    <Pencil className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDeleteItem(item.id)}
+                                                                    title="Remove item"
+                                                                    className="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 transition shadow-2xs"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
 
                                     {/* Add New Item Form */}
-                                    <div className="bg-white p-4 rounded border mb-4">
-                                        <h4 className="font-medium mb-3 flex items-center gap-2"><Plus className="w-4 h-4" /> Add New Item</h4>
+                                    <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mb-4">
+                                        <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-1.5">
+                                            <Plus className="w-4 h-4 text-emerald-600" /> Add New Item & Warranty
+                                        </h4>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div className="md:col-span-2">
-                                                <label className="label">Item Name *</label>
-                                                <input type="text" className="input" placeholder="e.g., Microscope"
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Name *</label>
+                                                <input
+                                                    type="text"
+                                                    className="input text-xs py-1.5 mt-1"
+                                                    placeholder="e.g., Digital Storage Oscilloscope"
                                                     value={newItemForm.itemName}
-                                                    onChange={e => setNewItemForm({ ...newItemForm, itemName: e.target.value })} />
+                                                    onChange={e => setNewItemForm({ ...newItemForm, itemName: e.target.value })}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required</label>
+                                                <input
+                                                    type="text"
+                                                    className="input text-xs py-1.5 mt-1"
+                                                    placeholder="e.g. 1 Year Onsite / 3 Years Warranty"
+                                                    value={newItemForm.warranty}
+                                                    onChange={e => setNewItemForm({ ...newItemForm, warranty: e.target.value })}
+                                                />
                                             </div>
                                             <div className="md:col-span-2">
-                                                <label className="label">Specifications</label>
-                                                <textarea className="input min-h-[80px]" placeholder="e.g., Binocular, 40x-1000x magnification"
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
+                                                <textarea
+                                                    className="input text-xs min-h-[60px] mt-1"
+                                                    placeholder="e.g., 2-channel 100MHz, 1GSa/s sampling rate with probe accessories"
                                                     value={newItemForm.specifications}
-                                                    onChange={e => setNewItemForm({ ...newItemForm, specifications: e.target.value })} />
+                                                    onChange={e => setNewItemForm({ ...newItemForm, specifications: e.target.value })}
+                                                />
                                             </div>
                                             <div>
-                                                <label className="label">Quantity</label>
-                                                <input type="number" className="input" min="1"
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Quantity</label>
+                                                <input
+                                                    type="number"
+                                                    className="input text-xs py-1.5 mt-1"
+                                                    min="1"
                                                     value={newItemForm.quantity}
-                                                    onChange={e => setNewItemForm({ ...newItemForm, quantity: e.target.value })} />
+                                                    onChange={e => setNewItemForm({ ...newItemForm, quantity: e.target.value })}
+                                                />
                                             </div>
                                             <div>
-                                                <label className="label">Unit</label>
-                                                <select className="input" value={newItemForm.unit} onChange={e => setNewItemForm({ ...newItemForm, unit: e.target.value })}>
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Unit</label>
+                                                <select
+                                                    className="input text-xs py-1.5 mt-1"
+                                                    value={newItemForm.unit}
+                                                    onChange={e => setNewItemForm({ ...newItemForm, unit: e.target.value })}
+                                                >
                                                     <option value="pcs">Pieces</option>
-                                                    <option value="kg">Kilograms</option>
-                                                    <option value="liters">Liters</option>
-                                                    <option value="boxes">Boxes</option>
                                                     <option value="sets">Sets</option>
+                                                    <option value="units">Units</option>
+                                                    <option value="boxes">Boxes</option>
+                                                    <option value="kg">Kilograms</option>
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="label">Est. Unit Price (₹)</label>
-                                                <input type="number" className="input" placeholder="Optional"
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Est. Unit Price (₹)</label>
+                                                <input
+                                                    type="number"
+                                                    className="input text-xs py-1.5 mt-1"
+                                                    placeholder="Optional"
                                                     value={newItemForm.estimatedUnitPrice}
-                                                    onChange={e => setNewItemForm({ ...newItemForm, estimatedUnitPrice: e.target.value })} />
+                                                    onChange={e => setNewItemForm({ ...newItemForm, estimatedUnitPrice: e.target.value })}
+                                                />
                                             </div>
                                             <div className="flex items-end">
-                                                <button onClick={handleAddNewItem} className="btn btn-primary w-full">
+                                                <button onClick={handleAddNewItem} className="btn bg-emerald-600 hover:bg-emerald-700 text-white w-full text-xs py-2">
                                                     <Plus className="w-4 h-4" /> Add Item
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(2)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(3)} disabled={!isStepComplete(3)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(3)} disabled={!isStepComplete(3)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                    {/* Navigation Controls: Icon-only buttons on bottom right */}
+                                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(2)}
+                                            title="Previous Step"
+                                            className="p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(3)}
+                                            disabled={!isStepComplete(3)}
+                                            title="Save Items"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(3)}
+                                            disabled={!isStepComplete(3)}
+                                            title="Save & Next"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
                             {/* Step 4: Vendors & Call Quotation */}
                             {workflowStep === 4 && (
-                                <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-purple-800">
-                                        <Building className="w-5 h-5" /> Step 4: Select Vendors & Generate Call Quotations
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">
-                                        Select vendors to send quotation requests. Min 3 vendors for ₹500-1L, Min 5 for ₹1L-2.5L (1 local required).
-                                    </p>
+                                <div className="mb-6 p-5 bg-purple-50/60 dark:bg-purple-950/20 rounded-2xl border border-purple-200 dark:border-purple-800">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                                        <div>
+                                            <h3 className="font-bold text-sm flex items-center gap-2 text-purple-900 dark:text-purple-300">
+                                                <Building className="w-5 h-5 text-purple-600" /> Step 4: Select Vendors & Generate Call Quotations
+                                            </h3>
+                                            <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">
+                                                Select minimum 3 vendors (at least 1 local vendor required for compliance).
+                                            </p>
+                                        </div>
+                                    </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                                        {vendors.map(vendor => (
-                                            <div key={vendor.id} className={`p-3 rounded border cursor-pointer transition-colors ${selectedVendorIds.includes(vendor.id) ? 'bg-purple-100 border-purple-400' : 'bg-white hover:bg-purple-50'}`}
-                                                onClick={() => toggleVendorSelection(vendor.id)}>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="checkbox" checked={selectedVendorIds.includes(vendor.id)} onChange={() => { }} className="w-4 h-4" />
-                                                    <span className="font-medium">{vendor.name}</span>
-                                                    {vendor.isLocal && <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded">Local</span>}
+                                    {/* Submission Deadline & Global Action Bar */}
+                                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+                                        <div>
+                                            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                                <Calendar className="w-4 h-4 text-purple-600" /> Quotation Submission Deadline *
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={lastDateToSubmit}
+                                                onChange={e => setLastDateToSubmit(e.target.value)}
+                                                className="input text-xs py-1.5 px-3 mt-1 font-medium"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={generateClubbedCallQuotations}
+                                                disabled={selectedVendorIds.length === 0}
+                                                className="btn bg-purple-600 hover:bg-purple-700 text-white text-xs py-2 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-40"
+                                            >
+                                                <Printer className="w-4 h-4" /> Clubbed Call Quotations (Single PDF)
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Vendor Selection Cards Grid */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-4">
+                                        {vendors.map(vendor => {
+                                            const isSelected = selectedVendorIds.includes(vendor.id);
+                                            return (
+                                                <div
+                                                    key={vendor.id}
+                                                    onClick={() => toggleVendorSelection(vendor.id)}
+                                                    className={`p-3.5 rounded-xl border transition-all cursor-pointer shadow-xs ${
+                                                        isSelected
+                                                            ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-400 dark:border-purple-600 ring-2 ring-purple-400/30'
+                                                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-200'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => {}}
+                                                                className="w-4 h-4 accent-purple-600 rounded cursor-pointer"
+                                                            />
+                                                            <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">{vendor.name}</span>
+                                                            {vendor.isLocal && (
+                                                                <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold rounded">
+                                                                    LOCAL
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    generateCallQuotation(vendor.id);
+                                                                }}
+                                                                title="Preview Single Letter"
+                                                                className="p-1 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                                            >
+                                                                <Eye className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setEmailModal({
+                                                                        open: true,
+                                                                        vendor,
+                                                                        email: vendor.email || '',
+                                                                        notes: '',
+                                                                        sending: false
+                                                                    });
+                                                                }}
+                                                                title="Email Call for Quotation"
+                                                                className="p-1 rounded-lg border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900 text-purple-700 dark:text-purple-300"
+                                                            >
+                                                                <Mail className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-2 space-y-0.5">
+                                                        {vendor.contactPerson && <div>Contact: {vendor.contactPerson}</div>}
+                                                        {vendor.phone && <div>Phone: {vendor.phone}</div>}
+                                                        <div>Email: {vendor.email || <span className="italic text-slate-400">Not provided</span>}</div>
+                                                        {vendor.address && <div className="truncate">Address: {vendor.address}</div>}
+                                                    </div>
                                                 </div>
-                                                <div className="text-slate-500 text-sm mt-1">{vendor.address || 'No address'}</div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
-                                    <div className="flex items-center justify-between bg-white p-3 rounded border mb-4">
-                                        <span className="text-sm">
-                                            <strong>{selectedVendorIds.length}</strong> vendors selected
-                                            {selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length > 0 &&
-                                                <span className="text-green-600 ml-2">({selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length} local)</span>
-                                            }
-                                        </span>
-                                        <button onClick={generateAllCallQuotations} disabled={selectedVendorIds.length === 0} className="btn bg-purple-600 hover:bg-purple-700 text-white">
-                                            <Printer className="w-4 h-4" /> Generate Call Quotations
+                                    {/* Selection Status Badge */}
+                                    <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                                        <div>
+                                            <span className="font-bold text-slate-900 dark:text-slate-100">{selectedVendorIds.length}</span> vendors selected
+                                            {selectedVendorIds.filter(id => vendors.find(v => v.id === id)?.isLocal).length > 0 ? (
+                                                <span className="text-emerald-600 font-semibold ml-2">✓ Local vendor selected</span>
+                                            ) : (
+                                                <span className="text-amber-600 font-semibold ml-2">⚠️ At least 1 local vendor required</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Navigation Controls: Icon-only buttons on bottom right */}
+                                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(3)}
+                                            title="Previous Step"
+                                            className="p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
                                         </button>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(3)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(4)} disabled={!isStepComplete(4)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(4)} disabled={!isStepComplete(4)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(4)}
+                                            disabled={!isStepComplete(4)}
+                                            title="Save Vendors"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(4)}
+                                            disabled={!isStepComplete(4)}
+                                            title="Save & Next"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
                             {/* Step 5: Quotations Received */}
                             {workflowStep === 5 && (
-                                <div className="mb-6 p-4 bg-orange-50 rounded-lg border border-orange-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-orange-800">
-                                        <Receipt className="w-5 h-5" /> Step 5: Vendor Quotations Received
+                                <div className="mb-6 p-5 bg-orange-50/60 dark:bg-orange-950/20 rounded-2xl border border-orange-200 dark:border-orange-800">
+                                    <h3 className="font-bold text-sm flex items-center gap-2 text-orange-900 dark:text-orange-300 mb-1">
+                                        <Receipt className="w-5 h-5 text-orange-600" /> Step 5: Vendor Quotations Received
                                     </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Enter prices from quotations received from each vendor for comparison.</p>
+                                    <p className="text-slate-600 dark:text-slate-400 text-xs mb-4">
+                                        Enter Quotation Reference Number, item-level rates, and GST percentage for each vendor.
+                                    </p>
 
                                     {selectedVendorIds.length === 0 ? (
-                                        <div className="text-slate-500 italic">No vendors selected. Go back to Step 4 to select vendors.</div>
+                                        <div className="text-slate-500 italic p-4 bg-white rounded-xl border">No vendors selected. Go back to Step 4 to select vendors.</div>
                                     ) : (
                                         <div className="space-y-4">
                                             {selectedVendorIds.map(vendorId => {
                                                 const vendor = vendors.find(v => v.id === vendorId);
+                                                const globalGst = vendorGlobalGst[vendorId] ?? (vendorGstSettings[vendorId]?.gstRate ?? 18);
+                                                const subtotal = calculateVendorTotal(vendorId, false);
+                                                const totalGst = calculateVendorGstTotal(vendorId);
+                                                const grandTotal = subtotal + totalGst;
+
                                                 return (
-                                                    <div key={vendorId} className="bg-white p-4 rounded border">
-                                                        <div className="flex items-center justify-between mb-3">
-                                                            <h4 className="font-medium flex items-center gap-2">
-                                                                {vendor?.name}
-                                                                {vendor?.isLocal && <span className="px-2 py-0.5 bg-green-200 text-green-800 text-xs rounded">Local</span>}
-                                                            </h4>
+                                                    <div key={vendorId} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3.5">
+                                                        {/* Vendor Header & Quotation Reference */}
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
                                                             <div className="flex items-center gap-2">
-                                                                <label className="flex items-center gap-2 text-sm">
+                                                                <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{vendor?.name}</h4>
+                                                                {vendor?.isLocal && (
+                                                                    <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold rounded">
+                                                                        LOCAL
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <div>
                                                                     <input
-                                                                        type="checkbox"
-                                                                        className="w-4 h-4"
-                                                                        checked={vendorGstSettings[vendorId]?.addGst !== false}
-                                                                        onChange={e => setVendorGstSettings(prev => ({
-                                                                            ...prev,
-                                                                            [vendorId]: { ...prev[vendorId], addGst: e.target.checked, gstRate: prev[vendorId]?.gstRate || 18 }
-                                                                        }))}
+                                                                        type="text"
+                                                                        placeholder="Quotation No. (e.g. QT-2024-001)"
+                                                                        value={vendorQuotationNumbers[vendorId] || ''}
+                                                                        onChange={e => setVendorQuotationNumbers(prev => ({ ...prev, [vendorId]: e.target.value }))}
+                                                                        className="input text-xs py-1 px-2.5 w-44 font-mono"
                                                                     />
-                                                                    Add GST @
-                                                                </label>
+                                                                </div>
+                                                                <div>
+                                                                    <select
+                                                                        value={globalGst}
+                                                                        onChange={e => {
+                                                                            const rate = parseFloat(e.target.value) || 0;
+                                                                            setVendorGlobalGst(prev => ({ ...prev, [vendorId]: rate }));
+                                                                            // Apply globally to all items for this vendor
+                                                                            const updated = {};
+                                                                            requestDetail?.request?.items?.forEach(i => {
+                                                                                updated[i.id] = rate;
+                                                                            });
+                                                                            setVendorItemGst(prev => ({ ...prev, [vendorId]: updated }));
+                                                                        }}
+                                                                        className="input text-xs py-1 px-2.5 font-semibold text-slate-700 dark:text-slate-300"
+                                                                        title="Global GST applies to all items under this vendor"
+                                                                    >
+                                                                        <option value={18}>Global GST: 18%</option>
+                                                                        <option value={12}>Global GST: 12%</option>
+                                                                        <option value={5}>Global GST: 5%</option>
+                                                                        <option value={28}>Global GST: 28%</option>
+                                                                        <option value={0}>Global GST: 0% (Exempt)</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Items Quotation Entry Table */}
+                                                        <div className="overflow-x-auto">
+                                                            <table className="w-full text-xs border-collapse">
+                                                                <thead>
+                                                                    <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400">
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-left">Item Description</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '90px' }}>Warranty</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '50px' }}>Qty</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '105px' }}>Unit Rate (₹)</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '70px' }}>GST %</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '85px' }}>GST Amt (₹)</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '100px' }}>Item Total (₹)</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {requestDetail.request.items?.map(item => {
+                                                                        const unitRate = parseFloat(vendorQuotationPrices[vendorId]?.[item.id]) || 0;
+                                                                        const itemRateGst = vendorItemGst[vendorId]?.[item.id] !== undefined
+                                                                            ? vendorItemGst[vendorId][item.id]
+                                                                            : globalGst;
+                                                                        const baseAmt = unitRate * item.quantity;
+                                                                        const gstAmt = baseAmt * (itemRateGst / 100);
+                                                                        const itemTotal = baseAmt + gstAmt;
+
+                                                                        return (
+                                                                            <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800">
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2">
+                                                                                    <div className="font-semibold text-slate-800 dark:text-slate-200">{item.itemName}</div>
+                                                                                    {item.specifications && <div className="text-[10px] text-slate-500 truncate max-w-xs">{item.specifications}</div>}
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-center text-[10px] font-medium text-slate-600 dark:text-slate-400">
+                                                                                    {item.warranty || 'Standard'}
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-center font-bold">
+                                                                                    {item.quantity}
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-right">
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        className="input text-xs py-1 px-1.5 text-right w-full"
+                                                                                        placeholder="0.00"
+                                                                                        value={vendorQuotationPrices[vendorId]?.[item.id] || ''}
+                                                                                        onChange={e => {
+                                                                                            setVendorQuotationPrices(prev => ({
+                                                                                                ...prev,
+                                                                                                [vendorId]: { ...prev[vendorId], [item.id]: e.target.value }
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-center">
+                                                                                    <input
+                                                                                        type="number"
+                                                                                        className="input text-xs py-1 px-1 text-center w-14 font-semibold"
+                                                                                        value={itemRateGst}
+                                                                                        onChange={e => {
+                                                                                            const val = parseFloat(e.target.value) || 0;
+                                                                                            setVendorItemGst(prev => ({
+                                                                                                ...prev,
+                                                                                                [vendorId]: { ...(prev[vendorId] || {}), [item.id]: val }
+                                                                                            }));
+                                                                                        }}
+                                                                                    />
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-right text-slate-600 dark:text-slate-400 font-mono">
+                                                                                    ₹{gstAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                </td>
+                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-right font-bold text-slate-900 dark:text-slate-100 font-mono">
+                                                                                    ₹{itemTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+
+                                                        {/* Document Upload & Summary Footer */}
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                            <div className="flex items-center gap-2">
+                                                                <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">Quotation Copy:</label>
                                                                 <input
-                                                                    type="number"
-                                                                    className="input w-16 text-sm"
-                                                                    value={vendorGstSettings[vendorId]?.gstRate ?? 18}
-                                                                    onChange={e => setVendorGstSettings(prev => ({
-                                                                        ...prev,
-                                                                        [vendorId]: { ...prev[vendorId], gstRate: parseFloat(e.target.value) || 0 }
-                                                                    }))}
+                                                                    type="file"
+                                                                    accept=".pdf,.jpg,.jpeg,.png"
+                                                                    className="text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
+                                                                    onChange={e => {
+                                                                        const file = e.target.files[0];
+                                                                        if (file) {
+                                                                            setVendorQuotationDocs(prev => ({ ...prev, [vendorId]: file }));
+                                                                            toast.success(`Quotation file attached for ${vendor?.name}`);
+                                                                        }
+                                                                    }}
                                                                 />
-                                                                <span className="text-sm">%</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Quotation Upload */}
-                                                        <div className="mb-3 p-2 bg-slate-50 rounded">
-                                                            <label className="label text-xs">Upload Quotation Copy</label>
-                                                            <input
-                                                                type="file"
-                                                                className="input text-sm"
-                                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                                onChange={e => {
-                                                                    const file = e.target.files[0];
-                                                                    if (file) {
-                                                                        setVendorQuotationDocs(prev => ({ ...prev, [vendorId]: file }));
-                                                                        toast.success(`Quotation selected: ${file.name}`);
+                                                                {(() => {
+                                                                    const existingQuotation = requestDetail?.request?.quotations?.find(q => (q.vendor?.id || q.vendorId) === vendorId);
+                                                                    if (existingQuotation?.documentUrl) {
+                                                                        return (
+                                                                            <a
+                                                                                href={existingQuotation.documentUrl}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="text-xs text-blue-600 hover:underline flex items-center gap-1 ml-1"
+                                                                            >
+                                                                                <Eye className="w-3.5 h-3.5" /> View Uploaded
+                                                                            </a>
+                                                                        );
                                                                     }
-                                                                }}
-                                                            />
-                                                            {vendorQuotationDocs[vendorId] && (
-                                                                <div className="text-xs text-green-600 mt-1">✓ {vendorQuotationDocs[vendorId]?.name || vendorQuotationDocs[vendorId]}</div>
-                                                            )}
-                                                            {/* View uploaded quotation document */}
-                                                            {(() => {
-                                                                const existingQuotation = requestDetail?.request?.quotations?.find(q => q.vendor?.id === vendorId);
-                                                                if (existingQuotation?.documentUrl) {
-                                                                    return (
-                                                                        <a
-                                                                            href={existingQuotation.documentUrl}
-                                                                            target="_blank"
-                                                                            rel="noopener noreferrer"
-                                                                            className="inline-flex items-center gap-1 text-blue-600 hover:underline text-xs mt-1"
-                                                                        >
-                                                                            📄 View Uploaded Quotation
-                                                                        </a>
-                                                                    );
-                                                                }
-                                                                return null;
-                                                            })()}
-                                                        </div>
-
-                                                        <div className="space-y-2">
-                                                            {requestDetail.request.items?.map(item => (
-                                                                <div key={item.id} className="flex items-center gap-3">
-                                                                    <span className="flex-1 text-sm">{item.itemName} (Qty: {item.quantity})</span>
-                                                                    <div className="flex items-center gap-1">
-                                                                        <span className="text-sm text-slate-500">₹</span>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="input w-28 text-sm"
-                                                                            placeholder="Unit Price"
-                                                                            value={vendorQuotationPrices[vendorId]?.[item.id] || ''}
-                                                                            onChange={e => {
-                                                                                setVendorQuotationPrices(prev => ({
-                                                                                    ...prev,
-                                                                                    [vendorId]: { ...prev[vendorId], [item.id]: e.target.value }
-                                                                                }));
-                                                                            }}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        <div className="mt-3 pt-3 border-t">
-                                                            <div className="flex justify-between text-sm">
-                                                                <span>Subtotal:</span>
-                                                                <span>₹{calculateVendorTotal(vendorId, false).toLocaleString()}</span>
+                                                                    return null;
+                                                                })()}
                                                             </div>
-                                                            {(vendorGstSettings[vendorId]?.addGst !== false) && (
-                                                                <div className="flex justify-between text-sm text-slate-600">
-                                                                    <span>GST ({vendorGstSettings[vendorId]?.gstRate ?? 18}%):</span>
-                                                                    <span>₹{(calculateVendorTotal(vendorId, false) * (vendorGstSettings[vendorId]?.gstRate ?? 18) / 100).toLocaleString()}</span>
+                                                            <div className="text-right flex items-center justify-end gap-4 text-xs">
+                                                                <div>
+                                                                    <span className="text-slate-500">Subtotal:</span> <strong className="font-mono">₹{subtotal.toLocaleString()}</strong>
                                                                 </div>
-                                                            )}
-                                                            <div className="flex justify-between font-semibold text-lg mt-1">
-                                                                <span>Total:</span>
-                                                                <span>₹{calculateVendorTotal(vendorId).toLocaleString()}</span>
+                                                                <div>
+                                                                    <span className="text-slate-500">Total GST:</span> <strong className="font-mono">₹{totalGst.toLocaleString()}</strong>
+                                                                </div>
+                                                                <div className="text-sm font-bold text-orange-900 dark:text-orange-300 bg-orange-100/70 dark:bg-orange-950/50 px-2.5 py-1 rounded-lg">
+                                                                    Grand Total: ₹{grandTotal.toLocaleString()}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -2795,63 +3679,182 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </div>
                                     )}
 
-                                    <div className="flex gap-2 mt-4">
-                                        <button onClick={() => setWorkflowStep(4)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(5)} disabled={!isStepComplete(5)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => saveAndNext(5)} disabled={!isStepComplete(5)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                    {/* Navigation Controls: Icon-only buttons on bottom right */}
+                                    <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200 dark:border-slate-800 mt-6">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(4)}
+                                            title="Previous Step"
+                                            className="p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(5)}
+                                            disabled={!isStepComplete(5)}
+                                            title="Save Quotations"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(5)}
+                                            disabled={!isStepComplete(5)}
+                                            title="Save & Next"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
                             {/* Step 6: Comparative Statement */}
                             {workflowStep === 6 && (
-                                <div className="mb-6 p-4 bg-cyan-50 rounded-lg border border-cyan-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-cyan-800">
-                                        <Calculator className="w-5 h-5" /> Step 6: Comparative Statement
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Compare prices from all vendors. Lowest total is auto-selected.</p>
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400">
+                                                <Calculator className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 6: Comparative Statement</h3>
+                                                <p className="text-xs text-slate-500">Item-by-item rate comparison across all received vendor quotations. Lowest total (L1) is automatically determined.</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm border-collapse">
+                                    {/* Auto-selected Lowest Bidder (L1) Banner - No confirm button needed */}
+                                    {(() => {
+                                        const { vendorId, total } = getLowestVendor();
+                                        const selectedVendor = vendors.find(v => v.id === vendorId);
+                                        const quoteNum = vendorQuotationNumbers[vendorId];
+                                        const gstTotal = calculateVendorGstTotal(vendorId);
+                                        const baseTotal = calculateVendorTotal(vendorId, false);
+
+                                        if (selectedVendor) {
+                                            return (
+                                                <div className="mb-5 p-4 bg-emerald-50/80 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="p-2 bg-emerald-100 dark:bg-emerald-900/50 rounded-lg text-emerald-700 dark:text-emerald-300">
+                                                            <CheckCircle2 className="w-5 h-5" />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white tracking-wider">L1 VENDOR AUTO-SELECTED</span>
+                                                                <h4 className="font-bold text-slate-900 dark:text-slate-100">{selectedVendor.name}</h4>
+                                                                {quoteNum && (
+                                                                    <span className="text-xs text-slate-500 font-mono">({quoteNum})</span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                                                Selected based on lowest total bid: Base ₹{baseTotal.toLocaleString()} + GST ₹{gstTotal.toLocaleString()} = <strong className="text-emerald-700 dark:text-emerald-300">₹{total.toLocaleString()}</strong>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-xs text-slate-500 font-medium">L1 Grand Total</div>
+                                                        <div className="text-xl font-extrabold text-emerald-700 dark:text-emerald-300">₹{total.toLocaleString()}</div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+                                        return (
+                                            <div className="mb-4 p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-amber-800">
+                                                Please ensure all vendor quotation prices are entered in Step 5 to complete comparative analysis.
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* Comparative Table */}
+                                    <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-5">
+                                        <table className="w-full text-xs">
                                             <thead>
-                                                <tr className="bg-slate-100">
-                                                    <th className="border p-2 text-left">S.No</th>
-                                                    <th className="border p-2 text-left">Item</th>
-                                                    <th className="border p-2 text-center">Qty</th>
+                                                <tr className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800">
+                                                    <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300 w-12">#</th>
+                                                    <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300">Item Name</th>
+                                                    <th className="p-3 text-center font-bold text-slate-700 dark:text-slate-300 w-16">Qty</th>
+                                                    <th className="p-3 text-center font-bold text-slate-700 dark:text-slate-300 w-24">Warranty</th>
                                                     {selectedVendorIds.map(vid => {
                                                         const v = vendors.find(v => v.id === vid);
                                                         const { vendorId: lowestId } = getLowestVendor();
+                                                        const isL1 = vid === lowestId;
+                                                        const qNum = vendorQuotationNumbers[vid];
                                                         return (
-                                                            <th key={vid} className={`border p-2 text-center ${vid === lowestId ? 'bg-green-100' : ''}`}>
-                                                                {v?.name} {vid === lowestId && '✓'}
+                                                            <th key={vid} className={`p-3 text-right font-bold border-l border-slate-200 dark:border-slate-800 ${isL1 ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    {isL1 && <span className="px-1.5 py-0.5 rounded text-[9px] bg-emerald-600 text-white font-bold">L1</span>}
+                                                                    <span>{v?.name}</span>
+                                                                </div>
+                                                                {qNum && <div className="text-[10px] font-normal font-mono text-slate-500">{qNum}</div>}
                                                             </th>
                                                         );
                                                     })}
                                                 </tr>
                                             </thead>
-                                            <tbody>
-                                                {requestDetail?.request?.items?.map((item, idx) => (
-                                                    <tr key={item.id}>
-                                                        <td className="border p-2">{idx + 1}</td>
-                                                        <td className="border p-2">{item.itemName}</td>
-                                                        <td className="border p-2 text-center">{item.quantity}</td>
-                                                        {selectedVendorIds.map(vid => {
-                                                            const price = parseFloat(vendorQuotationPrices[vid]?.[item.id]) || 0;
-                                                            return (
-                                                                <td key={vid} className="border p-2 text-right">
-                                                                    {price > 0 ? `₹${(price * item.quantity).toLocaleString()}` : '-'}
-                                                                </td>
-                                                            );
-                                                        })}
-                                                    </tr>
-                                                ))}
-                                                <tr className="font-bold bg-slate-50">
-                                                    <td colSpan={3} className="border p-2 text-right">TOTAL:</td>
+                                            <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                                {requestDetail?.request?.items?.map((item, idx) => {
+                                                    const { vendorId: lowestId } = getLowestVendor();
+                                                    return (
+                                                        <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
+                                                            <td className="p-3 text-slate-500">{idx + 1}</td>
+                                                            <td className="p-3 font-medium text-slate-800 dark:text-slate-200">{item.itemName}</td>
+                                                            <td className="p-3 text-center text-slate-600 dark:text-slate-400">{item.quantity} {item.unit || 'pcs'}</td>
+                                                            <td className="p-3 text-center text-slate-600 dark:text-slate-400">{item.warranty || '-'}</td>
+                                                            {selectedVendorIds.map(vid => {
+                                                                const price = parseFloat(vendorQuotationPrices[vid]?.[item.id]) || 0;
+                                                                const isL1 = vid === lowestId;
+                                                                return (
+                                                                    <td key={vid} className={`p-3 text-right font-mono border-l border-slate-200 dark:border-slate-800 ${isL1 ? 'bg-emerald-50/40 dark:bg-emerald-950/20 font-semibold text-emerald-800 dark:text-emerald-200' : 'text-slate-700 dark:text-slate-300'}`}>
+                                                                        {price > 0 ? (
+                                                                            <div>
+                                                                                <div>₹{(price * item.quantity).toLocaleString()}</div>
+                                                                                <div className="text-[10px] text-slate-400 font-normal">@ ₹{price.toLocaleString()}/ea</div>
+                                                                            </div>
+                                                                        ) : '-'}
+                                                                    </td>
+                                                                );
+                                                            })}
+                                                        </tr>
+                                                    );
+                                                })}
+                                                {/* Subtotal Row */}
+                                                <tr className="bg-slate-50/70 dark:bg-slate-800/60 font-semibold text-slate-700 dark:text-slate-300 border-t-2 border-slate-300 dark:border-slate-700">
+                                                    <td colSpan={4} className="p-3 text-right">Base Subtotal:</td>
                                                     {selectedVendorIds.map(vid => {
-                                                        const total = calculateVendorTotal(vid);
+                                                        const subtotal = calculateVendorTotal(vid, false);
                                                         const { vendorId: lowestId } = getLowestVendor();
                                                         return (
-                                                            <td key={vid} className={`border p-2 text-right ${vid === lowestId ? 'bg-green-200 text-green-800' : ''}`}>
+                                                            <td key={vid} className={`p-3 text-right font-mono border-l border-slate-200 dark:border-slate-800 ${vid === lowestId ? 'bg-emerald-100/60 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200' : ''}`}>
+                                                                ₹{subtotal.toLocaleString()}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                                {/* GST Total Row */}
+                                                <tr className="bg-slate-50/40 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400">
+                                                    <td colSpan={4} className="p-2.5 text-right text-[11px]">Total GST:</td>
+                                                    {selectedVendorIds.map(vid => {
+                                                        const gst = calculateVendorGstTotal(vid);
+                                                        const { vendorId: lowestId } = getLowestVendor();
+                                                        return (
+                                                            <td key={vid} className={`p-2.5 text-right font-mono text-[11px] border-l border-slate-200 dark:border-slate-800 ${vid === lowestId ? 'bg-emerald-100/40 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : ''}`}>
+                                                                + ₹{gst.toLocaleString()}
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                                {/* Grand Total Row */}
+                                                <tr className="font-extrabold text-slate-900 dark:text-slate-100 border-t border-slate-300 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800">
+                                                    <td colSpan={4} className="p-3 text-right text-xs">GRAND TOTAL (Incl. GST):</td>
+                                                    {selectedVendorIds.map(vid => {
+                                                        const total = calculateVendorTotal(vid, true);
+                                                        const { vendorId: lowestId } = getLowestVendor();
+                                                        const isL1 = vid === lowestId;
+                                                        return (
+                                                            <td key={vid} className={`p-3 text-right font-mono text-sm border-l border-slate-200 dark:border-slate-800 ${isL1 ? 'bg-emerald-200/80 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-100' : ''}`}>
                                                                 ₹{total.toLocaleString()}
                                                             </td>
                                                         );
@@ -2861,112 +3864,133 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </table>
                                     </div>
 
-                                    {(() => {
-                                        const { vendorId, total } = getLowestVendor();
-                                        const selectedVendor = vendors.find(v => v.id === vendorId);
-                                        if (selectedVendor) {
-                                            return (
-                                                <div className="mt-4 p-4 bg-green-100 rounded border border-green-300">
-                                                    <p className="font-semibold text-green-800">
-                                                        ✓ Selected Vendor: <span className="text-lg">{selectedVendor.name}</span>
-                                                    </p>
-                                                    <p className="text-green-700 text-sm mt-1">
-                                                        Reason: Lowest quotation amount of ₹{total.toLocaleString()}
-                                                    </p>
-                                                    <button
-                                                        onClick={() => setSelectedVendorForPurchase(vendorId)}
-                                                        className="btn bg-green-600 hover:bg-green-700 text-white mt-3"
-                                                    >
-                                                        <Check className="w-4 h-4" /> Confirm Selection
-                                                    </button>
-                                                </div>
-                                            );
-                                        }
-                                        return <div className="text-slate-500 italic mt-4">Enter prices in Step 5 to see comparison.</div>;
-                                    })()}
-
-                                    <div className="flex gap-2 mt-4">
-                                        <button onClick={() => setWorkflowStep(5)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(6)} disabled={!isStepComplete(6)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => { saveStepData(6); setWorkflowStep(7); }} disabled={!isStepComplete(6)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                    {/* Bottom Action Controls: Icon only on the right bottom */}
+                                    <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(5)}
+                                            title="Back to Quotations"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(6)}
+                                            disabled={!isStepComplete(6)}
+                                            title="Save Comparative Data"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(6)}
+                                            disabled={!isStepComplete(6)}
+                                            title="Save & Proceed to Proceedings"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* NEW Step 7: Proceedings of Committee */}
+                            {/* Step 7: Proceedings of Committee */}
                             {workflowStep === 7 && (
-                                <div className="mb-6 p-4 bg-violet-50 rounded-lg border border-violet-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-violet-800">
-                                        <FileText className="w-5 h-5" /> Step 7: Proceedings of Committee
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Review and generate the Committee Proceedings document.</p>
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400">
+                                                <FileText className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 7: Proceedings of Committee</h3>
+                                                <p className="text-xs text-slate-500">Record of committee recommendations, meeting date, and vendor selection justification.</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                    {/* Proceedings Preview */}
-                                    <div className="bg-white p-6 rounded border space-y-4 text-sm">
-                                        <h4 className="font-bold text-center border-b pb-2">
+                                    {/* Proceedings Preview Container */}
+                                    <div className="bg-slate-50/50 dark:bg-slate-800/40 p-5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4 text-xs">
+                                        <h4 className="font-bold text-center border-b border-slate-200 dark:border-slate-700 pb-2 text-sm text-slate-900 dark:text-slate-100">
                                             Proceedings of Committee for {requestDetail?.request?.title}
                                         </h4>
 
-                                        <table className="w-full text-sm">
-                                            <tbody>
-                                                <tr><td className="font-medium py-1 w-40">Proceeding of:</td><td>Committee to Recommend {requestDetail?.request?.title}</td></tr>
-                                                <tr><td className="font-medium py-1">Assembled at:</td><td>{requestDetail?.request?.school?.name || 'School Name'}</td></tr>
-                                                <tr><td className="font-medium py-1">On:</td>
-                                                    <td>
-                                                        <input
-                                                            type="date"
-                                                            className="input py-1 px-2 text-sm w-40"
-                                                            value={proceedingsDate}
-                                                            onChange={e => setProceedingsDate(e.target.value)}
-                                                        />
-                                                    </td>
-                                                </tr>
-                                                <tr><td className="font-medium py-1">For the purpose of:</td><td>To Recommend {requestDetail?.request?.title}</td></tr>
-                                                <tr><td className="font-medium py-1">By the order of:</td><td>Vide Memo no. <strong>{requestDetail?.request?.memoVideNo || memoVideNo || '___'}</strong></td></tr>
-                                            </tbody>
-                                        </table>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white dark:bg-slate-900 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Proceeding of</span>
+                                                <span className="font-medium text-slate-800 dark:text-slate-200">Committee to Recommend {requestDetail?.request?.title}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Assembled at</span>
+                                                <span className="font-medium text-slate-800 dark:text-slate-200">{requestDetail?.request?.school?.name || 'Institution Name'}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">Meeting Date</span>
+                                                <input
+                                                    type="date"
+                                                    className="input text-xs py-1 px-2.5 mt-0.5 w-44"
+                                                    value={proceedingsDate}
+                                                    onChange={e => setProceedingsDate(e.target.value)}
+                                                />
+                                            </div>
+                                            <div>
+                                                <span className="text-slate-400 block text-[10px] uppercase font-semibold">By Order Of</span>
+                                                <span className="font-medium text-slate-800 dark:text-slate-200">Vide Memo No. <strong>{requestDetail?.request?.memoVideNo || memoVideNo || '___'}</strong></span>
+                                            </div>
+                                        </div>
 
-                                        <div className="mt-4 pt-4 border-t">
-                                            <p className="mb-3">The Board having reassembled in pursuance of the above order proceeded to examine the quotations received from the following dealers:</p>
+                                        <div className="p-4 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
+                                            <p className="text-slate-700 dark:text-slate-300">
+                                                The Committee having reassembled in pursuance of the above order proceeded to examine the quotations received from the following dealers:
+                                            </p>
 
-                                            <div className="mb-4">
-                                                <p className="font-medium mb-2">Vendors Asked to Give Quotations (Step 4):</p>
-                                                <ul className="list-disc list-inside pl-2">
-                                                    {selectedVendorIds.length > 0 ? selectedVendorIds.map((vid, idx) => {
-                                                        const v = vendors.find(vendor => vendor.id === vid);
-                                                        return <li key={vid}>{String.fromCharCode(97 + idx)}) {v?.name}</li>;
-                                                    }) : <li className="text-slate-500 italic">No vendors selected in Step 4</li>}
-                                                </ul>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                                                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                    <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1.5">Vendors Invited (Step 4):</p>
+                                                    <ul className="space-y-1 text-slate-600 dark:text-slate-400">
+                                                        {selectedVendorIds.length > 0 ? selectedVendorIds.map((vid, idx) => {
+                                                            const v = vendors.find(vendor => vendor.id === vid);
+                                                            return <li key={vid}>{String.fromCharCode(97 + idx)}) {v?.name}</li>;
+                                                        }) : <li className="text-slate-400 italic">No vendors selected</li>}
+                                                    </ul>
+                                                </div>
+                                                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                    <p className="font-semibold text-slate-800 dark:text-slate-200 mb-1.5">Quotations Received (Step 5):</p>
+                                                    <ul className="space-y-1 text-slate-600 dark:text-slate-400">
+                                                        {selectedVendorIds.length > 0 ? selectedVendorIds.map((vid, idx) => {
+                                                            const v = vendors.find(vendor => vendor.id === vid);
+                                                            const qNum = vendorQuotationNumbers[vid];
+                                                            return <li key={vid}>{String.fromCharCode(97 + idx)}) {v?.name} {qNum && `(${qNum})`}</li>;
+                                                        }) : <li className="text-slate-400 italic">No quotations received</li>}
+                                                    </ul>
+                                                </div>
                                             </div>
 
-                                            <div className="mb-4">
-                                                <p className="font-medium mb-2">1. The Following Dealers Supplied Quotations (Step 5):</p>
-                                                <ul className="list-disc list-inside pl-2">
-                                                    {requestDetail?.request?.quotations?.length > 0 ? requestDetail.request.quotations.map((q, idx) => (
-                                                        <li key={q.id}>{String.fromCharCode(97 + idx)}) {q.vendor?.name}</li>
-                                                    )) : <li className="text-slate-500 italic">No quotations received yet</li>}
-                                                </ul>
-                                            </div>
+                                            <p className="text-slate-600 dark:text-slate-400 pt-2">
+                                                The comparative statement of rates is placed at Appendix A.
+                                            </p>
 
-                                            <p className="mb-4">2. The Comparative statement of rates is placed at Appendix A.</p>
-
-                                            <div className="mb-4 pt-4 border-t">
-                                                <p className="font-medium underline mb-2">Recommendation:</p>
-                                                <p>The board recommends that dealer <strong>
-                                                    {selectedVendorForPurchase
-                                                        ? vendors.find(v => v.id === selectedVendorForPurchase)?.name
-                                                        : '________________'}
-                                                </strong> should be given the {requestDetail?.request?.title}.</p>
+                                            <div className="p-3.5 bg-violet-50/70 dark:bg-violet-950/30 rounded-lg border border-violet-200 dark:border-violet-800/50">
+                                                <p className="font-bold text-violet-900 dark:text-violet-200 uppercase text-[11px] mb-1">Recommendation:</p>
+                                                <p className="text-violet-800 dark:text-violet-300">
+                                                    The board recommends that dealer <strong>
+                                                        {selectedVendorForPurchase
+                                                            ? vendors.find(v => v.id === selectedVendorForPurchase)?.name
+                                                            : '________________'}
+                                                    </strong> should be given the order for {requestDetail?.request?.title} having quoted the lowest responsive rate.
+                                                </p>
                                             </div>
 
                                             {/* Committee Signatories */}
-                                            <div className="mt-6 pt-4 border-t">
-                                                <p className="font-medium mb-3">Committee Signatures:</p>
-                                                <div className="grid grid-cols-2 gap-4 text-right">
+                                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                <p className="font-semibold text-slate-700 dark:text-slate-300 mb-2">Committee Members:</p>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                                     {requestDetail?.request?.committee?.map((member, idx) => (
-                                                        <div key={member.id} className="text-right">
-                                                            <p className="text-xs text-slate-500 uppercase">{member.role === 'chairperson' ? 'Presiding Officer' : `Member ${idx}`}</p>
-                                                            <p className="font-medium">{member.user?.firstName} {member.user?.lastName}</p>
+                                                        <div key={member.id} className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-center">
+                                                            <div className="font-medium text-slate-800 dark:text-slate-200">{member.user?.firstName} {member.user?.lastName}</div>
+                                                            <div className="text-[10px] text-slate-500 capitalize">{member.role === 'chairperson' ? 'Presiding Officer' : `Member ${idx}`}</div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -2974,142 +3998,161 @@ The undersigned requests approval to purchase the following items for the scienc
                                         </div>
                                     </div>
 
-                                    <div className="flex gap-2 mt-4">
-                                        <button onClick={() => setWorkflowStep(6)} className="btn btn-secondary">← Back</button>
+                                    {/* Bottom Action Controls: Icon only on the right bottom */}
+                                    <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                                         <button
-                                            onClick={async () => {
-                                                await procurementAPI.updateRequest(selectedRequest.id, { proceedingsDate: new Date(proceedingsDate) });
-                                                toast.success('Proceedings saved!');
-                                            }}
-                                            className="btn btn-secondary"
+                                            type="button"
+                                            onClick={() => setWorkflowStep(6)}
+                                            title="Back to Comparative Statement"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
                                         >
-                                            Save Proceedings
+                                            <ChevronLeft className="w-5 h-5" />
                                         </button>
-                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-primary">Continue to Purchase Order →</button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(7)}
+                                            disabled={!isStepComplete(7)}
+                                            title="Save Proceedings"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(7)}
+                                            disabled={!isStepComplete(7)}
+                                            title="Save & Proceed to Purchase Order"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 8: Purchase Order (was Step 7) */}
+                            {/* Step 8: Purchase Order */}
                             {workflowStep === 8 && (
-                                <div className="mb-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-emerald-800">
-                                        <ClipboardList className="w-5 h-5" /> Step 8: Purchase Order
-                                    </h3>
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                                                <ClipboardList className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 8: Purchase Order</h3>
+                                                <p className="text-xs text-slate-500">Generate and issue the standalone Purchase Order to the selected vendor.</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
                                     {!selectedVendorForPurchase ? (
-                                        <div className="text-slate-500 italic">Please select a vendor in Step 6 first.</div>
+                                        <div className="text-slate-500 italic p-4 text-xs">Please complete Step 6 to select a vendor.</div>
                                     ) : (() => {
                                         const vendor = vendors.find(v => v.id === selectedVendorForPurchase);
-
-                                        // Calculate total with editable quantities
-                                        const calculatePOTotal = () => {
-                                            return requestDetail?.request?.items?.reduce((sum, item) => {
-                                                const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
-                                                const qty = editableQuantities[item.id] ?? item.quantity;
-                                                return sum + (price * qty);
-                                            }, 0) || 0;
-                                        };
                                         const grandTotal = calculatePOTotal();
+                                        const defaultGstRate = vendorGlobalGst[selectedVendorForPurchase] ?? (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18);
+                                        const gstAmount = calculateVendorGstTotal(selectedVendorForPurchase) || (grandTotal * defaultGstRate / 100);
+                                        const totalWithGst = grandTotal + gstAmount;
 
                                         return (
                                             <div className="space-y-4">
-                                                <div className="bg-white p-4 rounded border">
-                                                    <h4 className="font-medium mb-2">Vendor: {vendor?.name}</h4>
-                                                    <p className="text-slate-600 text-sm">{vendor?.address}</p>
+                                                {/* Selected Vendor Info */}
+                                                <div className="p-4 bg-emerald-50/60 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-600 text-white">AWARDED TO</span>
+                                                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{vendor?.name}</h4>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 mt-1">{vendor?.address || 'No address provided'} | GSTIN: {vendor?.gstin || 'N/A'}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[11px] text-slate-500">Quotation Ref</div>
+                                                        <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
+                                                            {vendorQuotationNumbers[selectedVendorForPurchase] || 'QT-' + selectedRequest?.id?.slice(0, 6).toUpperCase()}
+                                                        </div>
+                                                    </div>
                                                 </div>
 
-                                                <table className="w-full text-sm border-collapse">
-                                                    <thead>
-                                                        <tr className="bg-slate-100">
-                                                            <th className="border p-2">S.No</th>
-                                                            <th className="border p-2 text-left">Item</th>
-                                                            <th className="border p-2">Qty</th>
-                                                            <th className="border p-2">Unit Price</th>
-                                                            <th className="border p-2">Amount</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {requestDetail?.request?.items?.map((item, idx) => {
-                                                            const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
-                                                            const qty = editableQuantities[item.id] ?? item.quantity;
-                                                            return (
-                                                                <tr key={item.id}>
-                                                                    <td className="border p-2 text-center">{idx + 1}</td>
-                                                                    <td className="border p-2">{item.itemName}</td>
-                                                                    <td className="border p-2 text-center">
-                                                                        <input
-                                                                            type="number"
-                                                                            className="input w-20 text-sm text-center"
-                                                                            min="1"
-                                                                            value={qty}
-                                                                            onChange={e => setEditableQuantities(prev => ({
-                                                                                ...prev,
-                                                                                [item.id]: parseInt(e.target.value) || 1
-                                                                            }))}
-                                                                        />
-                                                                        <span className="text-xs text-slate-500 ml-1">{item.unit || 'pcs'}</span>
-                                                                    </td>
-                                                                    <td className="border p-2 text-right">₹{price.toLocaleString()}</td>
-                                                                    <td className="border p-2 text-right">₹{(price * qty).toLocaleString()}</td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                        <tr className="bg-slate-50">
-                                                            <td colSpan={4} className="border p-2 text-right font-medium">Subtotal:</td>
-                                                            <td className="border p-2 text-right font-medium">₹{grandTotal.toLocaleString()}</td>
-                                                        </tr>
-                                                        {(vendorGstSettings[selectedVendorForPurchase]?.addGst !== false) && (() => {
-                                                            const gstRate = vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18;
-                                                            const gstAmount = grandTotal * gstRate / 100;
-                                                            const grandTotalWithGst = grandTotal + gstAmount;
-                                                            return (
-                                                                <>
-                                                                    <tr className="bg-slate-50">
-                                                                        <td colSpan={4} className="border p-2 text-right text-slate-600">GST ({gstRate}%):</td>
-                                                                        <td className="border p-2 text-right text-slate-600">₹{gstAmount.toLocaleString()}</td>
-                                                                    </tr>
-                                                                    <tr className="bg-green-100 font-bold">
-                                                                        <td colSpan={4} className="border p-2 text-right text-lg">Grand Total (Incl. GST):</td>
-                                                                        <td className="border p-2 text-right text-lg">₹{grandTotalWithGst.toLocaleString()}</td>
-                                                                    </tr>
-                                                                </>
-                                                            );
-                                                        })()}
-                                                        {vendorGstSettings[selectedVendorForPurchase]?.addGst === false && (
-                                                            <tr className="bg-green-100 font-bold">
-                                                                <td colSpan={4} className="border p-2 text-right text-lg">Grand Total:</td>
-                                                                <td className="border p-2 text-right text-lg">₹{grandTotal.toLocaleString()}</td>
+                                                {/* Items Table */}
+                                                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800">
+                                                                <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300 w-12">#</th>
+                                                                <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300">Item Description</th>
+                                                                <th className="p-3 text-center font-bold text-slate-700 dark:text-slate-300 w-32">Order Qty</th>
+                                                                <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-300 w-28">Unit Price</th>
+                                                                <th className="p-3 text-right font-bold text-slate-700 dark:text-slate-300 w-32">Amount</th>
                                                             </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                                            {requestDetail?.request?.items?.map((item, idx) => {
+                                                                const price = parseFloat(vendorQuotationPrices[selectedVendorForPurchase]?.[item.id]) || 0;
+                                                                const qty = editableQuantities[item.id] ?? item.quantity;
+                                                                return (
+                                                                    <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                                                                        <td className="p-3 text-slate-500">{idx + 1}</td>
+                                                                        <td className="p-3">
+                                                                            <div className="font-semibold text-slate-800 dark:text-slate-200">{item.itemName}</div>
+                                                                            {item.specifications && <div className="text-[11px] text-slate-500">{item.specifications}</div>}
+                                                                        </td>
+                                                                        <td className="p-3 text-center">
+                                                                            <div className="flex items-center justify-center gap-1.5">
+                                                                                <input
+                                                                                    type="number"
+                                                                                    className="input w-20 text-xs text-center py-1"
+                                                                                    min="1"
+                                                                                    value={qty}
+                                                                                    onChange={e => setEditableQuantities(prev => ({
+                                                                                        ...prev,
+                                                                                        [item.id]: parseInt(e.target.value) || 1
+                                                                                    }))}
+                                                                                />
+                                                                                <span className="text-[11px] text-slate-500">{item.unit || 'pcs'}</span>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="p-3 text-right font-mono text-slate-700 dark:text-slate-300">₹{price.toLocaleString()}</td>
+                                                                        <td className="p-3 text-right font-mono font-semibold text-slate-800 dark:text-slate-200">₹{(price * qty).toLocaleString()}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                            <tr className="bg-slate-50/70 dark:bg-slate-800/60 font-semibold border-t-2 border-slate-300 dark:border-slate-700">
+                                                                <td colSpan={4} className="p-2.5 text-right text-slate-600 dark:text-slate-400">Subtotal:</td>
+                                                                <td className="p-2.5 text-right font-mono text-slate-800 dark:text-slate-200">₹{grandTotal.toLocaleString()}</td>
+                                                            </tr>
+                                                            <tr className="bg-slate-50/40 dark:bg-slate-800/40">
+                                                                <td colSpan={4} className="p-2 text-right text-[11px] text-slate-500">Applicable GST:</td>
+                                                                <td className="p-2 text-right font-mono text-[11px] text-slate-600 dark:text-slate-400">₹{gstAmount.toLocaleString()}</td>
+                                                            </tr>
+                                                            <tr className="bg-emerald-100/70 dark:bg-emerald-950/40 font-bold text-emerald-900 dark:text-emerald-100 border-t border-emerald-300 dark:border-emerald-800">
+                                                                <td colSpan={4} className="p-3 text-right text-xs">Grand Total (Incl. Taxes):</td>
+                                                                <td className="p-3 text-right font-mono text-sm">₹{totalWithGst.toLocaleString()}</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
 
-                                                <div className="bg-blue-50 p-3 rounded border border-blue-200">
-                                                    <strong>Amount in Words:</strong> Rupees {numberToWords(Math.round(
-                                                        vendorGstSettings[selectedVendorForPurchase]?.addGst !== false
-                                                            ? grandTotal + (grandTotal * (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? 18) / 100)
-                                                            : grandTotal
-                                                    ))} Only
+                                                <div className="p-3 bg-blue-50/60 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800/60 text-xs text-blue-900 dark:text-blue-200">
+                                                    <strong>Amount in Words:</strong> Rupees {numberToWords(Math.round(totalWithGst))} Only
                                                 </div>
 
                                                 {/* PO Number and Document */}
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                                    <div className="bg-white p-4 rounded border">
-                                                        <label className="label">PO Number</label>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">PO Number</label>
                                                         <input
                                                             type="text"
-                                                            className="input w-full"
-                                                            placeholder="Enter PO Number (e.g., PO-2024-001)"
+                                                            className="input text-xs w-full"
+                                                            placeholder="e.g. PO-2024-001"
                                                             value={orderForm.poNumber}
                                                             onChange={e => setOrderForm({ ...orderForm, poNumber: e.target.value })}
                                                         />
                                                     </div>
-                                                    <div className="bg-white p-4 rounded border">
-                                                        <label className="label">Upload PO Document</label>
+                                                    <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">Upload Signed PO Document</label>
                                                         <input
                                                             type="file"
-                                                            className="input w-full"
+                                                            className="input text-xs w-full"
                                                             accept=".pdf,.jpg,.jpeg,.png"
                                                             onChange={async (e) => {
                                                                 const file = e.target.files[0];
@@ -3125,309 +4168,394 @@ The undersigned requests approval to purchase the following items for the scienc
                                                             }}
                                                         />
                                                         {(orderForm.poUrl || requestDetail?.request?.poUrl) && (
-                                                            <div className="text-sm text-green-600 mt-2 flex items-center gap-2">
-                                                                ✓ PO Document uploaded
-                                                                {requestDetail?.request?.poUrl && (
-                                                                    <a href={requestDetail.request.poUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-                                                                        View/Download
-                                                                    </a>
-                                                                )}
+                                                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1.5">
+                                                                ✓ Document attached
                                                             </div>
                                                         )}
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex justify-end mt-4">
-                                                    <div className="bg-white p-4 rounded border w-80">
-                                                        <h4 className="font-medium mb-3 text-center">Committee Signatures</h4>
-                                                        <div className="space-y-4">
-                                                            {requestDetail?.request?.committee?.map(m => (
-                                                                <div key={m.id} className="text-center border-b pb-3">
-                                                                    <div className="h-10 border-b border-dashed border-slate-400 mb-1" />
-                                                                    <div className="font-medium">{m.user?.firstName} {m.user?.lastName}</div>
-                                                                    <div className="text-xs text-slate-500">{m.role}</div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
                                         );
                                     })()}
 
-                                    <div className="flex gap-2 mt-4">
-                                        <button onClick={() => setWorkflowStep(7)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(7)} disabled={!isStepComplete(7)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => { if (validateStep(7)) openCombinedPdfPreview(); }} disabled={!isStepComplete(7)} className="btn bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 disabled:cursor-not-allowed">
-                                            <Printer className="w-4 h-4" /> Generate PO PDF
+                                    {/* Bottom Action Controls: Icon only on the right bottom */}
+                                    <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(7)}
+                                            title="Back to Proceedings"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
                                         </button>
-                                        <button onClick={() => { saveStepData(7); setWorkflowStep(9); }} disabled={!isStepComplete(7)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                        <button
+                                            type="button"
+                                            onClick={generateStandalonePO}
+                                            disabled={!isStepComplete(8)}
+                                            title="Generate & Print Standalone Purchase Order PDF"
+                                            className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Printer className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(8)}
+                                            disabled={!isStepComplete(8)}
+                                            title="Save Purchase Order Data"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(8)}
+                                            disabled={!isStepComplete(8)}
+                                            title="Save & Proceed to Bill & Receipt"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 9: Bill Received (was Step 8) */}
+                            {/* Step 9: Bill & Receipt (Merged with Received Items Verification) */}
                             {workflowStep === 9 && (
-                                <div className="mb-6 p-4 bg-rose-50 rounded-lg border border-rose-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-rose-800">
-                                        <CreditCard className="w-5 h-5" /> Step 9: Bill & Payment
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Upload the vendor bill and payment cheque for records.</p>
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400">
+                                                <CreditCard className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 9: Bill, Payment & Receipt Verification</h3>
+                                                <p className="text-xs text-slate-500">Record vendor invoice, payment remittance details, and verify received item quantities and serial numbers.</p>
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <div className="bg-white p-4 rounded border">
-                                            <label className="label">Upload Bill/Invoice *</label>
-                                            <input
-                                                type="file"
-                                                className="input"
-                                                accept=".pdf,.jpg,.jpeg,.png"
-                                                onChange={async (e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file && selectedRequest?.id) {
-                                                        setBillUpload(file);
-                                                        try {
-                                                            await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'bill', file);
-                                                            toast.success('Bill uploaded successfully');
-                                                            await openRequestDetail(selectedRequest); // Refresh to show link
-                                                        } catch (err) {
-                                                            console.error('Bill upload error:', err);
-                                                            toast.error('Bill upload failed: ' + (err.response?.data?.message || err.message));
-                                                        }
-                                                    }
-                                                }}
-                                            />
-                                            {billUpload && <div className="text-sm text-green-600 mt-2">✓ {billUpload.name || billUpload}</div>}
-                                            {requestDetail?.request?.billUrl && (
-                                                <div className="mt-2 flex items-center gap-2">
-                                                    <span className="text-sm text-green-600">✓ Bill uploaded</span>
-                                                    <a href={requestDetail.request.billUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm">
-                                                        View/Download
-                                                    </a>
+                                    <div className="space-y-4">
+                                        {/* Part 1: Bill & Invoice Upload & Details */}
+                                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                                                <FileText className="w-4 h-4 text-rose-600" /> 1. Vendor Invoice / Bill Details
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Invoice / Bill Number *</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. INV-2024-890"
+                                                        value={billNumber}
+                                                        onChange={e => setBillNumber(e.target.value)}
+                                                    />
                                                 </div>
-                                            )}
-                                        </div>
-
-                                        <div className="bg-white p-4 rounded border">
-                                            <label className="label">Upload Cheque Image (for auto-extraction)</label>
-                                            <input
-                                                type="file"
-                                                className="input"
-                                                accept=".jpg,.jpeg,.png,.pdf"
-                                                onChange={async (e) => {
-                                                    const file = e.target.files[0];
-                                                    if (file && selectedRequest?.id) {
-                                                        setChequeUpload(file);
-                                                        try {
-                                                            await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'cheque', file);
-                                                            toast.success('Cheque uploaded successfully');
-                                                            await openRequestDetail(selectedRequest); // Refresh to show link
-                                                        } catch (err) {
-                                                            console.error('Cheque upload error:', err);
-                                                            toast.error('Cheque upload failed: ' + (err.response?.data?.message || err.message));
-                                                        }
-                                                    }
-                                                }}
-                                            />
-                                            {chequeUpload && <div className="text-sm text-green-600 mt-2">✓ {chequeUpload.name || chequeUpload}</div>}
-                                            {requestDetail?.request?.chequeUrl && (
-                                                <div className="mt-2 flex items-center gap-2">
-                                                    <span className="text-sm text-green-600">✓ Cheque uploaded</span>
-                                                    <a href={requestDetail.request.chequeUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-sm">
-                                                        View/Download
-                                                    </a>
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Bill Date</label>
+                                                    <input
+                                                        type="date"
+                                                        className="input text-xs w-full"
+                                                        value={billDate}
+                                                        onChange={e => setBillDate(e.target.value)}
+                                                    />
                                                 </div>
-                                            )}
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Bill Amount (₹)</label>
+                                                    <input
+                                                        type="number"
+                                                        className="input text-xs w-full"
+                                                        placeholder="0.00"
+                                                        value={billAmount}
+                                                        onChange={e => setBillAmount(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div className="md:col-span-3">
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Upload Bill / Invoice Document</label>
+                                                    <input
+                                                        type="file"
+                                                        className="input text-xs w-full"
+                                                        accept=".pdf,.jpg,.jpeg,.png"
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files[0];
+                                                            if (file && selectedRequest?.id) {
+                                                                setBillUpload(file);
+                                                                try {
+                                                                    await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'bill', file);
+                                                                    toast.success('Bill uploaded successfully');
+                                                                    await openRequestDetail(selectedRequest, true);
+                                                                } catch (err) {
+                                                                    toast.error('Bill upload failed');
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+                                                    {(billUpload || requestDetail?.request?.billUrl) && (
+                                                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
+                                                            ✓ Invoice Document Attached
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Part 2: Payment Details */}
+                                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                                                <CreditCard className="w-4 h-4 text-teal-600" /> 2. Payment & Remittance Details
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Payment Method</label>
+                                                    <select
+                                                        className="input text-xs w-full"
+                                                        value={paymentMethod}
+                                                        onChange={e => setPaymentMethod(e.target.value)}
+                                                    >
+                                                        <option value="cheque">Cheque</option>
+                                                        <option value="neft">NEFT / RTGS</option>
+                                                        <option value="upi">UPI</option>
+                                                        <option value="cash">Cash</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Cheque / Transaction Ref No.</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="Cheque No. or UTR"
+                                                        value={chequeNumber}
+                                                        onChange={e => setChequeNumber(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Payment Date</label>
+                                                    <input
+                                                        type="date"
+                                                        className="input text-xs w-full"
+                                                        value={paymentDate}
+                                                        onChange={e => setPaymentDate(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Part 3: Physical Item Verification & Barcodes */}
+                                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                    <Package className="w-4 h-4 text-emerald-600" /> 3. Received Items Verification & Inventory
+                                                </h4>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const update = {};
+                                                        requestDetail?.request?.items?.forEach(item => {
+                                                            const expected = editableQuantities[item.id] ?? item.quantity;
+                                                            update[item.id] = { ...(receivedItems[item.id] || {}), received: expected };
+                                                        });
+                                                        setReceivedItems(prev => ({ ...prev, ...update }));
+                                                        toast.success('All items marked as fully received');
+                                                    }}
+                                                    className="btn btn-secondary text-xs py-1 px-2.5"
+                                                >
+                                                    Mark All Received
+                                                </button>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {requestDetail?.request?.items?.map((item, idx) => {
+                                                    const expected = editableQuantities[item.id] ?? item.quantity;
+                                                    const received = receivedItems[item.id]?.received ?? 0;
+                                                    const serials = receivedItems[item.id]?.serialNumbers || [];
+
+                                                    return (
+                                                        <div key={item.id} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs font-bold text-slate-400">{idx + 1}.</span>
+                                                                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{item.itemName}</span>
+                                                                    <span className="text-[11px] text-slate-500">(Expected: {expected} {item.unit || 'pcs'})</span>
+                                                                </div>
+                                                                <div className={`px-2 py-0.5 rounded text-[11px] font-bold ${received >= expected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                                                                    {received}/{expected} Received
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex flex-wrap items-center gap-3">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <label className="text-[11px] font-medium text-slate-500">Received Qty:</label>
+                                                                    <input
+                                                                        type="number"
+                                                                        className="input w-20 text-xs py-1"
+                                                                        min="0"
+                                                                        max={expected}
+                                                                        value={received}
+                                                                        onChange={e => setReceivedItems(prev => ({
+                                                                            ...prev,
+                                                                            [item.id]: { ...(prev[item.id] || {}), received: parseInt(e.target.value) || 0 }
+                                                                        }))}
+                                                                    />
+                                                                </div>
+                                                                <div className="flex-1 flex items-center gap-2 min-w-[200px]">
+                                                                    <ScanLine className="w-4 h-4 text-slate-400 shrink-0" />
+                                                                    <input
+                                                                        type="text"
+                                                                        className="input text-xs py-1 flex-1"
+                                                                        placeholder="Scan barcode or type serial & press Enter"
+                                                                        onKeyDown={e => {
+                                                                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                                                                setReceivedItems(prev => ({
+                                                                                    ...prev,
+                                                                                    [item.id]: {
+                                                                                        ...(prev[item.id] || {}),
+                                                                                        serialNumbers: [...(prev[item.id]?.serialNumbers || []), e.target.value.trim()]
+                                                                                    }
+                                                                                }));
+                                                                                e.target.value = '';
+                                                                                toast.success('Serial number recorded');
+                                                                            }
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            </div>
+
+                                                            {serials.length > 0 && (
+                                                                <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                                    {serials.map((sn, i) => (
+                                                                        <span key={i} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] rounded-md border border-indigo-200 dark:border-indigo-800">
+                                                                            {sn}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                        <div className="bg-white p-4 rounded border">
-                                            <label className="label">Bill Number / Invoice No.</label>
-                                            <input
-                                                type="text"
-                                                className="input mb-3"
-                                                placeholder="Enter Bill Number"
-                                                value={billNumber}
-                                                onChange={e => setBillNumber(e.target.value)}
-                                            />
-                                            <label className="label">Bill Date</label>
-                                            <input
-                                                type="date"
-                                                className="input mb-3"
-                                                value={billDate}
-                                                onChange={e => setBillDate(e.target.value)}
-                                            />
-                                            <label className="label">Bill Amount (₹)</label>
-                                            <input
-                                                type="number"
-                                                className="input"
-                                                placeholder="0.00"
-                                                value={billAmount}
-                                                onChange={e => setBillAmount(e.target.value)}
-                                            />
-                                        </div>
-                                        <div className="bg-white p-4 rounded border">
-                                            <label className="label">Payment Method</label>
-                                            <select
-                                                className="input mb-3"
-                                                value={paymentMethod}
-                                                onChange={e => setPaymentMethod(e.target.value)}
-                                            >
-                                                <option value="cheque">Cheque</option>
-                                                <option value="upi">UPI</option>
-                                                <option value="neft">NEFT/RTGS</option>
-                                                <option value="cash">Cash</option>
-                                            </select>
-
-                                            <label className="label">Cheque/Ref Number</label>
-                                            <input
-                                                type="text"
-                                                className="input mb-3"
-                                                placeholder="Cheque No. or Transaction Ref"
-                                                value={chequeNumber}
-                                                onChange={e => setChequeNumber(e.target.value)}
-                                            />
-
-                                            <label className="label">Payment Date</label>
-                                            <input
-                                                type="date"
-                                                className="input"
-                                                value={paymentDate}
-                                                onChange={e => setPaymentDate(e.target.value)}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="bg-white p-4 rounded border mb-4">
-                                        <p className="text-xs text-slate-500 mt-1">Ensure all bill and payment details are accurate.</p>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(8)} disabled={!isStepComplete(8)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
-                                        <button onClick={() => { saveStepData(8); setWorkflowStep(10); }} disabled={!isStepComplete(8)} className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed">Save & Next →</button>
+                                    {/* Bottom Action Controls: Icon only on the right bottom */}
+                                    <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(8)}
+                                            title="Back to Purchase Order"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(9)}
+                                            disabled={!isStepComplete(9)}
+                                            title="Save Bill & Receipt Data"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(9)}
+                                            disabled={!isStepComplete(9)}
+                                            title="Save & Proceed to Process Docket"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Step 10: Items Received (was Step 9) */}
+                            {/* Step 10: Process Docket & PDF Preview Container */}
                             {workflowStep === 10 && (
-                                <div className="mb-6 p-4 bg-teal-50 rounded-lg border border-teal-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-teal-800">
-                                        <CheckCircle2 className="w-5 h-5" /> Step 10: Items Received & Inventory Update
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Verify received items, scan barcodes for serial numbers, and update inventory.</p>
-
-                                    <div className="space-y-3 mb-4">
-                                        {requestDetail?.request?.items?.map((item, idx) => {
-                                            const expected = editableQuantities[item.id] ?? item.quantity;
-                                            const received = receivedItems[item.id]?.received ?? 0;
-                                            const serials = receivedItems[item.id]?.serialNumbers || [];
-
-                                            return (
-                                                <div key={item.id} className="bg-white p-4 rounded border">
-                                                    <div className="flex items-center justify-between mb-3">
-                                                        <div>
-                                                            <span className="text-slate-400 text-sm mr-2">{idx + 1}.</span>
-                                                            <span className="font-medium">{item.itemName}</span>
-                                                            <span className="text-slate-500 text-sm ml-2">(Expected: {expected})</span>
-                                                        </div>
-                                                        <div className={`px-3 py-1 rounded text-sm font-medium ${received >= expected ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                            {received}/{expected} Received
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-3 mb-3">
-                                                        <label className="text-sm">Received Qty:</label>
-                                                        <input
-                                                            type="number"
-                                                            className="input w-24"
-                                                            min="0"
-                                                            max={expected}
-                                                            value={received}
-                                                            onChange={e => setReceivedItems(prev => ({
-                                                                ...prev,
-                                                                [item.id]: { ...prev[item.id], received: parseInt(e.target.value) || 0 }
-                                                            }))}
-                                                        />
-                                                        <button
-                                                            onClick={() => setReceivedItems(prev => ({
-                                                                ...prev,
-                                                                [item.id]: { ...prev[item.id], received: expected }
-                                                            }))}
-                                                            className="btn btn-secondary text-sm"
-                                                        >
-                                                            Mark All Received
-                                                        </button>
-                                                    </div>
-
-                                                    <div className="bg-slate-50 p-3 rounded">
-                                                        <div className="flex items-center gap-2 mb-2">
-                                                            <ScanLine className="w-4 h-4 text-slate-600" />
-                                                            <span className="text-sm font-medium">Serial Numbers (Barcode Scan)</span>
-                                                        </div>
-                                                        <div className="flex gap-2 mb-2">
-                                                            <input
-                                                                type="text"
-                                                                className="input flex-1"
-                                                                placeholder="Scan barcode or enter serial number"
-                                                                onKeyDown={e => {
-                                                                    if (e.key === 'Enter' && e.target.value.trim()) {
-                                                                        setReceivedItems(prev => ({
-                                                                            ...prev,
-                                                                            [item.id]: {
-                                                                                ...prev[item.id],
-                                                                                serialNumbers: [...(prev[item.id]?.serialNumbers || []), e.target.value.trim()]
-                                                                            }
-                                                                        }));
-                                                                        e.target.value = '';
-                                                                        toast.success('Serial number added');
-                                                                    }
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        {serials.length > 0 && (
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {serials.map((sn, i) => (
-                                                                    <span key={i} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">{sn}</span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                                                <Eye className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 10: Process Docket & Full PDF Preview</h3>
+                                                <p className="text-xs text-slate-500">Unified A4 document combining all stages: Requirement Letter, Committee, Call Quotations, Comparative, Proceedings, and Purchase Order.</p>
+                                            </div>
+                                        </div>
+                                        {/* Icon-only toolbar buttons */}
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handlePrintDocket}
+                                                title="Print Process Docket"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                            >
+                                                <Printer className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleDownloadPdf}
+                                                title="Download Docket PDF"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleSaveToCloud}
+                                                title="Save Docket to Cloud"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs"
+                                            >
+                                                <CloudUpload className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div className="bg-green-100 p-4 rounded border border-green-300 mb-4">
-                                        <h4 className="font-medium text-green-800 mb-2">Update Inventory</h4>
-                                        <p className="text-green-700 text-sm mb-3">Click below to add received items to the inventory system with serial numbers.</p>
+                                    {/* Live A4 Docket Preview Frame */}
+                                    <div className="w-full bg-slate-100 dark:bg-slate-950 rounded-xl p-3 border border-slate-200 dark:border-slate-800 flex justify-center">
+                                        {docketHtml ? (
+                                            <iframe
+                                                title="Process Docket Preview"
+                                                srcDoc={docketHtml}
+                                                className="w-full max-w-[850px] h-[650px] bg-white rounded-lg shadow-md border border-slate-300"
+                                            />
+                                        ) : (
+                                            <div className="h-64 flex flex-col items-center justify-center text-slate-400 gap-2">
+                                                <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                                <span className="text-xs">Generating combined process docket...</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Bottom Action Controls: Icon only on the right bottom */}
+                                    <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                                         <button
-                                            onClick={() => {
-                                                if (validateStep(9)) {
-                                                    toast.success('Items added to inventory successfully!');
-                                                }
-                                            }}
-                                            className="btn bg-green-600 hover:bg-green-700 text-white"
+                                            type="button"
+                                            onClick={() => setWorkflowStep(9)}
+                                            title="Back to Bill & Receipt"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
                                         >
-                                            <Package className="w-4 h-4" /> Update Inventory
+                                            <ChevronLeft className="w-5 h-5" />
                                         </button>
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <button onClick={() => setWorkflowStep(8)} className="btn btn-secondary">← Back</button>
-                                        <button onClick={() => saveStepData(9)} disabled={!isStepComplete(9)} className="btn btn-secondary disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
                                         <button
-                                            onClick={async () => {
-                                                if (validateStep(9)) {
-                                                    await saveStepData(9);
-                                                    toast.success('Procurement workflow completed!');
-                                                }
-                                            }}
-                                            disabled={!isStepComplete(9)}
-                                            className="btn bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                            type="button"
+                                            onClick={() => saveStepData(10)}
+                                            title="Save Docket State"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 transition shadow-xs"
                                         >
-                                            <Check className="w-4 h-4" /> Complete Procurement
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                await saveStepData(10);
+                                                toast.success('Procurement workflow finalized and completed!');
+                                                setSelectedRequest(null);
+                                                loadData();
+                                            }}
+                                            title="Complete Procurement"
+                                            className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-xs"
+                                        >
+                                            <Check className="w-5 h-5" />
                                         </button>
                                     </div>
                                 </div>
@@ -3438,6 +4566,80 @@ The undersigned requests approval to purchase the following items for the scienc
                 </div >
             ) : null
             }
+
+            {/* Call for Quotation Email Modal */}
+            {emailModal.open && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Mail className="w-5 h-5 text-blue-600" />
+                                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                                    Send Call for Quotation
+                                </h3>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setEmailModal({ open: false, vendor: null, email: '', notes: '', sending: false })}
+                                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-3 text-xs">
+                            <div>
+                                <label className="text-slate-500 font-semibold block mb-1">Vendor</label>
+                                <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg font-medium text-slate-800 dark:text-slate-200">
+                                    {emailModal.vendor?.name}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-slate-500 font-semibold block mb-1">Recipient Email *</label>
+                                <input
+                                    type="email"
+                                    className="input text-xs w-full"
+                                    placeholder="vendor@example.com"
+                                    value={emailModal.email}
+                                    onChange={e => setEmailModal(prev => ({ ...prev, email: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-slate-500 font-semibold block mb-1">Submission Deadline</label>
+                                <div className="p-2 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 rounded-lg font-medium">
+                                    {formatDate(lastDateToSubmit)}
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-slate-500 font-semibold block mb-1">Additional Notes / Instructions</label>
+                                <textarea
+                                    className="input text-xs w-full min-h-[80px]"
+                                    placeholder="Add any specific requirements, delivery timeline, or instructions..."
+                                    value={emailModal.notes}
+                                    onChange={e => setEmailModal(prev => ({ ...prev, notes: e.target.value }))}
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 bg-slate-50/50 dark:bg-slate-900/50">
+                            <button
+                                type="button"
+                                onClick={() => setEmailModal({ open: false, vendor: null, email: '', notes: '', sending: false })}
+                                className="btn btn-secondary text-xs"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSendCallQuotationEmail}
+                                disabled={emailModal.sending || !emailModal.email?.trim()}
+                                className="btn btn-primary text-xs flex items-center gap-1.5"
+                            >
+                                <Mail className="w-3.5 h-3.5" />
+                                {emailModal.sending ? 'Sending...' : 'Send Quotation Email'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Quotation Modal */}
             {

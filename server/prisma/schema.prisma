@@ -1581,6 +1581,7 @@ model ProcurementItem {
   itemName           String             @map("item_name") @db.VarChar(200)
   description        String?
   specifications     String?
+  warranty           String?            @db.VarChar(100)
   quantity           Int                @default(1)
   unit               String?            @default("pcs") @db.VarChar(50)
   estimatedUnitPrice Decimal?           @map("estimated_unit_price") @db.Decimal(12, 2)
