@@ -122,9 +122,9 @@ export function useEdgeHoverReveal({
 
             // Check if pointer event was inside the primary container
             if (containerElRef.current && !containerElRef.current.contains(e.target)) {
-                // Also check if target is inside an attached dropdown, popover or portal menu
+                // Also check if target is inside an attached dropdown, popover, portal menu, or sidebar pill
                 if (e.target && typeof e.target.closest === 'function') {
-                    if (e.target.closest('[data-popover], [role="menu"], [role="dialog"], [data-dropdown], .session-menu, .notif-menu')) {
+                    if (e.target.closest('[data-popover], [role="menu"], [role="dialog"], [data-dropdown], [data-sidebar-pill], .session-menu, .notif-menu')) {
                         return;
                     }
                 }
@@ -197,16 +197,8 @@ export function useEdgeHoverReveal({
 
     const toggleOpen = useCallback(() => {
         clearCloseTimer();
-        setIsOpen((prev) => {
-            const next = !prev;
-            if (next && !isPinned) {
-                closeTimerRef.current = setTimeout(() => {
-                    setIsOpen(false);
-                }, autoHideMs || 3500);
-            }
-            return next;
-        });
-    }, [clearCloseTimer, isPinned, autoHideMs]);
+        setIsOpen((prev) => !prev);
+    }, [clearCloseTimer]);
 
     return {
         isVisible: isPinned || isOpen || isLocked || hasFocusWithin,
@@ -216,6 +208,7 @@ export function useEdgeHoverReveal({
         openNow,
         closeNow,
         toggleOpen,
+        containerRef: containerElRef,
         triggerProps: {
             onPointerEnter: handlePointerEnter,
             onPointerMove: handlePointerEnter,
@@ -224,6 +217,7 @@ export function useEdgeHoverReveal({
         containerProps: {
             ref: containerElRef,
             onPointerEnter: handlePointerEnter,
+            onPointerMove: handlePointerEnter,
             onPointerLeave: handlePointerLeave,
             onFocusCapture: handleFocusCapture,
             onBlurCapture: handleBlurCapture,

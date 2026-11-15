@@ -55,7 +55,7 @@ import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 export default function DashboardPage() {
     const router = useRouter();
     const { t } = useTranslation('common');
-    const { user, isAuthenticated, _hasHydrated, selectedSessionId } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession, availableSessions } = useAuthStore();
     const [stats, setStats] = useState({});
     const [deadlines, setDeadlines] = useState([]);
     const [siteUpdate, setSiteUpdate] = useState(null);
@@ -187,7 +187,7 @@ export default function DashboardPage() {
                             <div className="flex flex-wrap items-center gap-2 text-xs">
                                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                    Academic Session {selectedSessionId || 'Active'}
+                                    Academic Session {selectedSession?.yearLabel || availableSessions?.find(s => s.id === selectedSessionId)?.yearLabel || 'Active'}
                                 </span>
                                 <span className="text-slate-500">•</span>
                                 <span className="px-2.5 py-1 rounded-full bg-white/10 text-slate-300 font-mono capitalize">

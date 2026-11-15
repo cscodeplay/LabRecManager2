@@ -296,6 +296,44 @@ export default function Sidebar() {
     const [hoveredItemKey, setHoveredItemKey] = useState(null);
     const [allPills, setAllPills] = useState([]);
     const momentaryTimerRef = useRef(null);
+    const hoverGraceTimerRef = useRef(null);
+
+    const handleDockPointerEnter = useCallback((e) => {
+        if (hoverGraceTimerRef.current) {
+            clearTimeout(hoverGraceTimerRef.current);
+            hoverGraceTimerRef.current = null;
+        }
+        dockReveal.containerProps.onPointerEnter?.(e);
+        if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+            setIsPointerHoveringDock(true);
+        }
+    }, [dockReveal.containerProps]);
+
+    const handleDockPointerMove = useCallback((e) => {
+        if (hoverGraceTimerRef.current) {
+            clearTimeout(hoverGraceTimerRef.current);
+            hoverGraceTimerRef.current = null;
+        }
+        dockReveal.containerProps.onPointerMove?.(e);
+        if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+            setIsPointerHoveringDock(true);
+        }
+    }, [dockReveal.containerProps]);
+
+    const handleDockPointerLeave = useCallback((e) => {
+        if (hoverGraceTimerRef.current) clearTimeout(hoverGraceTimerRef.current);
+        hoverGraceTimerRef.current = setTimeout(() => {
+            setIsPointerHoveringDock(false);
+            setHoveredItemKey(null);
+            dockReveal.containerProps.onPointerLeave?.(e);
+        }, 300);
+    }, [dockReveal.containerProps]);
+
+    useEffect(() => {
+        return () => {
+            if (hoverGraceTimerRef.current) clearTimeout(hoverGraceTimerRef.current);
+        };
+    }, []);
 
     useEffect(() => {
         if (dockReveal.isVisible) {
@@ -308,9 +346,14 @@ export default function Sidebar() {
             setShowAllPillsMomentary(false);
             setIsPointerHoveringDock(false);
             setHoveredItemKey(null);
+            if (hoverGraceTimerRef.current) {
+                clearTimeout(hoverGraceTimerRef.current);
+                hoverGraceTimerRef.current = null;
+            }
         }
         return () => {
             if (momentaryTimerRef.current) clearTimeout(momentaryTimerRef.current);
+            if (hoverGraceTimerRef.current) clearTimeout(hoverGraceTimerRef.current);
         };
     }, [dockReveal.isVisible]);
 
@@ -423,16 +466,12 @@ export default function Sidebar() {
 
             {/* Left-Edge macOS-Style Auto-Hide Icon Dock */}
             <aside
-                {...dockReveal.containerProps}
-                onPointerEnter={(e) => {
-                    if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
-                        setIsPointerHoveringDock(true);
-                    }
-                }}
-                onPointerLeave={() => {
-                    setIsPointerHoveringDock(false);
-                    setHoveredItemKey(null);
-                }}
+                ref={dockReveal.containerProps.ref}
+                onPointerEnter={handleDockPointerEnter}
+                onPointerMove={handleDockPointerMove}
+                onPointerLeave={handleDockPointerLeave}
+                onFocusCapture={dockReveal.containerProps.onFocusCapture}
+                onBlurCapture={dockReveal.containerProps.onBlurCapture}
                 aria-label="Primary Navigation Dock"
                 style={{ willChange: dockReveal.isVisible ? 'transform, opacity' : 'auto' }}
                 className={`fixed top-14 left-3 bottom-3 w-16 z-[75] rounded-full border border-slate-200/90 dark:border-slate-700/80 shadow-2xl flex flex-col items-center py-2.5 ${glassSurface} transition-opacity duration-150 motion-safe:transition-[transform,opacity] motion-safe:duration-150 motion-safe:ease-out ${
@@ -518,12 +557,28 @@ export default function Sidebar() {
                                         }}
                                         onPointerEnter={(e) => {
                                             if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                                if (hoverGraceTimerRef.current) {
+                                                    clearTimeout(hoverGraceTimerRef.current);
+                                                    hoverGraceTimerRef.current = null;
+                                                }
                                                 setIsPointerHoveringDock(true);
                                                 setHoveredItemKey(item.href);
                                             }
                                         }}
+                                        onPointerMove={(e) => {
+                                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                                if (hoverGraceTimerRef.current) {
+                                                    clearTimeout(hoverGraceTimerRef.current);
+                                                    hoverGraceTimerRef.current = null;
+                                                }
+                                                setIsPointerHoveringDock(true);
+                                                if (hoveredItemKey !== item.href) {
+                                                    setHoveredItemKey(item.href);
+                                                }
+                                            }
+                                        }}
                                         onPointerLeave={() => {
-                                            setHoveredItemKey(null);
+                                            // Handled by dock-level grace timer to prevent flickering across gap to pill
                                         }}
                                         onFocus={() => {
                                             setIsPointerHoveringDock(true);
@@ -556,12 +611,28 @@ export default function Sidebar() {
                         onClick={handleLogout}
                         onPointerEnter={(e) => {
                             if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                if (hoverGraceTimerRef.current) {
+                                    clearTimeout(hoverGraceTimerRef.current);
+                                    hoverGraceTimerRef.current = null;
+                                }
                                 setIsPointerHoveringDock(true);
                                 setHoveredItemKey('logout');
                             }
                         }}
+                        onPointerMove={(e) => {
+                            if (!e.pointerType || e.pointerType === 'mouse' || e.pointerType === 'pen') {
+                                if (hoverGraceTimerRef.current) {
+                                    clearTimeout(hoverGraceTimerRef.current);
+                                    hoverGraceTimerRef.current = null;
+                                }
+                                setIsPointerHoveringDock(true);
+                                if (hoveredItemKey !== 'logout') {
+                                    setHoveredItemKey('logout');
+                                }
+                            }
+                        }}
                         onPointerLeave={() => {
-                            setHoveredItemKey(null);
+                            // Handled by dock-level grace timer
                         }}
                         onFocus={() => {
                             setIsPointerHoveringDock(true);
@@ -584,29 +655,83 @@ export default function Sidebar() {
             {shouldShowAllPills && dockReveal.isVisible && allPills.length > 0 && (
                 allPills.map((pill) => {
                     const isHovered = hoveredItemKey === pill.key;
+                    const pillClasses = `z-[90] px-4 py-1.5 rounded-full border text-xs whitespace-nowrap cursor-pointer pointer-events-auto transition-all duration-150 origin-left motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 select-none ${
+                        isHovered
+                            ? pill.tone === 'danger'
+                                ? 'bg-red-600 text-white border-red-300 ring-2 ring-red-400 shadow-2xl shadow-red-950/60 font-black'
+                                : 'bg-primary-950 dark:bg-slate-900 text-white border-primary-400 ring-2 ring-primary-400/50 shadow-2xl shadow-primary-950/70 font-black'
+                            : pill.tone === 'danger'
+                                ? 'bg-red-600/95 text-white border-red-400 font-bold shadow-lg shadow-red-950/30'
+                                : 'bg-slate-900/95 dark:bg-slate-800/95 text-white border-slate-700/90 font-bold shadow-lg shadow-slate-950/40'
+                    }`;
+
+                    const pillStyle = {
+                        position: 'fixed',
+                        top: `${pill.top}px`,
+                        left: '88px',
+                        transform: `translate3d(0, -50%, 0) ${isHovered ? 'scale(1.10)' : 'scale(1)'}`,
+                        willChange: 'transform, opacity',
+                    };
+
+                    const handlePillPointerEnter = () => {
+                        if (hoverGraceTimerRef.current) {
+                            clearTimeout(hoverGraceTimerRef.current);
+                            hoverGraceTimerRef.current = null;
+                        }
+                        dockReveal.openNow();
+                        setIsPointerHoveringDock(true);
+                        setHoveredItemKey(pill.key);
+                    };
+
+                    const handlePillPointerMove = () => {
+                        if (hoverGraceTimerRef.current) {
+                            clearTimeout(hoverGraceTimerRef.current);
+                            hoverGraceTimerRef.current = null;
+                        }
+                        setIsPointerHoveringDock(true);
+                        if (hoveredItemKey !== pill.key) {
+                            setHoveredItemKey(pill.key);
+                        }
+                    };
+
+                    if (pill.key === 'logout') {
+                        return (
+                            <button
+                                key={pill.key}
+                                data-sidebar-pill="true"
+                                type="button"
+                                onClick={handleLogout}
+                                onPointerEnter={handlePillPointerEnter}
+                                onPointerMove={handlePillPointerMove}
+                                onPointerLeave={handleDockPointerLeave}
+                                style={pillStyle}
+                                className={pillClasses}
+                                aria-label={pill.label}
+                            >
+                                {pill.label}
+                            </button>
+                        );
+                    }
+
                     return (
-                        <div
+                        <Link
                             key={pill.key}
-                            role="tooltip"
-                            style={{
-                                position: 'fixed',
-                                top: `${pill.top}px`,
-                                left: '88px',
-                                transform: `translate3d(0, -50%, 0) ${isHovered ? 'scale(1.10)' : 'scale(1)'}`,
-                                willChange: 'transform, opacity',
+                            data-sidebar-pill="true"
+                            href={pill.key}
+                            onClick={() => {
+                                if (!dockReveal.isPinned) {
+                                    dockReveal.closeNow();
+                                }
                             }}
-                            className={`z-[90] px-4 py-1.5 rounded-full border text-xs whitespace-nowrap pointer-events-none transition-all duration-150 origin-left motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150 ${
-                                isHovered
-                                    ? pill.tone === 'danger'
-                                        ? 'bg-red-600 text-white border-red-300 ring-2 ring-red-400 shadow-2xl shadow-red-950/60 font-black'
-                                        : 'bg-primary-950 dark:bg-slate-900 text-white border-primary-400 ring-2 ring-primary-400/50 shadow-2xl shadow-primary-950/70 font-black'
-                                    : pill.tone === 'danger'
-                                        ? 'bg-red-600/95 text-white border-red-400 font-bold shadow-lg shadow-red-950/30'
-                                        : 'bg-slate-900/95 dark:bg-slate-800/95 text-white border-slate-700/90 font-bold shadow-lg shadow-slate-950/40'
-                            }`}
+                            onPointerEnter={handlePillPointerEnter}
+                            onPointerMove={handlePillPointerMove}
+                            onPointerLeave={handleDockPointerLeave}
+                            style={pillStyle}
+                            className={pillClasses}
+                            aria-label={pill.label}
                         >
                             {pill.label}
-                        </div>
+                        </Link>
                     );
                 })
             )}

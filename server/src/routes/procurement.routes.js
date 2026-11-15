@@ -40,8 +40,7 @@ router.get('/vendors', authenticate, asyncHandler(async (req, res) => {
                             select: {
                                 id: true,
                                 title: true,
-                                status: true,
-                                academicYearId: true
+                                status: true
                             }
                         }
                     }

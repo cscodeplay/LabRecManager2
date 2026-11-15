@@ -43,13 +43,32 @@ export const useAuthStore = create(
             getAccessToken: () => get().accessToken,
 
             // Session Management
-            setAvailableSessions: (sessions) => set({ availableSessions: sessions }),
+            setAvailableSessions: (sessions) => {
+                set({ availableSessions: sessions });
+                // If selectedSession has no yearLabel or is just an ID, resolve it from availableSessions
+                const currentSession = get().selectedSession;
+                const currentSessionId = get().selectedSessionId;
+                if (currentSessionId && (!currentSession || !currentSession.yearLabel)) {
+                    const matched = sessions?.find(s => s.id === currentSessionId);
+                    if (matched) {
+                        set({
+                            selectedSession: matched,
+                            isReadOnlyMode: !matched.isCurrent,
+                        });
+                    }
+                }
+            },
 
-            setSession: (session) => set({
-                selectedSessionId: session?.id || null,
-                selectedSession: session || null,
-                isReadOnlyMode: session ? !session.isCurrent : false,
-            }),
+            setSession: (session) => {
+                const sessionObj = typeof session === 'string'
+                    ? (get().availableSessions || []).find(s => s.id === session) || { id: session, yearLabel: 'Active' }
+                    : session;
+                set({
+                    selectedSessionId: sessionObj?.id || null,
+                    selectedSession: sessionObj || null,
+                    isReadOnlyMode: sessionObj ? !sessionObj.isCurrent : false,
+                });
+            },
 
             getSelectedSessionId: () => get().selectedSessionId,
             getIsReadOnlyMode: () => get().isReadOnlyMode,
