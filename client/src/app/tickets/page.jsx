@@ -11,7 +11,6 @@ import {
     Zap, Laptop, Server, Tv, Printer, Radio, Wifi, Copy, Check,
     Calendar, Lock
 } from 'lucide-react';
-import AICardCopilot from '@/components/AICardCopilot';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
@@ -284,6 +283,16 @@ export default function TicketsPage() {
                             <p className="text-sm text-slate-500">Report issues, request maintenance, or submit complaints</p>
                         </div>
                     </div>
+                </div>
+            </div>
+            <LabInfrastructureTabs activeTab="tickets" className="mb-4 -mt-6" />
+
+            <div className="max-w-7xl mx-auto px-4">
+                {/* Actions Row below Tab Bar (Right-most Create Ticket Icon) */}
+                <div className="flex items-center justify-between gap-4 mb-4">
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        All Tickets ({filteredTickets.length})
+                    </div>
                     <button
                         onClick={() => {
                             if (isReadOnlyMode) {
@@ -292,16 +301,13 @@ export default function TicketsPage() {
                             }
                             setShowCreateModal(true);
                         }}
-                        className={`p-3 rounded-xl transition shadow-sm ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}
+                        className={`p-2.5 px-4 rounded-xl transition shadow-xs flex items-center gap-2 font-medium text-sm ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}
                         title={isReadOnlyMode ? 'Tickets are locked in historical session' : 'Create Ticket'}
                     >
                         <Plus className="w-5 h-5" />
+                        <span>Create Ticket</span>
                     </button>
                 </div>
-            </div>
-            <LabInfrastructureTabs activeTab="tickets" className="mb-6 -mt-6" />
-
-            <div className="max-w-7xl mx-auto px-4">
 
                 {/* Filters */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
@@ -800,28 +806,6 @@ export default function TicketsPage() {
 
                                 {/* Comments */}
                                 <div>
-                                    {/* AI Ticket Resolution Copilot */}
-                                    {selectedTicket.status !== 'closed' && (
-                                        <AICardCopilot
-                                            type="ticket_reply"
-                                            context={{
-                                                ticketNumber: selectedTicket.ticketNumber,
-                                                title: selectedTicket.title,
-                                                description: selectedTicket.description,
-                                                category: selectedTicket.category,
-                                                priority: selectedTicket.priority,
-                                                labName: selectedTicket.lab?.name,
-                                                itemName: selectedTicket.item?.itemType ? `${selectedTicket.item.itemType} - ${selectedTicket.item.itemNumber}` : undefined,
-                                                userName: `${selectedTicket.user?.firstName || ''} ${selectedTicket.user?.lastName || ''}`.trim()
-                                            }}
-                                            onInsert={(aiData) => {
-                                                if (aiData?.draftReply) {
-                                                    setNewComment(aiData.draftReply);
-                                                }
-                                            }}
-                                        />
-                                    )}
-
                                     <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                                         <MessageSquare size={18} />
                                         Comments ({selectedTicket.comments?.length || 0})

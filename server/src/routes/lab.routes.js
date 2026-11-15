@@ -1979,4 +1979,124 @@ router.post('/inventory/bulk-create', authenticate, authorize('admin', 'principa
     });
 }));
 
+/**
+ * Classroom Hardware Loan Vouchers (Panels, Tabs, OPS & Accessories)
+ */
+router.get('/classroom-loan-vouchers', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    try {
+        const notes = await prisma.adminNote.findMany({
+            where: {
+                category: 'classroom_loan_voucher'
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        const vouchers = notes.map(n => {
+            try {
+                const parsed = JSON.parse(n.content);
+                return {
+                    id: n.id,
+                    ...parsed,
+                    createdAt: n.createdAt,
+                    updatedAt: n.updatedAt
+                };
+            } catch {
+                return null;
+            }
+        }).filter(Boolean);
+
+        res.json({ success: true, data: { vouchers } });
+    } catch (err) {
+        console.error('Failed to get classroom loan vouchers:', err);
+        res.status(500).json({ success: false, message: 'Failed to load classroom loan vouchers' });
+    }
+}));
+
+router.post('/classroom-loan-vouchers', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    try {
+        const { roomNumber, classSection, staffName, staffDesignation, academicSession, items, conditions, dateStr } = req.body;
+        if (!roomNumber) {
+            return res.status(400).json({ success: false, message: 'Room number is required' });
+        }
+
+        const voucherData = {
+            voucherNo: req.body.voucherNo || `LV-${academicSession || '2024-25'}-RM${String(roomNumber).replace(/\D/g, '').padStart(2, '0') || roomNumber}`,
+            roomNumber,
+            classSection: classSection || '',
+            staffName: staffName || '',
+            staffDesignation: staffDesignation || 'Class Incharge',
+            academicSession: academicSession || '2024-2025',
+            dateStr: dateStr || new Date().toLocaleString(),
+            items: items || [],
+            conditions: conditions || [
+                'The Receiver is fully responsible for the physical safety and proper operation of the issued hardware.',
+                'Any loss, damage, or technical fault must be reported to the issuing authority immediately.',
+                'The hardware must be used solely for the official or stated purpose of this loan.',
+                'The item must be returned on the due date or upon immediate demand by the issuing authority.'
+            ]
+        };
+
+        const note = await prisma.adminNote.create({
+            data: {
+                title: `Room ${roomNumber} Loan Voucher`,
+                content: JSON.stringify(voucherData),
+                category: 'classroom_loan_voucher',
+                authorId: req.user.id
+            }
+        });
+
+        res.status(201).json({
+            success: true,
+            message: `Loan voucher created for Room ${roomNumber}`,
+            data: { voucher: { id: note.id, ...voucherData, createdAt: note.createdAt } }
+        });
+    } catch (err) {
+        console.error('Failed to create classroom loan voucher:', err);
+        res.status(500).json({ success: false, message: 'Failed to create classroom loan voucher' });
+    }
+}));
+
+router.put('/classroom-loan-vouchers/:id', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    try {
+        const existing = await prisma.adminNote.findUnique({
+            where: { id: req.params.id }
+        });
+        if (!existing || existing.category !== 'classroom_loan_voucher') {
+            return res.status(404).json({ success: false, message: 'Voucher not found' });
+        }
+
+        const oldContent = (() => { try { return JSON.parse(existing.content); } catch { return {}; } })();
+        const updatedVoucher = { ...oldContent, ...req.body };
+
+        const updated = await prisma.adminNote.update({
+            where: { id: req.params.id },
+            data: {
+                title: `Room ${updatedVoucher.roomNumber || oldContent.roomNumber} Loan Voucher`,
+                content: JSON.stringify(updatedVoucher),
+                updatedAt: new Date()
+            }
+        });
+
+        res.json({
+            success: true,
+            message: 'Classroom voucher updated',
+            data: { voucher: { id: updated.id, ...updatedVoucher, updatedAt: updated.updatedAt } }
+        });
+    } catch (err) {
+        console.error('Failed to update classroom loan voucher:', err);
+        res.status(500).json({ success: false, message: 'Failed to update classroom loan voucher' });
+    }
+}));
+
+router.delete('/classroom-loan-vouchers/:id', authenticate, authorize('admin', 'principal', 'instructor', 'lab_assistant'), asyncHandler(async (req, res) => {
+    try {
+        await prisma.adminNote.delete({
+            where: { id: req.params.id }
+        });
+        res.json({ success: true, message: 'Classroom loan voucher deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'Failed to delete classroom loan voucher' });
+    }
+}));
+
 module.exports = router;

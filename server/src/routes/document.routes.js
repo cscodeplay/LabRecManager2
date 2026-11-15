@@ -335,10 +335,10 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     const user = await prisma.user.findUnique({
         where: { id: req.user.id },
         select: { storageQuotaMb: true, storageUsedBytes: true }
-    });
+    }).catch(() => null);
 
-    const quotaBytes = (user.storageQuotaMb || 500) * 1024 * 1024;
-    const currentUsed = Number(user.storageUsedBytes || 0);
+    const quotaBytes = ((user?.storageQuotaMb) || 500) * 1024 * 1024;
+    const currentUsed = Number(user?.storageUsedBytes || 0);
     const newFileSize = req.file.size;
 
     if (currentUsed + newFileSize > quotaBytes) {
@@ -352,14 +352,32 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
 
     const { name, description, category, isPublic, folderId } = req.body;
 
-    // Validate folder if provided
-    const targetFolderId = (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null;
+    // Resolve effective school ID safely
+    let effectiveSchoolId = req.user.schoolId;
+    if (!effectiveSchoolId) {
+        const defaultSchool = await prisma.school.findFirst({ select: { id: true } }).catch(() => null);
+        effectiveSchoolId = defaultSchool?.id || null;
+    }
+
+    // Validate folder if provided (guard against non-UUID virtual folder IDs like 'recordings')
+    const isUuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    let targetFolderId = (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null;
+    if (targetFolderId && !isUuid(targetFolderId)) {
+        targetFolderId = null;
+    }
     if (targetFolderId) {
         const folder = await prisma.documentFolder.findFirst({
-            where: { id: targetFolderId, schoolId: req.user.schoolId, createdById: req.user.id, deletedAt: null }
-        });
+            where: {
+                id: targetFolderId,
+                deletedAt: null,
+                OR: [
+                    { createdById: req.user.id },
+                    ...(effectiveSchoolId ? [{ schoolId: effectiveSchoolId }] : [])
+                ]
+            }
+        }).catch(() => null);
         if (!folder) {
-            return res.status(404).json({ success: false, message: 'Target folder not found or access denied' });
+            targetFolderId = null;
         }
     }
 
@@ -521,7 +539,7 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
                 } else {
                     const created = await prisma.document.create({
                         data: {
-                            schoolId: req.user.schoolId,
+                            schoolId: effectiveSchoolId,
                             uploadedById: req.user.id,
                             folderId: (targetFolderId !== undefined && targetFolderId !== null) ? targetFolderId : targetDoc.folderId,
                             name: resolvedName,
@@ -749,9 +767,9 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
     // Create document record
     const doc = await prisma.document.create({
         data: {
-            schoolId: req.user.schoolId,
+            schoolId: effectiveSchoolId,
             uploadedById: req.user.id,
-            folderId: (folderId && folderId !== 'null' && folderId !== 'undefined') ? folderId : null,
+            folderId: targetFolderId,
             name: name || req.file.originalname.replace(/\.[^.]+$/, ''),
             description: description || null,
             fileName: req.file.originalname,
@@ -768,11 +786,15 @@ router.post('/', authenticate, authorize('admin', 'principal', 'lab_assistant', 
         }
     });
 
-    // Update user's storage used
-    await prisma.user.update({
-        where: { id: req.user.id },
-        data: { storageUsedBytes: currentUsed + newFileSize }
-    });
+    // Update user's storage used (safely wrapped so telemetry never crashes upload)
+    try {
+        await prisma.user.update({
+            where: { id: req.user.id },
+            data: { storageUsedBytes: BigInt(Math.max(0, Math.round(currentUsed + newFileSize))) }
+        });
+    } catch (storageUpdateErr) {
+        console.warn('[DocUpload] Storage telemetry update notice:', storageUpdateErr.message);
+    }
 
     res.status(201).json({
         success: true,

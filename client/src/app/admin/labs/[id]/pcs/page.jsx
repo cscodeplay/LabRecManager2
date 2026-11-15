@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet, Zap, Server, Tv, Headphones, ScanLine, Cable, Tag, Check, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Monitor, Plus, Edit2, Trash2, X, ArrowLeft, Printer, Wifi, Speaker, Armchair, Table, Projector, Package, PlusCircle, Eye, Download, Upload, FileSpreadsheet, Calendar, Shield, Image, Search, QrCode, CheckSquare, Square, Wrench, AlertTriangle, RefreshCw, History, ArrowRightLeft, Camera, Network, Volume2, Laptop, Tablet, Zap, Server, Tv, Headphones, ScanLine, Cable, Tag, Check, Clock, CheckCircle, XCircle, Barcode, Copy } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, filesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -71,6 +71,8 @@ export default function LabInventoryPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedItems, setSelectedItems] = useState(new Set());
     const [qrItem, setQrItem] = useState(null);
+    const [barcodeItem, setBarcodeItem] = useState(null);
+    const barcodeCanvasRef = useRef(null);
     const [formData, setFormData] = useState({
         itemType: 'pc', itemNumber: '', brand: '', modelNo: '', serialNo: '',
         specs: {}, status: 'active', notes: '', imageUrl: '', purchaseDate: '', warrantyEnd: ''
@@ -155,6 +157,138 @@ export default function LabInventoryPage() {
             toast.error('Failed to load lab data');
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Render barcode on overlay canvas when barcodeItem is active
+    useEffect(() => {
+        if (barcodeItem && barcodeCanvasRef.current) {
+            import('jsbarcode').then(JsBarcodeModule => {
+                const JsBarcode = JsBarcodeModule.default || JsBarcodeModule;
+                const code = barcodeItem.serialNo || barcodeItem.itemNumber || 'ASSET';
+                try {
+                    JsBarcode(barcodeCanvasRef.current, code, {
+                        format: 'CODE128',
+                        width: 2,
+                        height: 55,
+                        displayValue: true,
+                        fontSize: 14,
+                        font: 'monospace',
+                        textMargin: 4,
+                        margin: 10,
+                        background: '#ffffff',
+                        lineColor: '#0f172a'
+                    });
+                } catch (e) {
+                    console.error('Barcode generation error:', e);
+                }
+            });
+        }
+    }, [barcodeItem]);
+
+    // Bulk print barcodes for checked items (icon only button)
+    const handleBulkPrintBarcodes = async () => {
+        if (selectedItems.size === 0) {
+            toast.error('Select items to print barcodes');
+            return;
+        }
+        const selectedList = items.filter(i => selectedItems.has(i.id));
+        if (selectedList.length === 0) return;
+
+        try {
+            const JsBarcodeModule = await import('jsbarcode');
+            const JsBarcode = JsBarcodeModule.default || JsBarcodeModule;
+
+            const labelsHtml = selectedList.map(item => {
+                const canvas = document.createElement('canvas');
+                const code = item.serialNo || item.itemNumber || 'ASSET';
+                try {
+                    JsBarcode(canvas, code, {
+                        format: 'CODE128',
+                        width: 2,
+                        height: 48,
+                        displayValue: true,
+                        fontSize: 12,
+                        font: 'monospace',
+                        textMargin: 3,
+                        margin: 6,
+                        background: '#ffffff'
+                    });
+                    const dataUrl = canvas.toDataURL('image/png');
+                    return `
+                        <div class="barcode-card">
+                            <div class="school-header">${lab?.name || 'Lab Asset Management'}</div>
+                            <div class="item-name">${item.itemNumber} ${item.brand ? `• ${item.brand}` : ''}</div>
+                            <img src="${dataUrl}" class="barcode-img" alt="${code}" />
+                            <div class="item-meta">
+                                <span>TYPE: ${(item.itemType || '').toUpperCase()}</span>
+                                <span>SN: ${item.serialNo || 'N/A'}</span>
+                            </div>
+                        </div>
+                    `;
+                } catch (e) {
+                    return '';
+                }
+            }).join('');
+
+            const printWin = window.open('', '_blank');
+            if (!printWin) {
+                toast.error('Please allow popups to print barcodes');
+                return;
+            }
+
+            printWin.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Asset Barcodes - ${lab?.name || 'Lab Record'}</title>
+                    <style>
+                        @page { size: A4; margin: 8mm; }
+                        * { box-sizing: border-box; margin: 0; padding: 0; }
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; padding: 12px; color: #1e293b; }
+                        .no-print { margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; }
+                        .barcode-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+                        .barcode-card {
+                            border: 1px dashed #cbd5e1;
+                            border-radius: 6px;
+                            padding: 8px;
+                            text-align: center;
+                            background: #ffffff;
+                            page-break-inside: avoid;
+                        }
+                        .school-header { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+                        .item-name { font-size: 12px; font-weight: 700; color: #0f172a; margin-top: 2px; }
+                        .barcode-img { max-width: 100%; height: auto; margin: 4px auto; display: block; }
+                        .item-meta { display: flex; justify-content: space-between; font-size: 9px; color: #475569; font-family: monospace; border-top: 1px solid #f1f5f9; padding-top: 3px; margin-top: 3px; }
+                        @media print {
+                            .no-print { display: none !important; }
+                            body { padding: 0; }
+                            .barcode-card { border: 1px dashed #94a3b8; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="no-print">
+                        <div>
+                            <h2 style="font-size:16px; font-weight:bold;">Asset Barcode Labels (${selectedList.length} items)</h2>
+                            <p style="font-size:12px; color:#64748b;">${lab?.name || 'Lab Equipment'} • ${new Date().toLocaleDateString()}</p>
+                        </div>
+                        <button onclick="window.print()" style="background:#4f46e5; color:white; border:none; padding:8px 16px; border-radius:8px; font-weight:600; cursor:pointer;">Print Barcodes</button>
+                    </div>
+                    <div class="barcode-grid">
+                        ${labelsHtml}
+                    </div>
+                    <script>
+                        window.onload = function() {
+                            setTimeout(function() { window.print(); }, 400);
+                        };
+                    </script>
+                </body>
+                </html>
+            `);
+            printWin.document.close();
+        } catch (err) {
+            toast.error('Failed to generate barcodes');
         }
     };
 
@@ -722,6 +856,14 @@ export default function LabInventoryPage() {
                         {selectedItems.size > 0 && (
                             <div className="flex gap-2">
                                 <button
+                                    title={`Print Barcodes (${selectedItems.size} selected)`}
+                                    onClick={handleBulkPrintBarcodes}
+                                    className="btn bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 rounded-xl shadow-xs"
+                                    aria-label="Bulk Print Barcodes"
+                                >
+                                    <Barcode className="w-5 h-5" />
+                                </button>
+                                <button
                                     onClick={() => { setBulkShiftModal(true); setBulkShiftToLab(''); setBulkShiftReason(''); }}
                                     className="btn bg-amber-500 hover:bg-amber-600 text-white"
                                 >
@@ -865,7 +1007,20 @@ export default function LabInventoryPage() {
                                                 <p className="text-slate-900">{item.brand || '-'}</p>
                                                 <p className="text-xs text-slate-500">{item.modelNo || ''}</p>
                                             </td>
-                                            <td className="px-4 py-3 text-slate-600 text-sm font-mono">{item.serialNo || '-'}</td>
+                                            <td className="px-4 py-3 text-slate-600 text-sm font-mono">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="truncate max-w-[130px]">{item.serialNo || '-'}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBarcodeItem(item)}
+                                                        className="p-1 hover:bg-indigo-50 rounded text-slate-400 hover:text-indigo-600 transition shrink-0"
+                                                        title="Generate & View Barcode"
+                                                        aria-label="View Barcode"
+                                                    >
+                                                        <Barcode className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex flex-wrap gap-1 max-w-xs">
                                                     {item.specs && Object.entries(item.specs).slice(0, 3).map(([k, v]) => v && (
@@ -1531,6 +1686,124 @@ export default function LabInventoryPage() {
                                         <Download className="w-5 h-5" />
                                     </a>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Barcode Overlay Modal */}
+            {barcodeItem && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200">
+                        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <Barcode className="w-5 h-5 text-indigo-600" />
+                                <h3 className="font-bold text-slate-900">Asset Barcode</h3>
+                            </div>
+                            <button
+                                onClick={() => setBarcodeItem(null)}
+                                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="py-5 flex flex-col items-center text-center">
+                            <div className="p-4 bg-white border-2 border-slate-200 rounded-xl shadow-xs mb-4 w-full flex flex-col items-center">
+                                <p className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-1">
+                                    {lab?.name || 'Lab Record Manager'}
+                                </p>
+                                <p className="text-sm font-bold text-slate-800 mb-2">
+                                    {barcodeItem.itemNumber} {barcodeItem.brand ? `• ${barcodeItem.brand}` : ''}
+                                </p>
+                                <canvas ref={barcodeCanvasRef} className="max-w-full" />
+                            </div>
+
+                            <div className="w-full bg-slate-50 p-3 rounded-xl text-left text-xs space-y-1 text-slate-600 mb-4">
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Item Type:</span>
+                                    <span className="font-semibold text-slate-800">{ITEM_TYPES[barcodeItem.itemType]?.label || barcodeItem.itemType}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-slate-400">Serial No:</span>
+                                    <span className="font-mono font-semibold text-slate-800">{barcodeItem.serialNo || 'N/A'}</span>
+                                </div>
+                                {barcodeItem.modelNo && (
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Model:</span>
+                                        <span className="font-semibold text-slate-800">{barcodeItem.modelNo}</span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex gap-2 w-full">
+                                <button
+                                    onClick={() => {
+                                        if (barcodeCanvasRef.current) {
+                                            barcodeCanvasRef.current.toBlob(blob => {
+                                                if (blob && navigator.clipboard?.write) {
+                                                    navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+                                                        .then(() => toast.success('Barcode image copied!'))
+                                                        .catch(() => toast.error('Failed to copy image'));
+                                                } else {
+                                                    toast.error('Clipboard copy not supported on this browser');
+                                                }
+                                            });
+                                        }
+                                    }}
+                                    className="btn btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
+                                    title="Copy to clipboard"
+                                >
+                                    <Copy className="w-3.5 h-3.5" /> Copy
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (barcodeCanvasRef.current) {
+                                            const a = document.createElement('a');
+                                            a.download = `barcode-${barcodeItem.serialNo || barcodeItem.itemNumber}.png`;
+                                            a.href = barcodeCanvasRef.current.toDataURL('image/png');
+                                            a.click();
+                                            toast.success('Barcode downloaded');
+                                        }
+                                    }}
+                                    className="btn btn-secondary flex-1 text-xs flex items-center justify-center gap-1.5"
+                                    title="Download PNG"
+                                >
+                                    <Download className="w-3.5 h-3.5" /> Download
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (barcodeCanvasRef.current) {
+                                            const printWin = window.open('', '_blank');
+                                            const dataUrl = barcodeCanvasRef.current.toDataURL('image/png');
+                                            printWin.document.write(`
+                                                <html>
+                                                <head><title>Print Barcode - ${barcodeItem.itemNumber}</title>
+                                                <style>
+                                                    body { font-family: Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                                                    .card { text-align: center; border: 1px dashed #94a3b8; padding: 20px; border-radius: 8px; }
+                                                </style>
+                                                </head>
+                                                <body>
+                                                    <div class="card">
+                                                        <div style="font-size: 11px; font-weight: bold; color: #64748b;">${lab?.name || 'Lab Record'}</div>
+                                                        <div style="font-size: 14px; font-weight: bold; margin: 4px 0;">${barcodeItem.itemNumber}</div>
+                                                        <img src="${dataUrl}" style="margin: 8px 0;" />
+                                                        <div style="font-size: 11px; color: #475569; font-family: monospace;">SN: ${barcodeItem.serialNo || 'N/A'}</div>
+                                                    </div>
+                                                    <script>window.onload = function() { window.print(); }</script>
+                                                </body>
+                                                </html>
+                                            `);
+                                            printWin.document.close();
+                                        }
+                                    }}
+                                    className="btn btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"
+                                    title="Print single label"
+                                >
+                                    <Printer className="w-3.5 h-3.5" /> Print
+                                </button>
                             </div>
                         </div>
                     </div>

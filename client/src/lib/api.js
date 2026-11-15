@@ -500,6 +500,11 @@ export const labsAPI = {
     issueLaptop: (data) => api.post('/labs/laptop-issuances', data),
     returnLaptop: (id, data) => api.put(`/labs/laptop-issuances/${id}/return`, data),
     getIssuanceVoucher: (id) => api.get(`/labs/laptop-issuances/${id}/voucher`),
+    // Classroom Hardware Loan Vouchers (Panels, Tabs, OPS & Accessories)
+    getClassroomLoanVouchers: () => api.get('/labs/classroom-loan-vouchers'),
+    createClassroomLoanVoucher: (data) => api.post('/labs/classroom-loan-vouchers', data),
+    updateClassroomLoanVoucher: (id, data) => api.put(`/labs/classroom-loan-vouchers/${id}`, data),
+    deleteClassroomLoanVoucher: (id) => api.delete(`/labs/classroom-loan-vouchers/${id}`),
     // List all items across all labs
     listAllItems: () => api.get('/labs/items/all'),
 };

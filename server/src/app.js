@@ -1,5 +1,11 @@
 require('dotenv').config();
 
+// Global BigInt serializer to prevent 500 errors on res.json()
+BigInt.prototype.toJSON = function () {
+    const int = Number(this);
+    return Number.isSafeInteger(int) ? int : this.toString();
+};
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');

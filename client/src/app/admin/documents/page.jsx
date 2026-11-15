@@ -612,7 +612,7 @@ export default function DocumentsPage() {
             try {
                 const dataWithFolder = {
                     ...uploadData,
-                    folderId: currentFolder ? currentFolder.id : null
+                    folderId: (currentFolder && currentFolder.id !== 'recordings') ? currentFolder.id : null
                 };
 
                 await documentsAPI.upload(uploadFile, dataWithFolder, (percent) => {
