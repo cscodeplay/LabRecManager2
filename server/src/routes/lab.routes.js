@@ -2099,4 +2099,160 @@ router.delete('/classroom-loan-vouchers/:id', authenticate, authorize('admin', '
     }
 }));
 
+/**
+ * @route   GET /api/labs/classroom-mapping
+ * @desc    Get room-to-class and class-to-incharge mappings, and current academic session
+ * @access  Private
+ */
+router.get('/classroom-mapping', authenticate, asyncHandler(async (req, res) => {
+    try {
+        const schoolId = req.user.schoolId;
+
+        // Fetch current active academic session
+        const currentAcademicYear = await prisma.academicYear.findFirst({
+            where: { schoolId, isCurrent: true },
+            select: { id: true, yearLabel: true, isCurrent: true, startDate: true, endDate: true }
+        });
+
+        // Query rooms with class and incharge mappings
+        const roomsQuery = await prisma.$queryRaw`
+            SELECT 
+                c.id,
+                c.room_number as "roomNumber",
+                c.room_name as "roomName",
+                c.room_type as "roomType",
+                c.class_id as "classId",
+                cl.name as "className",
+                cl.section,
+                cl.grade_level as "gradeLevel",
+                u.id as "staffId",
+                u.first_name as "firstName",
+                u.last_name as "lastName",
+                u.role as "staffRole",
+                COALESCE(ci.designation, 'Class Incharge / PGT') as "designation"
+            FROM classrooms c
+            LEFT JOIN classes cl ON c.class_id = cl.id
+            LEFT JOIN class_incharges ci ON cl.id = ci.class_id AND ci.is_primary = true
+            LEFT JOIN users u ON ci.staff_id = u.id
+            WHERE c.school_id = ${schoolId}::uuid
+            ORDER BY 
+                CASE 
+                    WHEN c.room_number ~ '^[0-9]+$' THEN c.room_number::int 
+                    ELSE 999 
+                END ASC,
+                c.room_number ASC;
+        `;
+
+        const rooms = (roomsQuery || []).map(r => ({
+            id: r.id,
+            roomNumber: r.roomNumber,
+            roomName: r.roomName || `Room ${r.roomNumber}`,
+            roomType: r.roomType || 'classroom',
+            classId: r.classId,
+            className: r.className || `Room ${r.roomNumber}`,
+            section: r.section || '',
+            gradeLevel: r.gradeLevel,
+            staffId: r.staffId,
+            staffName: r.firstName ? `${r.firstName} ${r.lastName || ''}`.trim() : 'Class Incharge',
+            staffDesignation: r.designation || 'Class Incharge / PGT'
+        }));
+
+        res.json({
+            success: true,
+            data: {
+                rooms,
+                currentAcademicYear: currentAcademicYear || { yearLabel: '2026-27' }
+            }
+        });
+    } catch (err) {
+        console.error('Failed to get classroom mappings:', err);
+        res.status(500).json({ success: false, message: 'Failed to load classroom mappings' });
+    }
+}));
+
+/**
+ * @route   GET /api/labs/inventory-devices
+ * @desc    Get inventory devices available for loan vouchers (filters out already assigned items)
+ * @access  Private
+ */
+router.get('/inventory-devices', authenticate, asyncHandler(async (req, res) => {
+    try {
+        const schoolId = req.user.schoolId;
+        const { currentVoucherId } = req.query;
+
+        // 1. Find devices already assigned in laptop issuances
+        const activeLaptopIssuances = await prisma.laptopIssuance.findMany({
+            where: { schoolId, status: 'issued' },
+            select: { laptopId: true }
+        });
+        const assignedLaptopIds = new Set(activeLaptopIssuances.map(i => i.laptopId).filter(Boolean));
+
+        // 2. Find devices already assigned in other classroom loan vouchers
+        const loanVouchers = await prisma.adminNote.findMany({
+            where: { category: 'classroom_loan_voucher' },
+            select: { id: true, content: true }
+        });
+
+        const assignedSerialNumbers = new Set();
+        const assignedItemNumbers = new Set();
+
+        for (const note of loanVouchers) {
+            // If editing a voucher, its own items can be kept
+            if (currentVoucherId && note.id === currentVoucherId) continue;
+            try {
+                const parsed = JSON.parse(note.content);
+                if (Array.isArray(parsed.items)) {
+                    for (const item of parsed.items) {
+                        if (item.serialNo && typeof item.serialNo === 'string') {
+                            const trimmed = item.serialNo.trim().toUpperCase();
+                            // Only treat actual serial numbers as unique (not "Qty - 1" or generic text)
+                            if (trimmed && !trimmed.startsWith('QTY')) {
+                                assignedSerialNumbers.add(trimmed);
+                            }
+                        }
+                    }
+                }
+            } catch {}
+        }
+
+        // 3. Fetch lab items that are active
+        const allItems = await prisma.labItem.findMany({
+            where: { schoolId, status: 'active' },
+            select: {
+                id: true,
+                itemNumber: true,
+                itemType: true,
+                brand: true,
+                modelNo: true,
+                serialNo: true,
+                specs: true,
+                lab: { select: { id: true, name: true, roomNumber: true } }
+            },
+            orderBy: [{ itemType: 'asc' }, { itemNumber: 'asc' }]
+        });
+
+        // 4. Filter out items that are already assigned
+        const availableDevices = allItems.filter(item => {
+            if (assignedLaptopIds.has(item.id)) return false;
+            if (item.serialNo) {
+                const sn = item.serialNo.trim().toUpperCase();
+                if (assignedSerialNumbers.has(sn)) return false;
+            }
+            return true;
+        });
+
+        res.json({
+            success: true,
+            data: {
+                devices: availableDevices,
+                totalCount: allItems.length,
+                availableCount: availableDevices.length
+            }
+        });
+    } catch (err) {
+        console.error('Failed to get inventory devices:', err);
+        res.status(500).json({ success: false, message: 'Failed to load inventory devices' });
+    }
+}));
+
 module.exports = router;

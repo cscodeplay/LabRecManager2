@@ -505,6 +505,8 @@ export const labsAPI = {
     createClassroomLoanVoucher: (data) => api.post('/labs/classroom-loan-vouchers', data),
     updateClassroomLoanVoucher: (id, data) => api.put(`/labs/classroom-loan-vouchers/${id}`, data),
     deleteClassroomLoanVoucher: (id) => api.delete(`/labs/classroom-loan-vouchers/${id}`),
+    getClassroomMappings: () => api.get('/labs/classroom-mapping'),
+    getInventoryDevices: (params) => api.get('/labs/inventory-devices', { params }),
     // List all items across all labs
     listAllItems: () => api.get('/labs/items/all'),
 };

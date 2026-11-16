@@ -33,6 +33,8 @@ model School {
   assignments           Assignment[]
   auditLogs             AuditLog[]
   classes               Class[]
+  classrooms            Classroom[]
+  classIncharges        ClassIncharge[]
   documents             Document[]
   feeCategories         FeeCategory[]
   feeStructures         FeeStructure[]
@@ -121,6 +123,8 @@ model AcademicYear {
   trainingModules     TrainingModule[]
   tickets             Ticket[]
   procurementRequests ProcurementRequest[]
+  classrooms          Classroom[]
+  classIncharges      ClassIncharge[]
 
   @@map("academic_years")
 }
@@ -169,6 +173,7 @@ model User {
   classSubjectsAsInstructor                      ClassSubject[]             @relation("Instructor")
   classSubjectsAsLabInstructor                   ClassSubject[]             @relation("LabInstructor")
   classTeacherOf                                 Class[]                    @relation("ClassTeacher")
+  classIncharges                                 ClassIncharge[]            @relation("ClassInchargeStaff")
   deviceTests                                    DeviceTest?
   documentSharesSent                             DocumentShare[]            @relation("DocumentSharedBy")
   documentShares                                 DocumentShare[]            @relation("DocumentSharedToUser")
@@ -320,6 +325,8 @@ model Class {
   timetables         Timetable[]
   lecturePlans       LecturePlan[]
   quizAssignments    QuizAssignment[]
+  classrooms         Classroom[]
+  incharges          ClassIncharge[]
 
   @@unique([schoolId, name, academicYearId], name: "unique_class_name_per_school")
   @@index([academicYearId])
@@ -342,6 +349,49 @@ model ClassEnrollment {
   @@index([classId], map: "idx_enrollments_class")
   @@index([studentId], map: "idx_enrollments_student")
   @@map("class_enrollments")
+}
+
+model Classroom {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId       String        @map("school_id") @db.Uuid
+  academicYearId String?       @map("academic_year_id") @db.Uuid
+  roomNumber     String        @map("room_number") @db.VarChar(50)
+  roomName       String?       @map("room_name") @db.VarChar(100)
+  roomType       String?       @default("classroom") @map("room_type") @db.VarChar(50)
+  classId        String?       @map("class_id") @db.Uuid
+  capacity       Int?          @default(40)
+  building       String?       @db.VarChar(100)
+  floor          String?       @db.VarChar(50)
+  createdAt      DateTime?     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime?     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school         School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  class          Class?        @relation(fields: [classId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, roomNumber], name: "classrooms_school_room_unique")
+  @@map("classrooms")
+}
+
+model ClassIncharge {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  schoolId       String        @map("school_id") @db.Uuid
+  academicYearId String?       @map("academic_year_id") @db.Uuid
+  classId        String        @map("class_id") @db.Uuid
+  staffId        String        @map("staff_id") @db.Uuid
+  designation    String?       @default("Class Incharge / PGT") @db.VarChar(100)
+  roomNumber     String?       @map("room_number") @db.VarChar(50)
+  isPrimary      Boolean       @default(true) @map("is_primary")
+  createdAt      DateTime?     @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime?     @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  school         School        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  academicYear   AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: SetNull)
+  class          Class         @relation(fields: [classId], references: [id], onDelete: Cascade)
+  staff          User          @relation("ClassInchargeStaff", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, staffId, isPrimary], name: "class_incharges_class_staff_unique")
+  @@map("class_incharges")
 }
 
 model StudentGroup {

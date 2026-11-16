@@ -8,12 +8,13 @@ import {
     Share2, Mail, MessageCircle, Printer, User, Calendar,
     CheckCircle, Clock, AlertTriangle, X, Camera, Copy,
     Tv, Tablet, Sparkles, CheckSquare, Square, Edit2, Trash2,
-    Eye, Download, Building, Users, Check, Info
+    Eye, Download, Building, Users, Check, Info, Lock
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, classesAPI } from '@/lib/api';
 import toast from 'react-hot-toast';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
+import ClassroomVoucherPdfModal from '@/components/ClassroomVoucherPdfModal';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
@@ -136,13 +137,20 @@ export default function LaptopIssuancesPage() {
     const [editingClassroomVoucher, setEditingClassroomVoucher] = useState(null);
     const [classroomSaving, setClassroomSaving] = useState(false);
 
+    // Mappings, Devices & Live Clock State
+    const [classroomMappings, setClassroomMappings] = useState([]);
+    const [currentAcademicYear, setCurrentAcademicYear] = useState({ yearLabel: '2026-27' });
+    const [inventoryDevices, setInventoryDevices] = useState([]);
+    const [runningTime, setRunningTime] = useState('');
+    const [previewVouchers, setPreviewVouchers] = useState(null);
+
     const initialClassroomForm = {
-        roomNumber: '',
-        classSection: '',
-        staffName: '',
+        roomNumber: '5',
+        classSection: 'Room 5 (Smart Classroom)',
+        staffName: 'Class Incharge',
         staffDesignation: 'Class Incharge / PGT',
-        academicSession: '2024-2025',
-        dateStr: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        academicSession: '2026-27',
+        dateStr: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
         items: [...STANDARD_INTERACTIVE_PANEL_ITEMS],
         issuerSign: 'Lab Incharge',
         headOfSchoolSign: 'Principal',
@@ -158,7 +166,87 @@ export default function LaptopIssuancesPage() {
 
     useEffect(() => {
         loadClassroomVouchers();
+        loadClassroomMappingsAndDevices();
     }, []);
+
+    // Live Running Clock (updates second by second during voucher creation)
+    useEffect(() => {
+        if (!showClassroomModal) return;
+        const updateClock = () => {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+            setRunningTime(dateStr);
+            if (!editingClassroomVoucher) {
+                setClassroomForm(prev => ({ ...prev, dateStr }));
+            }
+        };
+        updateClock();
+        const interval = setInterval(updateClock, 1000);
+        return () => clearInterval(interval);
+    }, [showClassroomModal, editingClassroomVoucher]);
+
+    const loadClassroomMappingsAndDevices = async () => {
+        try {
+            const [mapRes, devRes] = await Promise.all([
+                labsAPI.getClassroomMappings(),
+                labsAPI.getInventoryDevices({ currentVoucherId: editingClassroomVoucher?.id })
+            ]);
+            if (mapRes.data?.data) {
+                const fetchedRooms = mapRes.data.data.rooms || [];
+                setClassroomMappings(fetchedRooms);
+                if (mapRes.data.data.currentAcademicYear?.yearLabel) {
+                    setCurrentAcademicYear(mapRes.data.data.currentAcademicYear);
+                    setClassroomForm(prev => ({ ...prev, academicSession: mapRes.data.data.currentAcademicYear.yearLabel }));
+                }
+            }
+            if (devRes.data?.data) {
+                setInventoryDevices(devRes.data.data.devices || []);
+            }
+        } catch (err) {
+            console.error('Failed to load mappings or devices:', err);
+        }
+    };
+
+    const handleRoomChange = (selectedRoomNo) => {
+        const mapped = classroomMappings.find(m => String(m.roomNumber) === String(selectedRoomNo));
+        if (mapped) {
+            setClassroomForm(prev => ({
+                ...prev,
+                roomNumber: mapped.roomNumber,
+                classSection: mapped.roomName || mapped.className || `Room ${mapped.roomNumber}`,
+                staffName: mapped.staffName || 'Class Incharge',
+                staffDesignation: mapped.staffDesignation || 'Class Incharge / PGT',
+                academicSession: currentAcademicYear?.yearLabel || '2026-27'
+            }));
+        } else {
+            setClassroomForm(prev => ({
+                ...prev,
+                roomNumber: selectedRoomNo
+            }));
+        }
+    };
+
+    const handleOpenNewClassroomVoucher = () => {
+        setEditingClassroomVoucher(null);
+        const defaultRoom = classroomMappings.find(m => String(m.roomNumber) === '5') || classroomMappings[0];
+        const now = new Date();
+        const initialDateStr = now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+        setClassroomForm({
+            ...initialClassroomForm,
+            roomNumber: defaultRoom ? String(defaultRoom.roomNumber) : '5',
+            classSection: defaultRoom ? (defaultRoom.roomName || defaultRoom.className) : 'Room 5 (Smart Classroom)',
+            staffName: defaultRoom ? defaultRoom.staffName : 'Class Incharge',
+            staffDesignation: defaultRoom ? defaultRoom.staffDesignation : 'Class Incharge / PGT',
+            academicSession: currentAcademicYear?.yearLabel || '2026-27',
+            dateStr: initialDateStr,
+            items: JSON.parse(JSON.stringify(STANDARD_INTERACTIVE_PANEL_ITEMS))
+        });
+        labsAPI.getInventoryDevices().then(res => {
+            if (res.data?.data?.devices) setInventoryDevices(res.data.data.devices);
+        }).catch(() => {});
+        setShowClassroomModal(true);
+    };
 
     const loadClassroomVouchers = async () => {
         setClassroomLoading(true);
@@ -371,73 +459,17 @@ export default function LaptopIssuancesPage() {
     };
 
     const printSingleClassroomVoucher = (voucher) => {
-        const html = generateClassroomVoucherHtml(voucher);
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            toast.error('Please allow popups to print');
-            return;
-        }
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Loan Voucher - Room ${voucher.roomNumber}</title>
-                <style>${CLASSROOM_VOUCHER_PRINT_STYLES}</style>
-            </head>
-            <body>
-                ${html}
-                <script>
-                    window.onload = function() {
-                        setTimeout(function() { window.print(); }, 400);
-                    };
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
+        setPreviewVouchers([voucher]);
     };
 
     const bulkPrintClassroomVouchers = () => {
         if (selectedClassroomVouchers.size === 0) {
-            toast.error('Select at least one voucher to print');
+            toast.error('Select at least one voucher to preview & print');
             return;
         }
         const selectedList = classroomVouchers.filter(v => selectedClassroomVouchers.has(v.id));
         if (selectedList.length === 0) return;
-
-        const allHtml = selectedList.map(v => generateClassroomVoucherHtml(v)).join('');
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) {
-            toast.error('Please allow popups to print');
-            return;
-        }
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Classroom Loan Vouchers (${selectedList.length} Rooms)</title>
-                <style>${CLASSROOM_VOUCHER_PRINT_STYLES}</style>
-            </head>
-            <body>
-                <div class="no-print" style="padding: 12px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="font-size: 16px; font-weight: bold;">Loan Vouchers (${selectedList.length} Rooms Selected)</h3>
-                        <p style="font-size: 12px; color: #64748b;">Multi-page print on A4 size paper with letterhead</p>
-                    </div>
-                    <button onclick="window.print()" style="background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer;">
-                        Print All (${selectedList.length} Vouchers)
-                    </button>
-                </div>
-                ${allHtml}
-                <script>
-                    window.onload = function() {
-                        setTimeout(function() { window.print(); }, 400);
-                    };
-                </script>
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
+        setPreviewVouchers(selectedList);
     };
 
     const filteredClassroomVouchers = useMemo(() => {
@@ -745,14 +777,7 @@ export default function LaptopIssuancesPage() {
                     </div>
                     {activeSection === 'classroom' ? (
                         <button
-                            onClick={() => {
-                                setEditingClassroomVoucher(null);
-                                setClassroomForm({
-                                    ...initialClassroomForm,
-                                    dateStr: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                });
-                                setShowClassroomModal(true);
-                            }}
+                            onClick={handleOpenNewClassroomVoucher}
                             className="btn bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2 shadow-sm"
                         >
                             <Plus className="w-4 h-4" /> New Classroom Voucher
@@ -897,14 +922,7 @@ export default function LaptopIssuancesPage() {
                                 {classroomSearchQuery ? 'Try clearing your search query.' : 'Create your first classroom loan voucher with school letterhead.'}
                             </p>
                             <button
-                                onClick={() => {
-                                    setEditingClassroomVoucher(null);
-                                    setClassroomForm({
-                                        ...initialClassroomForm,
-                                        dateStr: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                    });
-                                    setShowClassroomModal(true);
-                                }}
+                                onClick={handleOpenNewClassroomVoucher}
                                 className="btn bg-indigo-600 hover:bg-indigo-700 text-white mt-4 inline-flex items-center gap-2"
                             >
                                 <Plus className="w-4 h-4" /> Create First Voucher
@@ -994,6 +1012,9 @@ export default function LaptopIssuancesPage() {
                                                     onClick={() => {
                                                         setEditingClassroomVoucher(voucher);
                                                         setClassroomForm({ ...voucher });
+                                                        labsAPI.getInventoryDevices({ currentVoucherId: voucher.id }).then(res => {
+                                                            if (res.data?.data?.devices) setInventoryDevices(res.data.data.devices);
+                                                        }).catch(() => {});
                                                         setShowClassroomModal(true);
                                                     }}
                                                     className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -1197,67 +1218,83 @@ export default function LaptopIssuancesPage() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
                                     <label className="label text-xs font-semibold">Room No. *</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        placeholder="e.g. 5 or 102"
-                                        value={classroomForm.roomNumber}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, roomNumber: e.target.value })}
-                                        className="input text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label text-xs font-semibold">Class / Section</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. 10-A or Smart Classroom"
-                                        value={classroomForm.classSection}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, classSection: e.target.value })}
-                                        className="input text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="label text-xs font-semibold">Academic Session</label>
                                     <select
-                                        value={classroomForm.academicSession}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, academicSession: e.target.value })}
-                                        className="input text-sm"
+                                        required
+                                        value={classroomForm.roomNumber}
+                                        onChange={(e) => handleRoomChange(e.target.value)}
+                                        className="input text-sm font-bold bg-white"
                                     >
-                                        <option value="2024-2025">2024-2025</option>
-                                        <option value="2025-2026">2025-2026</option>
-                                        <option value="2026-2027">2026-2027</option>
+                                        <option value="">Select Room...</option>
+                                        {classroomMappings.map(rm => (
+                                            <option key={rm.id || rm.roomNumber} value={rm.roomNumber}>
+                                                Room {rm.roomNumber} — {rm.roomName || rm.className || 'Classroom'}
+                                            </option>
+                                        ))}
                                     </select>
+                                </div>
+                                <div>
+                                    <label className="label text-xs font-semibold">Class / Section (Auto-selected)</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        disabled
+                                        placeholder="Auto-selected from room..."
+                                        value={classroomForm.classSection}
+                                        className="input text-sm bg-slate-100 text-slate-800 font-semibold cursor-not-allowed border-slate-200"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="label text-xs font-semibold">Academic Session (Current Active)</label>
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        disabled
+                                        value={currentAcademicYear?.yearLabel || classroomForm.academicSession || '2026-27'}
+                                        className="input text-sm bg-slate-100 text-slate-800 font-bold cursor-not-allowed border-slate-200"
+                                    />
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="label text-xs font-semibold">Staff / Incharge Name</label>
+                                    <label className="label text-xs font-semibold flex items-center justify-between">
+                                        <span>Staff / Incharge Name (Auto-assigned)</span>
+                                        <span className="text-[10px] text-emerald-600 font-bold uppercase flex items-center gap-1">
+                                            <Lock className="w-3 h-3" /> Locked
+                                        </span>
+                                    </label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. Sh. Harpreet Singh"
+                                        disabled
+                                        readOnly
+                                        placeholder="Class incharge auto-populated..."
                                         value={classroomForm.staffName}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, staffName: e.target.value })}
-                                        className="input text-sm"
+                                        className="input text-sm bg-slate-100 text-slate-800 font-bold cursor-not-allowed border-slate-200"
                                     />
                                 </div>
                                 <div>
                                     <label className="label text-xs font-semibold">Staff Designation</label>
                                     <input
                                         type="text"
-                                        placeholder="e.g. Class Incharge / PGT"
+                                        readOnly
+                                        disabled
                                         value={classroomForm.staffDesignation}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, staffDesignation: e.target.value })}
-                                        className="input text-sm"
+                                        className="input text-sm bg-slate-100 text-slate-700 cursor-not-allowed border-slate-200"
                                     />
                                 </div>
                                 <div>
-                                    <label className="label text-xs font-semibold">Date & Time</label>
+                                    <label className="label text-xs font-semibold flex items-center justify-between">
+                                        <span>Date & Time</span>
+                                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-semibold">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                            Live Running
+                                        </span>
+                                    </label>
                                     <input
                                         type="text"
-                                        value={classroomForm.dateStr}
-                                        onChange={(e) => setClassroomForm({ ...classroomForm, dateStr: e.target.value })}
-                                        className="input text-sm"
+                                        readOnly
+                                        value={classroomForm.dateStr || runningTime}
+                                        className="input text-sm font-mono bg-slate-50 text-slate-900 font-semibold border-slate-300"
                                     />
                                 </div>
                             </div>
@@ -1301,20 +1338,48 @@ export default function LaptopIssuancesPage() {
                                                         {index + 1}
                                                     </td>
                                                     <td className="p-1.5">
-                                                        <input
-                                                            type="text"
-                                                            required
-                                                            placeholder="e.g. Interactive Panel Acer 75 inch..."
-                                                            value={item.nomenclature}
-                                                            onChange={(e) => {
-                                                                const newItems = [...classroomForm.items];
-                                                                newItems[index].nomenclature = e.target.value;
-                                                                setClassroomForm({ ...classroomForm, items: newItems });
-                                                            }}
-                                                            className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-indigo-500 font-medium"
-                                                        />
+                                                        <div className="space-y-1">
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                placeholder="e.g. Interactive Panel Acer 75 inch..."
+                                                                value={item.nomenclature}
+                                                                onChange={(e) => {
+                                                                    const newItems = [...classroomForm.items];
+                                                                    newItems[index].nomenclature = e.target.value;
+                                                                    setClassroomForm({ ...classroomForm, items: newItems });
+                                                                }}
+                                                                className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:ring-1 focus:ring-indigo-500 font-medium"
+                                                            />
+                                                            {inventoryDevices.length > 0 && (
+                                                                <select
+                                                                    onChange={(e) => {
+                                                                        const devId = e.target.value;
+                                                                        if (!devId) return;
+                                                                        const dev = inventoryDevices.find(d => d.id === devId);
+                                                                        if (dev) {
+                                                                            const newItems = [...classroomForm.items];
+                                                                            newItems[index].nomenclature = `${dev.brand || ''} ${dev.modelNo || ''} (${dev.itemType?.toUpperCase() || 'EQUIPMENT'})`.trim();
+                                                                            newItems[index].serialNo = dev.serialNo || dev.itemNumber;
+                                                                            newItems[index].remarks = dev.lab?.name ? `From ${dev.lab.name}` : `Item #${dev.itemNumber}`;
+                                                                            setClassroomForm({ ...classroomForm, items: newItems });
+                                                                        }
+                                                                        e.target.value = '';
+                                                                    }}
+                                                                    className="w-full text-[11px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 text-slate-600 focus:bg-white"
+                                                                    defaultValue=""
+                                                                >
+                                                                    <option value="">⚡ Select from unassigned inventory devices ({inventoryDevices.length})...</option>
+                                                                    {inventoryDevices.map(dev => (
+                                                                        <option key={dev.id} value={dev.id}>
+                                                                            {dev.itemNumber}: {dev.brand} {dev.modelNo} ({dev.itemType}) — S/N: {dev.serialNo || 'No Serial'}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            )}
+                                                        </div>
                                                     </td>
-                                                    <td className="p-1.5">
+                                                    <td className="p-1.5 align-top">
                                                         <input
                                                             type="text"
                                                             placeholder="e.g. ZLA01SC... or Qty - 1"
@@ -1327,7 +1392,7 @@ export default function LaptopIssuancesPage() {
                                                             className="w-full px-2 py-1 border border-slate-200 rounded text-xs font-mono"
                                                         />
                                                     </td>
-                                                    <td className="p-1.5">
+                                                    <td className="p-1.5 align-top">
                                                         <input
                                                             type="text"
                                                             placeholder="Remarks / Placement..."
@@ -1340,7 +1405,7 @@ export default function LaptopIssuancesPage() {
                                                             className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-slate-600"
                                                         />
                                                     </td>
-                                                    <td className="p-1.5 text-center">
+                                                    <td className="p-1.5 text-center align-top">
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -1838,6 +1903,13 @@ export default function LaptopIssuancesPage() {
                         </div>
                     </div>
                 </div>
+            )}
+            {/* PDF Overlay Preview Modal */}
+            {previewVouchers && (
+                <ClassroomVoucherPdfModal
+                    vouchers={previewVouchers}
+                    onClose={() => setPreviewVouchers(null)}
+                />
             )}
         </div>
     );
