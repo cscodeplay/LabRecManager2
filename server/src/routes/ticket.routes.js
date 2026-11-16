@@ -441,7 +441,7 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
  * @access  Private (Admin/Lab Assistant)
  */
 router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant', 'instructor'), asyncHandler(async (req, res) => {
-    const { status, priority, assignedToId } = req.body;
+    const { status, priority, assignedToId, title, description, category, labId, itemId } = req.body;
 
     const ticket = await prisma.ticket.findUnique({ where: { id: req.params.id } });
     if (!ticket) {
@@ -452,13 +452,20 @@ router.put('/:id', authenticate, authorize('admin', 'principal', 'lab_assistant'
     if (status) updateData.status = status;
     if (priority) updateData.priority = priority;
     if (assignedToId !== undefined) updateData.assignedToId = assignedToId || null;
+    if (title && title.trim()) updateData.title = title.trim();
+    if (description && description.trim()) updateData.description = description.trim();
+    if (category) updateData.category = category;
+    if (labId !== undefined) updateData.labId = isValidUuid(labId) ? labId : null;
+    if (itemId !== undefined) updateData.itemId = isValidUuid(itemId) ? itemId : null;
 
     const updated = await prisma.ticket.update({
         where: { id: req.params.id },
         data: updateData,
         include: {
             createdBy: { select: { id: true, firstName: true, lastName: true } },
-            assignedTo: { select: { id: true, firstName: true, lastName: true } }
+            assignedTo: { select: { id: true, firstName: true, lastName: true } },
+            item: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, serialNo: true, specs: true } },
+            lab: { select: { id: true, name: true, roomNumber: true } }
         }
     });
 

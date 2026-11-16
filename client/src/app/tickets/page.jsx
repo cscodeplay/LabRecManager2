@@ -9,11 +9,67 @@ import {
     Ticket, Plus, Filter, Search, Clock, CheckCircle2, AlertCircle,
     MessageSquare, User, Monitor, Building2, ChevronRight, X, Send,
     Zap, Laptop, Server, Tv, Printer, Radio, Wifi, Copy, Check,
-    Calendar, Lock
+    Calendar, Lock, LayoutGrid, List, CheckSquare, Square,
+    ChevronDown, ChevronUp, Tag, Edit3, Eye, Trash2
 } from 'lucide-react';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
+
+const COMMON_DEVICE_ISSUES = {
+    interactive_panel: [
+        'Touch Sensor Unresponsive / Dead Spots',
+        'OPS Windows Module Not Booting',
+        'Display Blank / Flickering / HDMI Cable Fault',
+        'Stylus / Digital Pen Not Writing or Drawing',
+        'Built-in Speaker Audio Distortion or No Sound',
+        'Panel WiFi / LAN Disconnection',
+        'Whiteboard Application Freezing'
+    ],
+    pc: [
+        'No Display / Power LED On but Blank Screen',
+        'Blue Screen of Death (BSOD) / Boot Loop',
+        'RAM / Storage (SSD/HDD) Fault Alert',
+        'Keyboard or Mouse Unresponsive / USB Port Fault',
+        'Extreme System Lag / OS Freezing',
+        'LAN Cable Disconnected / No Internet'
+    ],
+    ups: [
+        'Continuous Beeping / Overload Alert',
+        'Battery Backup Depleted (< 2 mins runtime)',
+        'Output Sockets Not Supplying Power',
+        'Mains Input Fuse Blown / Not Charging'
+    ],
+    smart_camera: [
+        'Camera Not Detected by System',
+        'Blurry / Fuzzy Video Stream',
+        'Microphone Static Noise / No Audio Pickup',
+        'Wireless Mic Pairing Failure'
+    ],
+    projector: [
+        'Lamp Life Exhausted / Dim Projection',
+        'Overheating Warning / Auto Shutdown',
+        'Keystone Distortion / Focus Jammed',
+        'HDMI Port Loose / No Signal'
+    ],
+    tablet: [
+        'Touch Screen Cracked / Multi-Touch Glitch',
+        'Battery Swelling / Fast Drain',
+        'Charging Port Loose / Not Charging',
+        'Active Stylus Disconnected / Tip Damaged'
+    ],
+    printer: [
+        'Paper Jam in Roller Assembly',
+        'Toner / Ink Smudging / Low Cartridge',
+        'Network Print Spooler Stuck'
+    ],
+    other: [
+        'Hardware Power Failure',
+        'Cable / Port Physical Damage',
+        'Device Not Powering On',
+        'Frequent Disconnections'
+    ]
+};
 
 const ITEM_TYPE_LABELS = {
     pc: { label: 'Computer / Desktop', icon: '🖥️' },
@@ -74,6 +130,19 @@ export default function TicketsPage() {
     const [itemsLoading, setItemsLoading] = useState(false);
     const [studentProfile, setStudentProfile] = useState(null);
 
+    // View mode: 'grid' vs 'list'
+    const [ticketViewMode, setTicketViewMode] = useState('grid'); // 'grid' | 'list'
+
+    // Multi-device and search state
+    const [allSchoolItems, setAllSchoolItems] = useState([]);
+    const [selectedDevices, setSelectedDevices] = useState([]);
+    const [deviceSearchTerm, setDeviceSearchTerm] = useState('');
+    const [deviceDropdownOpen, setDeviceDropdownOpen] = useState(false);
+    const [selectedCommonIssues, setSelectedCommonIssues] = useState(new Set());
+    const [customVariety, setCustomVariety] = useState({ type: 'Remote Control', note: '' });
+    const [showVarietySection, setShowVarietySection] = useState(false);
+    const [editingTicketId, setEditingTicketId] = useState(null);
+
     // Filters
     const [statusFilter, setStatusFilter] = useState('all');
     const [priorityFilter, setPriorityFilter] = useState('');
@@ -101,11 +170,96 @@ export default function TicketsPage() {
         loadTickets();
         loadLabs();
         loadIssueTypes();
+        loadAllSchoolItems();
         // Load student profile to get assigned PC
         if (user?.role === 'student') {
             loadStudentProfile();
         }
     }, [_hasHydrated, isAuthenticated, statusFilter, priorityFilter, myTicketsOnly]);
+
+    const loadAllSchoolItems = async () => {
+        try {
+            const res = await labsAPI.listAllItems();
+            const items = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+            setAllSchoolItems(Array.isArray(items) ? items : []);
+        } catch {
+            setAllSchoolItems([]);
+        }
+    };
+
+    const toggleCommonIssue = (issueText) => {
+        setSelectedCommonIssues(prev => {
+            const next = new Set(prev);
+            if (next.has(issueText)) {
+                next.delete(issueText);
+                setForm(f => ({
+                    ...f,
+                    description: f.description.replace(`\n• ${issueText}`, '').replace(`• ${issueText}\n`, '').replace(`• ${issueText}`, '').trim()
+                }));
+            } else {
+                next.add(issueText);
+                setForm(f => ({
+                    ...f,
+                    title: f.title ? f.title : issueText,
+                    description: f.description ? `${f.description}\n• ${issueText}` : `• ${issueText}`
+                }));
+            }
+            return next;
+        });
+    };
+
+    const toggleSelectDevice = (item) => {
+        setSelectedDevices(prev => {
+            const exists = prev.some(d => d.id === item.id);
+            const next = exists ? prev.filter(d => d.id !== item.id) : [...prev, item];
+            const primary = next[0];
+            setForm(f => ({
+                ...f,
+                itemId: primary ? primary.id : '',
+                itemType: primary ? primary.itemType : f.itemType,
+                labId: primary?.lab?.id || primary?.labId || f.labId
+            }));
+            return next;
+        });
+    };
+
+    const handleAddVariety = () => {
+        if (!customVariety.note.trim()) {
+            toast.error('Please enter a note for the component fault');
+            return;
+        }
+        const varietyText = `[${customVariety.type}]: ${customVariety.note.trim()}`;
+        setForm(f => ({
+            ...f,
+            description: f.description ? `${f.description}\n• ${varietyText}` : `• ${varietyText}`
+        }));
+        setCustomVariety({ type: customVariety.type || 'Remote Control', note: '' });
+        toast.success('Variety added to issue details');
+    };
+
+        const handleOpenEdit = (ticket) => {
+        setEditingTicketId(ticket.id);
+        setForm({
+            title: ticket.title || '',
+            description: ticket.description || '',
+            category: ticket.category || 'hardware_issue',
+            priority: ticket.priority || 'medium',
+            labId: ticket.lab?.id || ticket.labId || '',
+            itemType: ticket.item?.itemType || '',
+            itemId: ticket.item?.id || ticket.itemId || '',
+            issueTypeId: ticket.issueTypeId || ''
+        });
+        if (ticket.item) {
+            setSelectedDevices([ticket.item]);
+        } else {
+            setSelectedDevices([]);
+        }
+        setSelectedCommonIssues(new Set());
+        setDeviceSearchTerm('');
+        setShowVarietySection(false);
+        setShowDetailModal(false);
+        setShowCreateModal(true);
+    };
 
     const loadStudentProfile = async () => {
         try {
@@ -183,9 +337,17 @@ export default function TicketsPage() {
         }
 
         try {
+            let finalDescription = form.description.trim();
+            if (selectedDevices.length > 0) {
+                const devStrings = selectedDevices.map(d => `${d.itemNumber} (SN: ${d.serialNo || 'N/A'}, ${d.brand || ''} ${d.modelNo || ''})`).join(', ');
+                if (!finalDescription.includes('Device(s):')) {
+                    finalDescription = `${finalDescription}\n\nDevice(s): ${devStrings}`;
+                }
+            }
+
             const data = {
                 title: form.title.trim(),
-                description: form.description.trim(),
+                description: finalDescription,
                 category: form.category || 'other',
                 priority: form.priority || 'medium',
                 academicYearId: (selectedSessionId && selectedSessionId !== 'all') ? selectedSessionId : undefined
@@ -202,11 +364,22 @@ export default function TicketsPage() {
             }
             if (form.issueTypeId && form.issueTypeId.trim()) data.issueTypeId = form.issueTypeId.trim();
 
-            const res = await ticketsAPI.create(data);
-            const tNumber = res.data?.data?.ticket?.ticketNumber || res.data?.ticket?.ticketNumber || 'CREATED';
-            toast.success(`Ticket ${tNumber} created successfully!`);
+            if (editingTicketId) {
+                await ticketsAPI.update(editingTicketId, data);
+                toast.success('Ticket updated successfully!');
+            } else {
+                const res = await ticketsAPI.create(data);
+                const tNumber = res.data?.data?.ticket?.ticketNumber || res.data?.ticket?.ticketNumber || 'CREATED';
+                toast.success(`Ticket ${tNumber} created successfully!`);
+            }
             setShowCreateModal(false);
+            setEditingTicketId(null);
             setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemType: '', itemId: '', issueTypeId: '' });
+            setSelectedDevices([]);
+            setSelectedCommonIssues(new Set());
+            setDeviceSearchTerm('');
+            setCustomVariety({ type: 'Remote Control', note: '' });
+            setShowVarietySection(false);
             loadTickets();
         } catch (error) {
             const msg = error.response?.data?.message || (error.response?.data?.errors && error.response.data.errors[0]?.msg) || error.message || 'Failed to create ticket';
@@ -262,10 +435,19 @@ export default function TicketsPage() {
         }
     };
 
-    const filteredTickets = tickets.filter(t =>
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.ticketNumber.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredTickets = tickets.filter(t => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+            t.title?.toLowerCase().includes(q) ||
+            t.ticketNumber?.toLowerCase().includes(q) ||
+            t.description?.toLowerCase().includes(q) ||
+            t.item?.itemNumber?.toLowerCase().includes(q) ||
+            t.item?.serialNo?.toLowerCase().includes(q) ||
+            t.lab?.name?.toLowerCase().includes(q) ||
+            `${t.createdBy?.firstName || ''} ${t.createdBy?.lastName || ''}`.toLowerCase().includes(q)
+        );
+    });
 
     const isAdmin = ['admin', 'principal', 'lab_assistant'].includes(user?.role);
 
@@ -290,8 +472,39 @@ export default function TicketsPage() {
             <div className="max-w-7xl mx-auto px-4">
                 {/* Actions Row below Tab Bar (Right-most Create Ticket Icon) */}
                 <div className="flex items-center justify-between gap-4 mb-4">
-                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        All Tickets ({filteredTickets.length})
+                    <div className="flex items-center gap-3">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                            All Tickets ({filteredTickets.length})
+                        </div>
+                        {/* View Switcher: Grid vs List */}
+                        <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                            <button
+                                type="button"
+                                onClick={() => setTicketViewMode('grid')}
+                                className={`p-1.5 rounded-md transition-colors ${
+                                    ticketViewMode === 'grid'
+                                        ? 'bg-white text-primary-600 shadow-xs font-bold'
+                                        : 'text-slate-500 hover:text-slate-900'
+                                }`}
+                                title="Grid View (Cards)"
+                                aria-label="Grid View"
+                            >
+                                <LayoutGrid className="w-4 h-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTicketViewMode('list')}
+                                className={`p-1.5 rounded-md transition-colors ${
+                                    ticketViewMode === 'list'
+                                        ? 'bg-white text-primary-600 shadow-xs font-bold'
+                                        : 'text-slate-500 hover:text-slate-900'
+                                }`}
+                                title="List View (Table)"
+                                aria-label="List View"
+                            >
+                                <List className="w-4 h-4" />
+                            </button>
+                        </div>
                     </div>
                     <button
                         onClick={() => {
@@ -299,6 +512,12 @@ export default function TicketsPage() {
                                 toast.error('Cannot create tickets in historical / read-only session mode');
                                 return;
                             }
+                            setEditingTicketId(null);
+                            setForm({ title: '', description: '', category: 'hardware_issue', priority: 'medium', labId: '', itemType: '', itemId: '', issueTypeId: '' });
+                            setSelectedDevices([]);
+                            setSelectedCommonIssues(new Set());
+                            setDeviceSearchTerm('');
+                            setShowVarietySection(false);
                             setShowCreateModal(true);
                         }}
                         className={`p-2.5 px-4 rounded-xl transition shadow-xs flex items-center gap-2 font-medium text-sm ${isReadOnlyMode ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-700 text-white'}`}
@@ -366,65 +585,201 @@ export default function TicketsPage() {
                         <Ticket className="w-16 h-16 text-slate-300 mx-auto mb-4" />
                         <p className="text-slate-500">No tickets found</p>
                     </div>
+                ) : ticketViewMode === 'list' ? (
+                    /* Table / Column View */
+                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                                    <tr>
+                                        <th className="py-3 px-4">Ticket #</th>
+                                        <th className="py-3 px-4">Status & Priority</th>
+                                        <th className="py-3 px-4">Title & Issue</th>
+                                        <th className="py-3 px-4">Location / Lab</th>
+                                        <th className="py-3 px-4">Hardware & S/N</th>
+                                        <th className="py-3 px-4">Session</th>
+                                        <th className="py-3 px-4">Reported By</th>
+                                        <th className="py-3 px-4">Date</th>
+                                        <th className="py-3 px-4 text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {filteredTickets.map(ticket => (
+                                        <tr
+                                            key={ticket.id}
+                                            onClick={() => openDetail(ticket)}
+                                            className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                                        >
+                                            <td className="py-3 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
+                                                {ticket.ticketNumber}
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${statusColors[ticket.status]}`}>
+                                                        {ticket.status.replace('_', ' ').toUpperCase()}
+                                                    </span>
+                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${priorityColors[ticket.priority]}`}>
+                                                        {ticket.priority.toUpperCase()}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="py-3 px-4 max-w-xs">
+                                                <div className="font-semibold text-slate-900 line-clamp-1">{ticket.title}</div>
+                                                <div className="text-slate-500 text-[11px] line-clamp-1">{ticket.description}</div>
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap">
+                                                {ticket.lab ? (
+                                                    <span className="flex items-center gap-1 text-slate-700">
+                                                        <Building2 size={13} className="text-slate-400 shrink-0" />
+                                                        <span>{ticket.lab.name} {ticket.lab.roomNumber ? `(${ticket.lab.roomNumber})` : ''}</span>
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 italic">—</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap">
+                                                {ticket.item ? (
+                                                    <div className="flex items-center gap-1.5 font-mono text-[11px] bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                                                        <span>{ITEM_TYPE_LABELS[ticket.item.itemType]?.icon || '📦'} {ticket.item.itemNumber}</span>
+                                                        {ticket.item.serialNo && (
+                                                            <span className="text-primary-700 font-bold">• S/N: {ticket.item.serialNo}</span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-400 italic">—</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap">
+                                                {ticket.academicYear ? (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
+                                                        <Calendar size={11} />
+                                                        {ticket.academicYear.yearLabel}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-slate-400 italic">—</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                                                <span className="flex items-center gap-1">
+                                                    <User size={13} className="text-slate-400 shrink-0" />
+                                                    <span>{ticket.createdBy?.firstName} {ticket.createdBy?.lastName}</span>
+                                                </span>
+                                            </td>
+                                            <td className="py-3 px-4 whitespace-nowrap text-slate-500 font-mono text-[11px]">
+                                                {formatDate(ticket.createdAt)}
+                                            </td>
+                                            <td className="py-3 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                                <div className="flex items-center justify-center gap-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openDetail(ticket)}
+                                                        className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                                                        title="View Ticket Details"
+                                                    >
+                                                        <Eye size={15} />
+                                                    </button>
+                                                    {isAdmin && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenEdit(ticket)}
+                                                            className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                                                            title="Edit Ticket"
+                                                        >
+                                                            <Edit3 size={15} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 ) : (
-                    <div className="space-y-3">
+                    /* Grid / Cards View */
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {filteredTickets.map((ticket) => (
                             <div
                                 key={ticket.id}
                                 onClick={() => openDetail(ticket)}
-                                className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition cursor-pointer"
+                                className="bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md transition cursor-pointer flex flex-col justify-between"
                             >
-                                <div className="flex items-start justify-between gap-4">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-xs font-mono text-slate-400">{ticket.ticketNumber}</span>
-                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${statusColors[ticket.status]}`}>
+                                <div>
+                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-mono font-bold text-slate-500">{ticket.ticketNumber}</span>
+                                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${statusColors[ticket.status]}`}>
                                                 {ticket.status.replace('_', ' ').toUpperCase()}
                                             </span>
-                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${priorityColors[ticket.priority]}`}>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${priorityColors[ticket.priority]}`}>
                                                 {ticket.priority.toUpperCase()}
                                             </span>
-                                            {ticket.academicYear && (
-                                                <span className="flex items-center gap-1 text-[11px] font-medium text-primary-700 bg-primary-50 px-2 py-0.5 rounded border border-primary-200">
-                                                    <Calendar size={11} />
-                                                    {ticket.academicYear.yearLabel}
-                                                </span>
-                                            )}
                                         </div>
-                                        <h3 className="font-semibold text-slate-800 mb-1">{ticket.title}</h3>
-                                        <p className="text-sm text-slate-500 line-clamp-1">{ticket.description}</p>
-                                        <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-slate-500">
-                                            <span className="flex items-center gap-1">
-                                                <User size={14} />
-                                                {ticket.createdBy?.firstName} {ticket.createdBy?.lastName}
-                                            </span>
-                                            {ticket.lab && (
-                                                <span className="flex items-center gap-1">
-                                                    <Building2 size={14} />
-                                                    {ticket.lab.name} {ticket.lab.roomNumber ? `(${ticket.lab.roomNumber})` : ''}
-                                                </span>
-                                            )}
-                                            {ticket.item && (
-                                                <span className="flex items-center gap-1.5 font-mono text-[11px] bg-slate-100 px-2 py-0.5 rounded text-slate-700 border border-slate-200">
-                                                    <span>{ITEM_TYPE_LABELS[ticket.item.itemType]?.icon || '📦'} {ticket.item.itemNumber}</span>
-                                                    {ticket.item.serialNo && (
-                                                        <span className="text-slate-500 font-semibold">• SN: {ticket.item.serialNo}</span>
-                                                    )}
-                                                </span>
-                                            )}
-                                            <span className="flex items-center gap-1">
-                                                <Clock size={14} />
-                                                {formatDate(ticket.createdAt)}
-                                            </span>
-                                            {ticket._count?.comments > 0 && (
-                                                <span className="flex items-center gap-1">
-                                                    <MessageSquare size={14} />
-                                                    {ticket._count.comments}
-                                                </span>
+                                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                                            <button
+                                                type="button"
+                                                onClick={() => openDetail(ticket)}
+                                                className="p-1 text-slate-400 hover:text-primary-600 rounded"
+                                                title="View Details"
+                                            >
+                                                <Eye size={15} />
+                                            </button>
+                                            {isAdmin && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleOpenEdit(ticket)}
+                                                    className="p-1 text-slate-400 hover:text-primary-600 rounded"
+                                                    title="Edit Ticket"
+                                                >
+                                                    <Edit3 size={15} />
+                                                </button>
                                             )}
                                         </div>
                                     </div>
-                                    <ChevronRight className="text-slate-400" />
+                                    <h3 className="font-semibold text-slate-800 mb-1">{ticket.title}</h3>
+                                    <p className="text-xs text-slate-500 line-clamp-2 mb-3">{ticket.description}</p>
+                                </div>
+
+                                <div className="space-y-2 pt-2 border-t border-slate-100">
+                                    {ticket.item && (
+                                        <div className="flex items-center gap-1.5 font-mono text-[11px] bg-slate-50 px-2 py-1 rounded border border-slate-200 text-slate-700">
+                                            <span>{ITEM_TYPE_LABELS[ticket.item.itemType]?.icon || '📦'} {ticket.item.itemNumber}</span>
+                                            {ticket.item.serialNo && (
+                                                <span className="text-primary-700 font-bold">• SN: {ticket.item.serialNo}</span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                                        <span className="flex items-center gap-1">
+                                            <User size={13} className="text-slate-400" />
+                                            <span>{ticket.createdBy?.firstName} {ticket.createdBy?.lastName}</span>
+                                        </span>
+                                        {ticket.lab && (
+                                            <span className="flex items-center gap-1">
+                                                <Building2 size={13} className="text-slate-400" />
+                                                <span>{ticket.lab.name}</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                                        <span className="flex items-center gap-1">
+                                            <Clock size={12} />
+                                            {formatDate(ticket.createdAt)}
+                                        </span>
+                                        {ticket.academicYear && (
+                                            <span className="flex items-center gap-1 text-primary-700 font-medium">
+                                                <Calendar size={11} />
+                                                {ticket.academicYear.yearLabel}
+                                            </span>
+                                        )}
+                                        {ticket._count?.comments > 0 && (
+                                            <span className="flex items-center gap-1 text-slate-500">
+                                                <MessageSquare size={12} />
+                                                {ticket._count.comments}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -437,8 +792,8 @@ export default function TicketsPage() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between p-4 border-b">
-                            <h2 className="text-xl font-bold">Create New Ticket</h2>
-                            <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
+                            <h2 className="text-xl font-bold">{editingTicketId ? 'Edit Support Ticket' : 'Create New Ticket'}</h2>
+                            <button onClick={() => { setShowCreateModal(false); setEditingTicketId(null); }} className="text-slate-400 hover:text-slate-600">
                                 <X size={24} />
                             </button>
                         </div>
@@ -531,123 +886,293 @@ export default function TicketsPage() {
                                 </div>
                             )}
 
-                            {/* Lab, Item Type & Serial No. Selection */}
+                            {/* Searchable Multi-Select Device Picker, Dynamic Common Issues & Varieties */}
                             {user?.role !== 'student' && (form.category === 'hardware_issue' || form.category === 'software_issue' || form.category === 'maintenance_request') && (
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">
-                                            Lab Location {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '*' : '(Optional)'}
-                                        </label>
-                                        <select
-                                            value={form.labId}
-                                            onChange={(e) => setForm({ ...form, labId: e.target.value, itemType: '', itemId: '' })}
-                                            className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
-                                        >
-                                            <option value="">Select a lab...</option>
-                                            {labs.map(lab => (
-                                                <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(Room ${lab.roomNumber})` : ''}</option>
-                                            ))}
-                                        </select>
+                                <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* 1. Optional Lab Location Filter */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                Lab Location {(form.category === 'hardware_issue' || form.category === 'software_issue') ? '(Filter)' : '(Optional)'}
+                                            </label>
+                                            <select
+                                                value={form.labId}
+                                                onChange={(e) => {
+                                                    setForm({ ...form, labId: e.target.value });
+                                                }}
+                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500"
+                                            >
+                                                <option value="">All Labs / Whole School Inventory</option>
+                                                {labs.map(lab => (
+                                                    <option key={lab.id} value={lab.id}>{lab.name} {lab.roomNumber ? `(Room ${lab.roomNumber})` : ''}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* 2. Optional Item Type Filter */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-700 mb-1">
+                                                Filter Equipment Type
+                                            </label>
+                                            <select
+                                                value={form.itemType}
+                                                onChange={(e) => setForm({ ...form, itemType: e.target.value })}
+                                                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500"
+                                            >
+                                                <option value="">All Equipment Types</option>
+                                                {Object.entries(ITEM_TYPE_LABELS).map(([typeKey, info]) => (
+                                                    <option key={typeKey} value={typeKey}>
+                                                        {info.icon} {info.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
 
-                                    {/* Item Type & Serial No. selectors (Active when Lab is chosen) */}
-                                    {form.labId && (
-                                        <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                {/* 1. Item Type Selector */}
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                        Filter by Equipment / Item Type
-                                                    </label>
-                                                    <select
-                                                        value={form.itemType}
-                                                        onChange={(e) => setForm({ ...form, itemType: e.target.value, itemId: '' })}
-                                                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500"
+                                    {/* 3. Searchable Multi-Select Device Selector */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-xs font-semibold text-slate-700">
+                                                Search & Select Devices (by Serial No. or Name)
+                                            </label>
+                                            {selectedDevices.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedDevices([])}
+                                                    className="text-[11px] text-rose-600 hover:underline"
+                                                >
+                                                    Clear ({selectedDevices.length})
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Selected Devices Chips */}
+                                        {selectedDevices.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 mb-2 p-2 bg-white rounded-lg border border-primary-200">
+                                                {selectedDevices.map(dev => (
+                                                    <span
+                                                        key={dev.id}
+                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-primary-50 border border-primary-300 text-primary-900 shadow-2xs"
                                                     >
-                                                        <option value="">All Item Types ({labItems.length} items)</option>
-                                                        {Array.from(new Set(labItems.map(i => i.itemType))).filter(Boolean).map(type => (
-                                                            <option key={type} value={type}>
-                                                                {ITEM_TYPE_LABELS[type]?.icon || '📦'} {ITEM_TYPE_LABELS[type]?.label || type} ({labItems.filter(i => i.itemType === type).length})
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-
-                                                {/* 2. Serial No. / Item Selector */}
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                                                        Serial Number & Hardware Item *
-                                                    </label>
-                                                    {itemsLoading ? (
-                                                        <div className="text-xs text-slate-500 py-2">Loading items...</div>
-                                                    ) : labItems.length === 0 ? (
-                                                        <div className="text-xs text-amber-600 py-2">No items found in this lab</div>
-                                                    ) : (
-                                                        <select
-                                                            value={form.itemId}
-                                                            onChange={(e) => {
-                                                                const selected = labItems.find(i => i.id === e.target.value);
-                                                                setForm({
-                                                                    ...form,
-                                                                    itemId: e.target.value,
-                                                                    itemType: selected ? selected.itemType : form.itemType
-                                                                });
-                                                            }}
-                                                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-primary-500 font-mono"
+                                                        <span>{ITEM_TYPE_LABELS[dev.itemType]?.icon || '📦'}</span>
+                                                        <span className="font-semibold">{dev.itemNumber}</span>
+                                                        <span className="font-mono text-[11px] font-bold bg-white px-1.5 py-0.5 rounded border border-primary-200 text-slate-800">
+                                                            SN: {dev.serialNo || 'N/A'}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSelectDevice(dev)}
+                                                            className="text-primary-500 hover:text-rose-600 ml-0.5"
+                                                            title="Remove device"
                                                         >
-                                                            <option value="">-- Select by Serial No. / Item ID --</option>
-                                                            {labItems
-                                                                .filter(item => !form.itemType || form.itemType === 'all' || item.itemType === form.itemType)
-                                                                .map(item => (
-                                                                    <option key={item.id} value={item.id}>
-                                                                        {item.itemNumber} • SN: {item.serialNo || 'N/A'}{item.brand ? ` (${item.brand} ${item.modelNo || ''})` : ''}
-                                                                    </option>
-                                                                ))}
-                                                        </select>
-                                                    )}
-                                                </div>
+                                                            <X size={13} />
+                                                        </button>
+                                                    </span>
+                                                ))}
                                             </div>
+                                        )}
 
-                                            {/* 3. Selected Item Preview Card */}
-                                            {form.itemId && (() => {
-                                                const sel = labItems.find(i => i.id === form.itemId);
-                                                if (!sel) return null;
+                                        {/* Search Input Box */}
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                                            <input
+                                                type="text"
+                                                value={deviceSearchTerm}
+                                                onChange={(e) => {
+                                                    setDeviceSearchTerm(e.target.value);
+                                                    setDeviceDropdownOpen(true);
+                                                }}
+                                                onFocus={() => setDeviceDropdownOpen(true)}
+                                                placeholder="Type Serial Number, Brand, or Item Number (e.g. ZLA01SC..., Acer, PC)..."
+                                                className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 font-sans"
+                                            />
+                                            {deviceSearchTerm && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setDeviceSearchTerm('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            )}
+
+                                            {/* Results Dropdown */}
+                                            {deviceDropdownOpen && (() => {
+                                                const selectablePool = form.labId
+                                                    ? (labItems.length > 0 ? labItems : allSchoolItems.filter(i => (i.labId || i.lab?.id) === form.labId))
+                                                    : allSchoolItems;
+                                                const searchedItems = selectablePool.filter(item => {
+                                                    if (form.itemType && item.itemType !== form.itemType) return false;
+                                                    if (!deviceSearchTerm.trim()) return true;
+                                                    const term = deviceSearchTerm.toLowerCase();
+                                                    return (
+                                                        item.itemNumber?.toLowerCase().includes(term) ||
+                                                        item.serialNo?.toLowerCase().includes(term) ||
+                                                        item.brand?.toLowerCase().includes(term) ||
+                                                        item.modelNo?.toLowerCase().includes(term) ||
+                                                        item.itemType?.toLowerCase().includes(term) ||
+                                                        item.lab?.name?.toLowerCase().includes(term)
+                                                    );
+                                                });
+
                                                 return (
-                                                    <div className="p-3 bg-white rounded-lg border border-primary-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs animate-in fade-in">
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-2 font-semibold text-slate-900">
-                                                                <span>{ITEM_TYPE_LABELS[sel.itemType]?.icon || '📦'} {sel.itemNumber}</span>
-                                                                <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] uppercase font-bold">
-                                                                    {sel.itemType}
-                                                                </span>
-                                                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${sel.status === 'faulty' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                                                                    {sel.status}
-                                                                </span>
-                                                            </div>
-                                                            <div className="text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
-                                                                <span>Brand: <strong>{sel.brand || 'Standard'}</strong> {sel.modelNo || ''}</span>
-                                                                {sel.specs?.linked_desktop_item_number && (
-                                                                    <span>Linked PC: <strong>{sel.specs.linked_desktop_item_number}</strong></span>
-                                                                )}
-                                                                {sel.specs?.linked_ups_item_number && (
-                                                                    <span>Linked UPS: <strong>{sel.specs.linked_ups_item_number}</strong></span>
-                                                                )}
-                                                                {sel.specs?.capacity && (
-                                                                    <span>Capacity: <strong>{sel.specs.capacity}</strong></span>
-                                                                )}
-                                                            </div>
+                                                    <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-lg z-30 divide-y divide-slate-100">
+                                                        <div className="p-2 bg-slate-50 flex items-center justify-between text-[11px] text-slate-500 sticky top-0 border-b border-slate-200 z-10">
+                                                            <span>Matching Equipment ({searchedItems.length})</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setDeviceDropdownOpen(false)}
+                                                                className="text-primary-600 hover:underline font-semibold"
+                                                            >
+                                                                Done
+                                                            </button>
                                                         </div>
-                                                        <div className="flex items-center gap-2 self-start sm:self-center bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
-                                                            <span className="text-[10px] text-slate-400 font-bold uppercase">Serial No:</span>
-                                                            <span className="font-mono font-bold text-slate-800 text-xs select-all">
-                                                                {sel.serialNo || 'N/A'}
-                                                            </span>
-                                                        </div>
+                                                        {searchedItems.length === 0 ? (
+                                                            <div className="p-4 text-center text-xs text-slate-400">
+                                                                No matching equipment found for &quot;{deviceSearchTerm}&quot;
+                                                            </div>
+                                                        ) : (
+                                                            searchedItems.slice(0, 50).map(item => {
+                                                                const isSelected = selectedDevices.some(d => d.id === item.id);
+                                                                return (
+                                                                    <div
+                                                                        key={item.id}
+                                                                        onClick={() => toggleSelectDevice(item)}
+                                                                        className={`p-2.5 flex items-center justify-between gap-3 text-xs hover:bg-slate-50 cursor-pointer transition ${isSelected ? 'bg-primary-50/70 font-medium' : ''}`}
+                                                                    >
+                                                                        <div className="flex items-center gap-2 min-w-0">
+                                                                            {isSelected ? (
+                                                                                <CheckSquare size={16} className="text-primary-600 shrink-0" />
+                                                                            ) : (
+                                                                                <Square size={16} className="text-slate-300 shrink-0" />
+                                                                            )}
+                                                                            <span className="text-sm shrink-0">{ITEM_TYPE_LABELS[item.itemType]?.icon || '📦'}</span>
+                                                                            <div className="truncate">
+                                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                    <span className="font-semibold text-slate-800">{item.itemNumber}</span>
+                                                                                    <span className="text-slate-400 text-[11px]">({ITEM_TYPE_LABELS[item.itemType]?.label || item.itemType})</span>
+                                                                                    {item.brand && (
+                                                                                        <span className="text-slate-500 text-[11px]">{item.brand} {item.modelNo || ''}</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                                            <span className="font-mono text-[11px] font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-800 border border-slate-200">
+                                                                                SN: {item.serialNo || 'N/A'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
                                                     </div>
                                                 );
                                             })()}
                                         </div>
-                                    )}
+                                    </div>
+
+                                    {/* 4. Dynamic Common Issues Checklist */}
+                                    {(() => {
+                                        const relevantTypes = selectedDevices.length > 0
+                                            ? Array.from(new Set(selectedDevices.map(d => d.itemType))).filter(Boolean)
+                                            : (form.itemType ? [form.itemType] : ['interactive_panel']);
+
+                                        return (
+                                            <div className="space-y-2 p-3 bg-amber-50/60 border border-amber-200 rounded-xl">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+                                                        <Zap size={14} className="text-amber-600" />
+                                                        <span>Common Issues for Selected Device(s)</span>
+                                                    </div>
+                                                    <span className="text-[10px] text-amber-700">Click to append to details</span>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                                                    {relevantTypes.map(t => {
+                                                        const issues = COMMON_DEVICE_ISSUES[t] || COMMON_DEVICE_ISSUES.other;
+                                                        return issues.map(iss => {
+                                                            const isSelected = selectedCommonIssues.has(iss);
+                                                            return (
+                                                                <button
+                                                                    key={iss}
+                                                                    type="button"
+                                                                    onClick={() => toggleCommonIssue(iss)}
+                                                                    className={`px-2.5 py-1 rounded-lg text-xs transition border flex items-center gap-1.5 text-left ${
+                                                                        isSelected
+                                                                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-medium'
+                                                                            : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300 hover:bg-amber-50/50'
+                                                                    }`}
+                                                                >
+                                                                    {isSelected ? <Check size={12} /> : <Plus size={12} className="text-slate-400" />}
+                                                                    <span>{iss}</span>
+                                                                </button>
+                                                            );
+                                                        });
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {/* 5. Custom Varieties & Accessories Fault Section */}
+                                    <div className="border border-slate-200 rounded-xl p-3 bg-white space-y-2.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowVarietySection(!showVarietySection)}
+                                            className="w-full flex items-center justify-between text-xs font-semibold text-slate-700 hover:text-slate-900"
+                                        >
+                                            <span className="flex items-center gap-1.5">
+                                                <Tag size={14} className="text-primary-600" />
+                                                <span>Add Device Varieties / Accessories Faults (Stylus, Remote, Cables, etc.)</span>
+                                            </span>
+                                            {showVarietySection ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                        </button>
+
+                                        {showVarietySection && (
+                                            <div className="pt-2 border-t border-slate-200 space-y-2">
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Accessory / Component</label>
+                                                        <select
+                                                            value={customVariety.type}
+                                                            onChange={(e) => setCustomVariety({ ...customVariety, type: e.target.value })}
+                                                            className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                                        >
+                                                            <option value="Remote Control">Remote Control for Interactive Panel</option>
+                                                            <option value="Digitizer Stylus">Digitizer Stylus / Digital Pen</option>
+                                                            <option value="Extended Pointer">Extended Pointer</option>
+                                                            <option value="HDMI Cable">HDMI Cable (1m/3m/5m)</option>
+                                                            <option value="USB Cable">USB Type-A / Type-C Data Cable</option>
+                                                            <option value="Power Adapter">Power Cable / Adapter</option>
+                                                            <option value="Shutter Keys">Key Pairs for Shutter / Panel Enclosure</option>
+                                                            <option value="Webcam Cable">Webcam Cable / Mount Stand</option>
+                                                            <option value="Wireless Mic">Wireless Microphone & Receiver</option>
+                                                            <option value="Other Accessory">Other Component / Accessory</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[11px] font-medium text-slate-600 mb-1">Fault Note / Observation</label>
+                                                        <div className="flex gap-1.5">
+                                                            <input
+                                                                type="text"
+                                                                value={customVariety.note}
+                                                                onChange={(e) => setCustomVariety({ ...customVariety, note: e.target.value })}
+                                                                placeholder="e.g. Broken nib, loose connector"
+                                                                className="flex-1 px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleAddVariety}
+                                                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-medium hover:bg-primary-700 transition"
+                                                            >
+                                                                Add
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
@@ -679,7 +1204,7 @@ export default function TicketsPage() {
                                 <button
                                     type="submit"
                                     className="p-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition shadow-sm"
-                                    title="Create Ticket"
+                                    title={editingTicketId ? "Save Ticket Changes" : "Create Ticket"}
                                 >
                                     <CheckCircle2 className="w-5 h-5" />
                                 </button>
@@ -706,9 +1231,21 @@ export default function TicketsPage() {
                                 </div>
                                 <h2 className="text-xl font-bold">{selectedTicket.title}</h2>
                             </div>
-                            <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600">
-                                <X size={24} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {isAdmin && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenEdit(selectedTicket)}
+                                        className="p-1.5 text-slate-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition"
+                                        title="Edit Ticket"
+                                    >
+                                        <Edit3 size={18} />
+                                    </button>
+                                )}
+                                <button onClick={() => setShowDetailModal(false)} className="text-slate-400 hover:text-slate-600" title="Close">
+                                    <X size={24} />
+                                </button>
+                            </div>
                         </div>
 
                         {detailLoading ? (

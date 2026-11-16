@@ -8,7 +8,8 @@ import {
     Share2, Mail, MessageCircle, Printer, User, Calendar,
     CheckCircle, Clock, AlertTriangle, X, Camera, Copy,
     Tv, Tablet, Sparkles, CheckSquare, Square, Edit2, Trash2,
-    Eye, Download, Building, Users, Check, Info, Lock
+    Eye, Download, Building, Users, Check, Info, Lock,
+    LayoutGrid, List
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { labsAPI, classesAPI } from '@/lib/api';
@@ -19,24 +20,24 @@ import GreenSegmentedSpinner from '@/components/GreenSegmentedSpinner';
 import { formatDate, formatDateTime } from '@/lib/dateUtils';
 
 const STANDARD_INTERACTIVE_PANEL_ITEMS = [
-    { sNo: 1, nomenclature: 'Interactive Panel Acer 75 inch 32GB/4GB Android', serialNo: 'ZLA01SC018502004494700', remarks: 'Panel is secured inside ALUMINIUM shutter' },
-    { sNo: 2, nomenclature: 'OPS computer 256GB/8GB (back panel) Win 11 Pro', serialNo: '', remarks: 'OPS is installed behind the Panel' },
-    { sNo: 3, nomenclature: 'Logitech Webcam 4K MX BRIO with Type - C cable', serialNo: '2335LZ53DEQ', remarks: '' },
-    { sNo: 4, nomenclature: 'Digitek DWM 101 Pro Wireless Microphone', serialNo: '8906038531207', remarks: '' },
-    { sNo: 5, nomenclature: 'UPS 1600 VA MICROTEK', serialNo: '24I0U1704Q05020174', remarks: '' },
-    { sNo: 6, nomenclature: 'Type A to USB cable(1 m)', serialNo: 'Qty -1', remarks: 'Data cable for PC' },
-    { sNo: 7, nomenclature: 'HDMI cable (1m)', serialNo: 'Qty - 1', remarks: 'Video Cable for PC' },
-    { sNo: 8, nomenclature: 'Remote Control for Panel with AAA x 2 batteries', serialNo: 'Qty - 1', remarks: 'For Panel' },
-    { sNo: 9, nomenclature: '1 x Extended Pointers', serialNo: 'Qty -1', remarks: 'For writing' },
-    { sNo: 10, nomenclature: '2 x Digitizer Stylus for writing', serialNo: 'Qty - 2', remarks: 'For writing' },
-    { sNo: 11, nomenclature: '3 x key pairs for shutters', serialNo: 'Qty -3 pairs', remarks: 'for shutter 4 locks' }
+    { sNo: 1, nomenclature: 'Interactive Panel Acer 75 inch 32GB/4GB Android', serialNo: 'ZLA01SC018502004494700', quantity: 1, remarks: 'Panel is secured inside ALUMINIUM shutter' },
+    { sNo: 2, nomenclature: 'OPS computer 256GB/8GB (back panel) Win 11 Pro', serialNo: '-', quantity: 1, remarks: 'OPS is installed behind the Panel' },
+    { sNo: 3, nomenclature: 'Logitech Webcam 4K MX BRIO with Type - C cable', serialNo: '2335LZ53DEQ', quantity: 1, remarks: '' },
+    { sNo: 4, nomenclature: 'Digitek DWM 101 Pro Wireless Microphone', serialNo: '8906038531207', quantity: 1, remarks: '' },
+    { sNo: 5, nomenclature: 'UPS 1600 VA MICROTEK', serialNo: '24I0U1704Q05020174', quantity: 1, remarks: '' },
+    { sNo: 6, nomenclature: 'Type A to USB cable(1 m)', serialNo: '-', quantity: 1, remarks: 'Data cable for PC' },
+    { sNo: 7, nomenclature: 'HDMI cable (1m)', serialNo: '-', quantity: 1, remarks: 'Video Cable for PC' },
+    { sNo: 8, nomenclature: 'Remote Control for Panel with AAA x 2 batteries', serialNo: '-', quantity: 1, remarks: 'For Panel' },
+    { sNo: 9, nomenclature: 'Extended Pointers', serialNo: '-', quantity: 1, remarks: 'For writing' },
+    { sNo: 10, nomenclature: 'Digitizer Stylus for writing', serialNo: '-', quantity: 2, remarks: 'For writing' },
+    { sNo: 11, nomenclature: 'Key pairs for shutters', serialNo: '-', quantity: '3 pairs', remarks: 'for shutter 4 locks' }
 ];
 
 const STANDARD_TABLET_LAB_ITEMS = [
-    { sNo: 1, nomenclature: 'Samsung Galaxy Tab A9+ 11" 64GB WiFi', serialNo: 'Qty - 30 Tabs', remarks: 'Stored in secure charging cart' },
-    { sNo: 2, nomenclature: 'Active Stylus Digital Pens for Tablets', serialNo: 'Qty - 30 Stylus', remarks: 'Equipped with palm rejection' },
-    { sNo: 3, nomenclature: 'Charging Station Cart 32-Bay with UV disinfection', serialNo: '', remarks: 'Locked with master key' },
-    { sNo: 4, nomenclature: 'Master Key for Tablet Cart Shutter', serialNo: 'Qty - 2 keys', remarks: 'Under Incharge custody' }
+    { sNo: 1, nomenclature: 'Samsung Galaxy Tab A9+ 11" 64GB WiFi', serialNo: '-', quantity: 30, remarks: 'Stored in secure charging cart' },
+    { sNo: 2, nomenclature: 'Active Stylus Digital Pens for Tablets', serialNo: '-', quantity: 30, remarks: 'Equipped with palm rejection' },
+    { sNo: 3, nomenclature: 'Charging Station Cart 32-Bay with UV disinfection', serialNo: '-', quantity: 1, remarks: 'Locked with master key' },
+    { sNo: 4, nomenclature: 'Master Key for Tablet Cart Shutter', serialNo: '-', quantity: '2 keys', remarks: 'Under Incharge custody' }
 ];
 
 const CLASSROOM_VOUCHER_PRINT_STYLES = `
@@ -75,7 +76,7 @@ const STATUS_COLORS = {
 
 export default function LaptopIssuancesPage() {
     const router = useRouter();
-    const { user, isAuthenticated, _hasHydrated } = useAuthStore();
+    const { user, isAuthenticated, _hasHydrated, selectedSessionId, selectedSession, isReadOnlyMode } = useAuthStore();
     const [issuances, setIssuances] = useState([]);
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState('all');
@@ -132,7 +133,7 @@ export default function LaptopIssuancesPage() {
     const [classroomLoading, setClassroomLoading] = useState(false);
     const [selectedClassroomVouchers, setSelectedClassroomVouchers] = useState(new Set());
     const [classroomSearchQuery, setClassroomSearchQuery] = useState('');
-    const [classroomSessionFilter, setClassroomSessionFilter] = useState('all');
+    const [classroomViewMode, setClassroomViewMode] = useState('grid'); // 'grid' | 'list'
     const [showClassroomModal, setShowClassroomModal] = useState(false);
     const [editingClassroomVoucher, setEditingClassroomVoucher] = useState(null);
     const [classroomSaving, setClassroomSaving] = useState(false);
@@ -238,7 +239,7 @@ export default function LaptopIssuancesPage() {
             classSection: defaultRoom ? (defaultRoom.roomName || defaultRoom.className) : 'Room 5 (Smart Classroom)',
             staffName: defaultRoom ? defaultRoom.staffName : 'Class Incharge',
             staffDesignation: defaultRoom ? defaultRoom.staffDesignation : 'Class Incharge / PGT',
-            academicSession: currentAcademicYear?.yearLabel || '2026-27',
+            academicSession: selectedSession?.yearLabel || currentAcademicYear?.yearLabel || '2026-27',
             dateStr: initialDateStr,
             items: JSON.parse(JSON.stringify(STANDARD_INTERACTIVE_PANEL_ITEMS))
         });
@@ -363,7 +364,8 @@ export default function LaptopIssuancesPage() {
             <tr>
                 <td style="text-align: center; font-weight: bold; padding: 5px 6px; border: 1.5px solid #000; font-size: 13px;">${idx + 1}</td>
                 <td style="font-weight: bold; padding: 5px 8px; border: 1.5px solid #000; font-size: 13px;">${it.nomenclature || ''}</td>
-                <td style="padding: 5px 8px; border: 1.5px solid #000; font-size: 13px; font-family: monospace;">${it.serialNo || ''}</td>
+                <td style="padding: 5px 8px; border: 1.5px solid #000; font-size: 13px; font-family: monospace;">${it.serialNo && it.serialNo !== '-' ? it.serialNo : (it.serialNo === '-' ? '-' : '')}</td>
+                <td style="text-align: center; font-weight: bold; padding: 5px 6px; border: 1.5px solid #000; font-size: 13px;">${it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1)}</td>
                 <td style="padding: 5px 8px; border: 1.5px solid #000; font-size: 12px;">${it.remarks || ''}</td>
             </tr>
         `).join('');
@@ -404,7 +406,7 @@ export default function LaptopIssuancesPage() {
                         <td class="info-label">Issued To:</td>
                         <td class="info-val" style="font-weight: 600;">${voucher.staffName || ''} ${voucher.staffDesignation ? `(${voucher.staffDesignation})` : ''}</td>
                         <td class="info-label">Class / Session:</td>
-                        <td class="info-val" style="text-align: center; font-weight: 600;">${voucher.classSection ? `${voucher.classSection} • ` : ''}${voucher.academicSession || '2024-25'}</td>
+                        <td class="info-val" style="text-align: center; font-weight: 600;">${voucher.classSection ? `${voucher.classSection} • ` : ''}${voucher.academicSession || '2026-27'}</td>
                     </tr>
                     ` : ''}
                 </table>
@@ -413,9 +415,10 @@ export default function LaptopIssuancesPage() {
                 <table class="items-table">
                     <thead>
                         <tr>
-                            <th style="width: 7%; text-align: center;">S. No.</th>
-                            <th style="width: 43%; text-align: left;">Item Nomenclature</th>
-                            <th style="width: 28%; text-align: left;">Serial No.</th>
+                            <th style="width: 6%; text-align: center;">S. No.</th>
+                            <th style="width: 40%; text-align: left;">Item Nomenclature</th>
+                            <th style="width: 24%; text-align: left;">Serial No.</th>
+                            <th style="width: 8%; text-align: center;">Qty</th>
                             <th style="width: 22%; text-align: left;">Remarks</th>
                         </tr>
                     </thead>
@@ -473,6 +476,7 @@ export default function LaptopIssuancesPage() {
     };
 
     const filteredClassroomVouchers = useMemo(() => {
+        const sessionLabel = selectedSession?.yearLabel || currentAcademicYear?.yearLabel || '2026-27';
         return classroomVouchers.filter(v => {
             const matchesSearch = !classroomSearchQuery ||
                 String(v.roomNumber).toLowerCase().includes(classroomSearchQuery.toLowerCase()) ||
@@ -480,12 +484,17 @@ export default function LaptopIssuancesPage() {
                 String(v.staffName || '').toLowerCase().includes(classroomSearchQuery.toLowerCase()) ||
                 (v.items || []).some(it =>
                     it.nomenclature?.toLowerCase().includes(classroomSearchQuery.toLowerCase()) ||
-                    it.serialNo?.toLowerCase().includes(classroomSearchQuery.toLowerCase())
+                    it.serialNo?.toLowerCase().includes(classroomSearchQuery.toLowerCase()) ||
+                    it.remarks?.toLowerCase().includes(classroomSearchQuery.toLowerCase())
                 );
-            const matchesSession = classroomSessionFilter === 'all' || v.academicSession === classroomSessionFilter;
+            const matchesSession = !selectedSession || !selectedSession.yearLabel ||
+                v.academicSession === sessionLabel ||
+                v.academicSession === sessionLabel.replace('-', '–') ||
+                v.academicSession === sessionLabel.replace('–', '-') ||
+                (v.academicSession && v.academicSession.includes(sessionLabel.split('-')[0]));
             return matchesSearch && matchesSession;
         });
-    }, [classroomVouchers, classroomSearchQuery, classroomSessionFilter]);
+    }, [classroomVouchers, classroomSearchQuery, selectedSession, currentAcademicYear]);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -835,7 +844,7 @@ export default function LaptopIssuancesPage() {
                     {/* Toolbar & Filters */}
                     <div className="card p-4 mb-6">
                         <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div className="flex flex-1 min-w-[260px] gap-3">
+                            <div className="flex flex-1 min-w-[260px] items-center gap-3">
                                 <div className="relative flex-1">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                     <input
@@ -846,42 +855,63 @@ export default function LaptopIssuancesPage() {
                                         className="input pl-9 w-full text-sm"
                                     />
                                 </div>
-                                <select
-                                    value={classroomSessionFilter}
-                                    onChange={(e) => setClassroomSessionFilter(e.target.value)}
-                                    className="input w-auto text-sm"
-                                >
-                                    <option value="all">All Sessions</option>
-                                    <option value="2024-2025">2024-2025</option>
-                                    <option value="2025-2026">2025-2026</option>
-                                    <option value="2026-2027">2026-2027</option>
-                                </select>
+
+                                {/* View Switcher: Grid vs List */}
+                                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shrink-0">
+                                    <button
+                                        type="button"
+                                        onClick={() => setClassroomViewMode('grid')}
+                                        className={`p-1.5 rounded-md transition-colors ${
+                                            classroomViewMode === 'grid'
+                                                ? 'bg-white text-indigo-600 shadow-xs font-bold'
+                                                : 'text-slate-500 hover:text-slate-900'
+                                        }`}
+                                        title="Grid View (Cards)"
+                                        aria-label="Grid View"
+                                    >
+                                        <LayoutGrid className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setClassroomViewMode('list')}
+                                        className={`p-1.5 rounded-md transition-colors ${
+                                            classroomViewMode === 'list'
+                                                ? 'bg-white text-indigo-600 shadow-xs font-bold'
+                                                : 'text-slate-500 hover:text-slate-900'
+                                        }`}
+                                        title="List View (Table)"
+                                        aria-label="List View"
+                                    >
+                                        <List className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Select All & Bulk Print Barcode/Voucher Buttons */}
+                            {/* Select All & Bulk Print Button (Icon Only with Tooltip) */}
                             <div className="flex items-center gap-3">
                                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none font-medium">
                                     <input
                                         type="checkbox"
                                         checked={selectedClassroomVouchers.size > 0 && selectedClassroomVouchers.size === filteredClassroomVouchers.length}
                                         onChange={toggleSelectAllClassroomVouchers}
-                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
                                     />
                                     <span>Select All ({filteredClassroomVouchers.length})</span>
                                 </label>
 
                                 {selectedClassroomVouchers.size > 0 && (
-                                    <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-lg">
-                                        <span className="text-xs font-semibold text-indigo-800">
+                                    <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                                        <span className="text-xs font-bold text-indigo-800">
                                             {selectedClassroomVouchers.size} Selected
                                         </span>
-                                        {/* Icon-only bulk print button */}
+                                        {/* Icon-only bulk print button with tooltip */}
                                         <button
                                             onClick={bulkPrintClassroomVouchers}
                                             title={`Bulk Print ${selectedClassroomVouchers.size} Selected Vouchers (A4 Portrait)`}
-                                            className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow transition-all hover:scale-105 active:scale-95"
+                                            aria-label="Bulk Print Selected Vouchers"
+                                            className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded shadow-sm transition-all hover:scale-105 active:scale-95"
                                         >
-                                            <Printer className="w-5 h-5" />
+                                            <Printer className="w-4 h-4" />
                                         </button>
                                     </div>
                                 )}
@@ -889,27 +919,39 @@ export default function LaptopIssuancesPage() {
                         </div>
                     </div>
 
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="card p-4 bg-indigo-50 border-indigo-100">
-                            <div className="text-2xl font-bold text-indigo-800">{classroomVouchers.length}</div>
-                            <div className="text-xs font-medium text-indigo-600 mt-1">Classroom Loan Vouchers</div>
+                    {/* Dynamic Device Issuance Stats Dashboard */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+                        <div className="card p-3.5 bg-indigo-50/80 border-indigo-100">
+                            <div className="text-2xl font-black text-indigo-800">{filteredClassroomVouchers.length}</div>
+                            <div className="text-xs font-medium text-indigo-600 mt-0.5">Active Loan Vouchers</div>
                         </div>
-                        <div className="card p-4 bg-blue-50 border-blue-100">
-                            <div className="text-2xl font-bold text-blue-800">
-                                {classroomVouchers.reduce((acc, v) => acc + (v.items?.filter(it => it.nomenclature?.toLowerCase().includes('panel') || it.nomenclature?.toLowerCase().includes('interactive')).length || 0), 0)}
+                        <div className="card p-3.5 bg-blue-50/80 border-blue-100">
+                            <div className="text-2xl font-black text-blue-800">
+                                {filteredClassroomVouchers.reduce((acc, v) => acc + (v.items?.filter(it => it.nomenclature?.toLowerCase().includes('panel') || it.nomenclature?.toLowerCase().includes('interactive')).length || 0), 0)}
                             </div>
-                            <div className="text-xs font-medium text-blue-600 mt-1">Interactive Panels Issued</div>
+                            <div className="text-xs font-medium text-blue-600 mt-0.5">Interactive Panels</div>
                         </div>
-                        <div className="card p-4 bg-emerald-50 border-emerald-100">
-                            <div className="text-2xl font-bold text-emerald-800">
-                                {classroomVouchers.reduce((acc, v) => acc + (v.items?.reduce((cnt, it) => cnt + (it.serialNo?.includes('Qty') ? parseInt(it.serialNo.replace(/\D/g, '')) || 1 : 1), 0) || 0), 0)}
+                        <div className="card p-3.5 bg-sky-50/80 border-sky-100">
+                            <div className="text-2xl font-black text-sky-800">
+                                {filteredClassroomVouchers.reduce((acc, v) => acc + (v.items?.filter(it => it.serialNo && it.serialNo !== '-' && !it.serialNo.toLowerCase().startsWith('qty')).length || 0), 0)}
                             </div>
-                            <div className="text-xs font-medium text-emerald-600 mt-1">Total Hardware Items & Accessories</div>
+                            <div className="text-xs font-medium text-sky-600 mt-0.5">Serialized Devices</div>
                         </div>
-                        <div className="card p-4 bg-slate-100 border-slate-200">
-                            <div className="text-2xl font-bold text-slate-800">{selectedClassroomVouchers.size}</div>
-                            <div className="text-xs font-medium text-slate-600 mt-1">Selected For Bulk Print</div>
+                        <div className="card p-3.5 bg-emerald-50/80 border-emerald-100">
+                            <div className="text-2xl font-black text-emerald-800">
+                                {filteredClassroomVouchers.reduce((acc, v) => acc + (v.items?.reduce((cnt, it) => {
+                                    const rawQty = it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1);
+                                    const parsed = parseInt(String(rawQty).replace(/\D/g, '')) || 1;
+                                    return cnt + parsed;
+                                }, 0) || 0), 0)}
+                            </div>
+                            <div className="text-xs font-medium text-emerald-600 mt-0.5">Total Hardware & Qty</div>
+                        </div>
+                        <div className="card p-3.5 bg-slate-100 border-slate-200 col-span-2 sm:col-span-1">
+                            <div className="text-2xl font-black text-slate-800">
+                                {new Set(filteredClassroomVouchers.map(v => v.roomNumber)).size}
+                            </div>
+                            <div className="text-xs font-medium text-slate-600 mt-0.5">Rooms Equipped</div>
                         </div>
                     </div>
 
@@ -928,69 +970,210 @@ export default function LaptopIssuancesPage() {
                                 <Plus className="w-4 h-4" /> Create First Voucher
                             </button>
                         </div>
+                    ) : classroomViewMode === 'list' ? (
+                        /* List / Column Table View */
+                        <div className="card overflow-hidden bg-white border border-slate-200 shadow-sm">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
+                                        <tr>
+                                            <th className="p-3 w-10 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedClassroomVouchers.size > 0 && selectedClassroomVouchers.size === filteredClassroomVouchers.length}
+                                                    onChange={toggleSelectAllClassroomVouchers}
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                                                />
+                                            </th>
+                                            <th className="p-3">Room & Class</th>
+                                            <th className="p-3">Incharge</th>
+                                            <th className="p-3">Issue Date</th>
+                                            <th className="p-3">Key Hardware</th>
+                                            <th className="p-3">Serial Numbers</th>
+                                            <th className="p-3 text-center">Qty</th>
+                                            <th className="p-3 text-center">Session</th>
+                                            <th className="p-3 text-center w-28">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredClassroomVouchers.map(voucher => {
+                                            const isSelected = selectedClassroomVouchers.has(voucher.id);
+                                            const totalQty = (voucher.items || []).reduce((sum, it) => {
+                                                const raw = it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1);
+                                                return sum + (parseInt(String(raw).replace(/\D/g, '')) || 1);
+                                            }, 0);
+                                            const serialItems = (voucher.items || []).filter(it => it.serialNo && it.serialNo !== '-' && !it.serialNo.toLowerCase().startsWith('qty'));
+                                            return (
+                                                <tr key={voucher.id} className={`hover:bg-slate-50/80 transition-colors ${isSelected ? 'bg-indigo-50/40' : ''}`}>
+                                                    <td className="p-3 text-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isSelected}
+                                                            onChange={() => toggleSelectClassroomVoucher(voucher.id)}
+                                                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                                                        />
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-[11px]">Room {voucher.roomNumber}</span>
+                                                            <span className="truncate max-w-[160px] text-slate-700">{voucher.classSection || `Classroom ${voucher.roomNumber}`}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="font-semibold text-slate-800">{voucher.staffName || 'Class Incharge'}</div>
+                                                        {voucher.staffDesignation && (
+                                                            <div className="text-[11px] text-slate-500 truncate max-w-[140px]">{voucher.staffDesignation}</div>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3 text-slate-600 whitespace-nowrap">
+                                                        {voucher.dateStr}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                                            {(voucher.items || []).slice(0, 3).map((it, idx) => (
+                                                                <span key={idx} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-medium truncate max-w-[120px]">
+                                                                    {it.nomenclature}
+                                                                </span>
+                                                            ))}
+                                                            {(voucher.items || []).length > 3 && (
+                                                                <span className="text-[10px] text-slate-500 font-semibold">+{voucher.items.length - 3}</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 font-mono">
+                                                        <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                                            {serialItems.slice(0, 2).map((it, idx) => (
+                                                                <span key={idx} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px]" title={it.nomenclature}>
+                                                                    {it.serialNo}
+                                                                </span>
+                                                            ))}
+                                                            {serialItems.length > 2 && (
+                                                                <span className="text-[10px] text-slate-500">+{serialItems.length - 2} more</span>
+                                                            )}
+                                                            {serialItems.length === 0 && (
+                                                                <span className="text-slate-400 text-[11px]">-</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="p-3 text-center font-bold text-slate-700">
+                                                        {totalQty}
+                                                    </td>
+                                                    <td className="p-3 text-center whitespace-nowrap">
+                                                        <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[11px] font-medium">
+                                                            {voucher.academicSession || '2026-27'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-center">
+                                                        <div className="flex items-center justify-center gap-1">
+                                                            {/* Icon only with tooltip */}
+                                                            <button
+                                                                onClick={() => printSingleClassroomVoucher(voucher)}
+                                                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition-colors"
+                                                                title="Preview & Print A4 Voucher"
+                                                                aria-label="Print Voucher"
+                                                            >
+                                                                <Printer className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingClassroomVoucher(voucher);
+                                                                    setClassroomForm({ ...voucher });
+                                                                    labsAPI.getInventoryDevices({ currentVoucherId: voucher.id }).then(res => {
+                                                                        if (res.data?.data?.devices) setInventoryDevices(res.data.data.devices);
+                                                                    }).catch(() => {});
+                                                                    setShowClassroomModal(true);
+                                                                }}
+                                                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                                                title="Edit Voucher Details"
+                                                                aria-label="Edit Voucher"
+                                                            >
+                                                                <Edit2 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDeleteClassroomVoucher(voucher)}
+                                                                className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                                title="Delete Voucher"
+                                                                aria-label="Delete Voucher"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     ) : (
-                        <div className="space-y-4">
+                        /* Grid Cards View */
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {filteredClassroomVouchers.map(voucher => {
                                 const isSelected = selectedClassroomVouchers.has(voucher.id);
+                                const totalQty = (voucher.items || []).reduce((sum, it) => {
+                                    const raw = it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1);
+                                    return sum + (parseInt(String(raw).replace(/\D/g, '')) || 1);
+                                }, 0);
                                 return (
                                     <div
                                         key={voucher.id}
                                         className={`card p-5 bg-white border transition-all ${
-                                            isSelected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-sm' : 'border-slate-200 hover:border-slate-300'
+                                            isSelected ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-sm' : 'border-slate-200 hover:border-slate-300 shadow-xs'
                                         }`}
                                     >
-                                        <div className="flex flex-wrap items-start justify-between gap-4">
+                                        <div className="flex items-start justify-between gap-4">
                                             {/* Left: Checkbox + Room details */}
-                                            <div className="flex items-start gap-4">
+                                            <div className="flex items-start gap-3.5 flex-1 min-w-0">
                                                 <input
                                                     type="checkbox"
                                                     checked={isSelected}
                                                     onChange={() => toggleSelectClassroomVoucher(voucher.id)}
-                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 mt-1 cursor-pointer"
+                                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 mt-1 cursor-pointer shrink-0"
                                                 />
-                                                <div>
+                                                <div className="flex-1 min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2 mb-1.5">
                                                         <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 font-bold text-sm rounded-md tracking-wide">
                                                             Room {voucher.roomNumber}
                                                         </span>
-                                                        <span className="text-sm font-semibold text-slate-900">
+                                                        <span className="text-sm font-semibold text-slate-900 truncate">
                                                             {voucher.classSection || `Classroom ${voucher.roomNumber}`}
                                                         </span>
                                                         <span className="px-2 py-0.5 text-xs bg-slate-100 text-slate-700 rounded font-medium">
-                                                            Session: {voucher.academicSession || '2024-2025'}
+                                                            Session: {voucher.academicSession || '2026-27'}
                                                         </span>
                                                     </div>
 
                                                     <div className="text-sm text-slate-700 flex items-center gap-2 mt-1">
-                                                        <User className="w-4 h-4 text-slate-400" />
+                                                        <User className="w-4 h-4 text-slate-400 shrink-0" />
                                                         <span className="font-medium">Incharge:</span>
-                                                        <span>{voucher.staffName || 'Class Incharge'}</span>
+                                                        <span className="truncate">{voucher.staffName || 'Class Incharge'}</span>
                                                         {voucher.staffDesignation && (
-                                                            <span className="text-xs text-slate-500">({voucher.staffDesignation})</span>
+                                                            <span className="text-xs text-slate-500 truncate">({voucher.staffDesignation})</span>
                                                         )}
                                                     </div>
 
                                                     <div className="text-xs text-slate-500 flex items-center gap-2 mt-1">
-                                                        <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                                                        <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                                                         <span>Issued: {voucher.dateStr}</span>
+                                                        <span className="text-slate-300">•</span>
+                                                        <span className="font-bold text-slate-700">{totalQty} Total Items</span>
                                                     </div>
 
                                                     {/* Items Summary Pills */}
                                                     <div className="mt-3 flex flex-wrap gap-1.5 max-w-2xl">
-                                                        <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full">
-                                                            {voucher.items?.length || 0} Hardware Items:
-                                                        </span>
                                                         {(voucher.items || []).slice(0, 5).map((it, idx) => (
                                                             <span
                                                                 key={idx}
                                                                 className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md font-mono"
-                                                                title={`${it.nomenclature} - ${it.serialNo || 'No S/N'} (${it.remarks || ''})`}
+                                                                title={`${it.nomenclature} - ${it.serialNo && it.serialNo !== '-' ? it.serialNo : 'No S/N'} (Qty: ${it.quantity || it.qty || 1})`}
                                                             >
                                                                 {it.nomenclature?.length > 25 ? it.nomenclature.slice(0, 25) + '...' : it.nomenclature}
+                                                                {it.quantity && Number(it.quantity) > 1 && ` (x${it.quantity})`}
                                                             </span>
                                                         ))}
-                                                        {(voucher.items?.length || 0) > 5 && (
-                                                            <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md">
+                                                        {(voucher.items || []).length > 5 && (
+                                                            <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-semibold">
                                                                 +{voucher.items.length - 5} more
                                                             </span>
                                                         )}
@@ -998,15 +1181,15 @@ export default function LaptopIssuancesPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Right: Actions */}
-                                            <div className="flex items-center gap-2 self-start">
+                                            {/* Right: Actions (Icon Only with Tooltips) */}
+                                            <div className="flex items-center gap-1.5 shrink-0 self-start">
                                                 <button
                                                     onClick={() => printSingleClassroomVoucher(voucher)}
-                                                    className="btn bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs flex items-center gap-1.5 shadow-sm"
-                                                    title="Print Official A4 Loan Voucher"
+                                                    className="p-2 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 border border-indigo-200 rounded-lg transition-colors shadow-xs"
+                                                    title="Preview & Print Official A4 Loan Voucher"
+                                                    aria-label="Print Voucher"
                                                 >
-                                                    <Printer className="w-4 h-4 text-indigo-600" />
-                                                    <span>Print A4 Voucher</span>
+                                                    <Printer className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => {
@@ -1017,15 +1200,17 @@ export default function LaptopIssuancesPage() {
                                                         }).catch(() => {});
                                                         setShowClassroomModal(true);
                                                     }}
-                                                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 rounded-lg transition-colors shadow-xs"
                                                     title="Edit Voucher Details"
+                                                    aria-label="Edit Voucher"
                                                 >
                                                     <Edit2 className="w-4 h-4" />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteClassroomVoucher(voucher)}
-                                                    className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors shadow-xs"
                                                     title="Delete Voucher"
+                                                    aria-label="Delete Voucher"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
                                                 </button>
@@ -1311,7 +1496,7 @@ export default function LaptopIssuancesPage() {
                                             const nextSNo = (classroomForm.items?.length || 0) + 1;
                                             setClassroomForm(prev => ({
                                                 ...prev,
-                                                items: [...prev.items, { sNo: nextSNo, nomenclature: '', serialNo: '', remarks: '' }]
+                                                items: [...prev.items, { sNo: nextSNo, nomenclature: '', serialNo: '', quantity: 1, remarks: '' }]
                                             }));
                                         }}
                                         className="btn bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs py-1 px-2.5 flex items-center gap-1"
@@ -1324,11 +1509,12 @@ export default function LaptopIssuancesPage() {
                                     <table className="w-full text-xs">
                                         <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                                             <tr>
-                                                <th className="p-2 text-center w-10">#</th>
+                                                <th className="p-2 text-center w-8">#</th>
                                                 <th className="p-2 text-left">Item Nomenclature *</th>
-                                                <th className="p-2 text-left w-44">Serial No. / Qty</th>
-                                                <th className="p-2 text-left w-48">Remarks</th>
-                                                <th className="p-2 text-center w-10"></th>
+                                                <th className="p-2 text-left w-36">Serial No.</th>
+                                                <th className="p-2 text-center w-20">Qty</th>
+                                                <th className="p-2 text-left w-44">Remarks</th>
+                                                <th className="p-2 text-center w-8"></th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
@@ -1361,6 +1547,7 @@ export default function LaptopIssuancesPage() {
                                                                             const newItems = [...classroomForm.items];
                                                                             newItems[index].nomenclature = `${dev.brand || ''} ${dev.modelNo || ''} (${dev.itemType?.toUpperCase() || 'EQUIPMENT'})`.trim();
                                                                             newItems[index].serialNo = dev.serialNo || dev.itemNumber;
+                                                                            newItems[index].quantity = 1;
                                                                             newItems[index].remarks = dev.lab?.name ? `From ${dev.lab.name}` : `Item #${dev.itemNumber}`;
                                                                             setClassroomForm({ ...classroomForm, items: newItems });
                                                                         }
@@ -1382,8 +1569,8 @@ export default function LaptopIssuancesPage() {
                                                     <td className="p-1.5 align-top">
                                                         <input
                                                             type="text"
-                                                            placeholder="e.g. ZLA01SC... or Qty - 1"
-                                                            value={item.serialNo}
+                                                            placeholder="e.g. ZLA01SC..."
+                                                            value={item.serialNo && item.serialNo !== '-' ? item.serialNo : (item.serialNo === '-' ? '-' : '')}
                                                             onChange={(e) => {
                                                                 const newItems = [...classroomForm.items];
                                                                 newItems[index].serialNo = e.target.value;
@@ -1395,8 +1582,21 @@ export default function LaptopIssuancesPage() {
                                                     <td className="p-1.5 align-top">
                                                         <input
                                                             type="text"
+                                                            placeholder="1"
+                                                            value={item.quantity !== undefined && item.quantity !== null && item.quantity !== '' ? item.quantity : (item.qty !== undefined ? item.qty : 1)}
+                                                            onChange={(e) => {
+                                                                const newItems = [...classroomForm.items];
+                                                                newItems[index].quantity = e.target.value;
+                                                                setClassroomForm({ ...classroomForm, items: newItems });
+                                                            }}
+                                                            className="w-full px-2 py-1 border border-slate-200 rounded text-xs text-center font-bold"
+                                                        />
+                                                    </td>
+                                                    <td className="p-1.5 align-top">
+                                                        <input
+                                                            type="text"
                                                             placeholder="Remarks / Placement..."
-                                                            value={item.remarks}
+                                                            value={item.remarks || ''}
                                                             onChange={(e) => {
                                                                 const newItems = [...classroomForm.items];
                                                                 newItems[index].remarks = e.target.value;

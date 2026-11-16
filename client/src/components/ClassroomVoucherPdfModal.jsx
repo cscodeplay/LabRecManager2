@@ -179,8 +179,9 @@ export default function ClassroomVoucherPdfModal({ vouchers = [], onClose }) {
         const itemsRows = (voucher.items || []).map((it, idx) => `
             <tr>
                 <td style="text-align: center; font-weight: bold; width: 6%;">${idx + 1}</td>
-                <td style="font-weight: 600; width: 44%;">${it.nomenclature || ''}</td>
-                <td style="font-family: monospace; width: 26%;">${it.serialNo || ''}</td>
+                <td style="font-weight: 600; width: 38%;">${it.nomenclature || ''}</td>
+                <td style="font-family: monospace; width: 24%;">${it.serialNo && it.serialNo !== '-' ? it.serialNo : (it.serialNo === '-' ? '-' : '')}</td>
+                <td style="text-align: center; font-weight: 600; width: 8%;">${it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1)}</td>
                 <td style="width: 24%;">${it.remarks || ''}</td>
             </tr>
         `).join('');
@@ -233,8 +234,9 @@ export default function ClassroomVoucherPdfModal({ vouchers = [], onClose }) {
                     <thead>
                         <tr>
                             <th style="width: 6%; text-align: center;">S. No.</th>
-                            <th style="width: 44%; text-align: left;">Item Nomenclature</th>
-                            <th style="width: 26%; text-align: left;">Serial No.</th>
+                            <th style="width: 38%; text-align: left;">Item Nomenclature</th>
+                            <th style="width: 24%; text-align: left;">Serial No.</th>
+                            <th style="width: 8%; text-align: center;">Qty</th>
                             <th style="width: 24%; text-align: left;">Remarks</th>
                         </tr>
                     </thead>
@@ -357,29 +359,30 @@ export default function ClassroomVoucherPdfModal({ vouchers = [], onClose }) {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <button
                         onClick={handleDownloadHtml}
-                        className="btn bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg"
-                        title="Download Document"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition-colors shadow-sm"
+                        title="Download A4 Voucher Document"
+                        aria-label="Download Document"
                     >
                         <Download className="w-4 h-4 text-slate-300" />
-                        <span>Download</span>
                     </button>
 
                     <button
                         onClick={handlePrint}
-                        className="btn bg-indigo-600 hover:bg-indigo-700 text-white text-xs flex items-center gap-2 px-4 py-2 rounded-lg shadow-lg font-semibold tracking-wide"
-                        title="Print A4 Document"
+                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-lg transition-colors font-semibold"
+                        title="Print Official A4 Vouchers"
+                        aria-label="Print Document"
                     >
                         <Printer className="w-4 h-4" />
-                        <span>Print Document</span>
                     </button>
 
                     <button
                         onClick={onClose}
-                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-2"
+                        className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors ml-1"
                         title="Close Overlay"
+                        aria-label="Close"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -469,8 +472,9 @@ export default function ClassroomVoucherPdfModal({ vouchers = [], onClose }) {
                                 <thead>
                                     <tr className="bg-slate-100 border-b-[1.5px] border-black text-black">
                                         <th className="p-2 border-r-[1.5px] border-black text-center w-[6%] font-extrabold">S. No.</th>
-                                        <th className="p-2 border-r-[1.5px] border-black text-left w-[44%] font-extrabold">Item Nomenclature</th>
-                                        <th className="p-2 border-r-[1.5px] border-black text-left w-[26%] font-extrabold">Serial No.</th>
+                                        <th className="p-2 border-r-[1.5px] border-black text-left w-[38%] font-extrabold">Item Nomenclature</th>
+                                        <th className="p-2 border-r-[1.5px] border-black text-left w-[24%] font-extrabold">Serial No.</th>
+                                        <th className="p-2 border-r-[1.5px] border-black text-center w-[8%] font-extrabold">Qty</th>
                                         <th className="p-2 text-left w-[24%] font-extrabold">Remarks</th>
                                     </tr>
                                 </thead>
@@ -484,7 +488,10 @@ export default function ClassroomVoucherPdfModal({ vouchers = [], onClose }) {
                                                 {it.nomenclature || ''}
                                             </td>
                                             <td className="p-1.5 border-r-[1.5px] border-black font-mono">
-                                                {it.serialNo || ''}
+                                                {it.serialNo && it.serialNo !== '-' ? it.serialNo : (it.serialNo === '-' ? '-' : '')}
+                                            </td>
+                                            <td className="p-1.5 border-r-[1.5px] border-black text-center font-semibold">
+                                                {it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : (it.qty || 1)}
                                             </td>
                                             <td className="p-1.5 text-slate-800">
                                                 {it.remarks || ''}
