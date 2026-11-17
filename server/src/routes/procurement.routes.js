@@ -369,13 +369,14 @@ router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
  * @desc    Upload purchase request letter for Step 1
  */
 router.put('/requests/:id/purchase-letter', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { purchaseLetterUrl, purchaseLetterName, letterContent, letterFileName } = req.body;
+    const { purchaseLetterUrl, purchaseLetterName, letterContent, letterFileName, memoVideNo } = req.body;
 
     const updateData = {};
     if (purchaseLetterUrl) updateData.purchaseLetterUrl = purchaseLetterUrl;
     if (purchaseLetterName) updateData.purchaseLetterName = purchaseLetterName;
     if (letterContent !== undefined) updateData.letterContent = letterContent;
     if (letterFileName) updateData.purchaseLetterName = letterFileName;
+    if (memoVideNo !== undefined) updateData.memoVideNo = memoVideNo;
 
     const request = await prisma.procurementRequest.update({
         where: { id: req.params.id },
@@ -1180,6 +1181,88 @@ router.post('/requests/:id/email-call-quotation', authenticate, asyncHandler(asy
         success: true,
         data: result,
         message: `Call for Quotation sent to ${toEmail}`
+    });
+}));
+
+/**
+ * @route   POST /api/procurement/requests/:id/classroom-issuance
+ * @desc    Enter procured hardware to respective classrooms/labs and generate loan vouchers
+ * @access  Private (Admin/Principal/Lab Assistant)
+ */
+router.post('/requests/:id/classroom-issuance', authenticate, authorize('admin', 'principal', 'lab_assistant'), asyncHandler(async (req, res) => {
+    const { issuances } = req.body;
+    const requestId = req.params.id;
+
+    const request = await prisma.procurementRequest.findUnique({
+        where: { id: requestId },
+        include: { academicYear: { select: { yearLabel: true } } }
+    });
+
+    if (!request) {
+        return res.status(404).json({ success: false, message: 'Procurement request not found' });
+    }
+
+    const sessionLabel = request.academicYear?.yearLabel || '2026-27';
+    const createdVouchers = [];
+
+    if (Array.isArray(issuances) && issuances.length > 0) {
+        for (const iss of issuances) {
+            if (!iss.roomNumber) continue;
+
+            const voucherData = {
+                roomNumber: String(iss.roomNumber),
+                classSection: iss.classSection || `Room ${iss.roomNumber}`,
+                staffName: iss.staffName || 'Class Incharge',
+                staffDesignation: iss.staffDesignation || 'Class Incharge / PGT',
+                academicSession: sessionLabel,
+                dateStr: new Date().toLocaleDateString('en-GB') + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }),
+                items: (iss.items || []).map((it, idx) => ({
+                    sNo: idx + 1,
+                    nomenclature: it.nomenclature || it.itemName || 'Hardware Equipment',
+                    serialNo: it.serialNo || '-',
+                    quantity: it.quantity || 1,
+                    remarks: it.remarks || `Procured via ${request.title}`
+                })),
+                issuerSign: 'Lab Incharge',
+                headOfSchoolSign: 'Principal',
+                receiverSign: iss.staffName || 'Class Incharge',
+                procurementRequestId: requestId,
+                conditions: [
+                    'The Receiver is fully responsible for the physical safety and proper operation of the issued hardware.',
+                    'Any loss, damage, or technical fault must be reported to the issuing authority immediately.',
+                    'The hardware must be used solely for the official or stated purpose of this loan.',
+                    'The item must be returned on the due date or upon immediate demand by the issuing authority.'
+                ]
+            };
+
+            const note = await prisma.adminNote.create({
+                data: {
+                    schoolId: req.user.schoolId,
+                    createdById: req.user.id,
+                    title: `Classroom Loan Voucher - Room ${iss.roomNumber} (${iss.classSection || ''})`,
+                    category: 'classroom_loan_voucher',
+                    content: JSON.stringify(voucherData),
+                    isPinned: false
+                }
+            });
+
+            createdVouchers.push({ id: note.id, ...voucherData });
+        }
+    }
+
+    // Mark request as completed
+    await prisma.procurementRequest.update({
+        where: { id: requestId },
+        data: {
+            status: 'completed',
+            currentStep: 12
+        }
+    });
+
+    res.json({
+        success: true,
+        data: { vouchers: createdVouchers },
+        message: `Successfully issued hardware to ${createdVouchers.length} classroom(s)`
     });
 }));
 

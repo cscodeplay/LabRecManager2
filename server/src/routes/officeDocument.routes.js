@@ -20,6 +20,7 @@ const SUBFOLDERS = [
     'Excel Spreadsheets',
     'Presentations (Slides)',
     'PDF Documents',
+    'Procurement Files',
     'Images',
     'Audio',
     'Video',
@@ -207,6 +208,10 @@ router.post('/save-to-media-files', upload.single('file'), optionalAuth, asyncHa
         if (!reqSubfolderName && !folderName) subfolderName = 'Zip Archives';
         fileExt = 'zip';
         mimeType = 'application/zip';
+    } else if (normalizedType === 'procurement' || subfolderName === 'Procurement Files' || folderName === 'Procurement Files') {
+        subfolderName = 'Procurement Files';
+        fileExt = 'pdf';
+        mimeType = 'application/pdf';
     } else if (normalizedType === 'pdf' || format === 'pdf' || isPdfBase64 || (hasBinaryFile && req.file.originalname?.endsWith('.pdf')) || folderName === 'extract_og' || subfolderName.startsWith('extract_')) {
         if (!reqSubfolderName && !folderName) subfolderName = 'PDF Documents';
         fileExt = 'pdf';

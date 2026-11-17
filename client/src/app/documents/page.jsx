@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown, Sparkles, Presentation, Layers, Cloud, Info } from 'lucide-react';
+import { FileText, Upload, Search, Eye, Edit2, Trash2, X, Share2, Download, File, QrCode, ExternalLink, Clock, User, Copy, Check, CheckCheck, Grid3X3, List, Calendar, Users, UsersRound, Inbox, GraduationCap, ChevronUp, ChevronDown, RotateCcw, Trash, HardDrive, HardDriveUpload, Folder, FolderPlus, ChevronRight, FolderInput, CornerUpLeft, Clipboard, ClipboardCopy, Scissors, Wand2, Plus, BarChart2, Maximize, Minimize, ArchiveRestore, Archive, Bot, Film, Video, Play, RefreshCw, Pencil, Grid, ArrowUpDown, Sparkles, Presentation, Layers, Cloud, Info, ShoppingCart } from 'lucide-react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { useAuthStore } from '@/lib/store';
@@ -78,6 +78,10 @@ const getFolderIcon = (name, size = 'lg') => {
             break;
         case 'PDF Documents':
             iconElement = <FluentPdfDocIcon size={dim} className={`${sizeCls} shrink-0`} />;
+            break;
+        case 'Procurement Files':
+        case 'Procurement Dockets':
+            iconElement = <ShoppingCart style={{ width: dim, height: dim }} className={`${sizeCls} text-emerald-600 fill-emerald-100 shrink-0`} />;
             break;
         case 'Images':
             iconElement = <Sparkles style={{ width: dim, height: dim }} className={`${sizeCls} text-purple-500 fill-purple-100 shrink-0`} />;

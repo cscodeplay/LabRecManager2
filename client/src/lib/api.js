@@ -680,6 +680,8 @@ export const procurementAPI = {
     getVendorRequirements: (requestId) => api.get(`/procurement/requests/${requestId}/vendor-requirements`),
     // Save current step
     saveStep: (requestId, currentStep) => api.put(`/procurement/requests/${requestId}/save-step`, { currentStep }),
+    // Step 11: Classroom hardware issuance
+    issueClassroomHardware: (requestId, data) => api.post(`/procurement/requests/${requestId}/classroom-issuance`, data),
 };
 
 // File Upload API
