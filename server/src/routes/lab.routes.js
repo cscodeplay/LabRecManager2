@@ -2157,10 +2157,34 @@ router.get('/classroom-mapping', authenticate, asyncHandler(async (req, res) => 
             staffDesignation: r.designation || 'Class Incharge / PGT'
         }));
 
+        // Also fetch school labs so both classrooms and labs are available for hardware issuance
+        const labs = await prisma.lab.findMany({
+            where: { schoolId },
+            select: { id: true, name: true, roomNumber: true }
+        });
+
+        const labLocations = (labs || []).map(l => ({
+            id: l.id,
+            roomNumber: l.roomNumber || l.name,
+            roomName: l.name,
+            roomType: 'lab',
+            classId: null,
+            className: l.name,
+            section: '',
+            gradeLevel: null,
+            staffId: null,
+            staffName: 'Lab Incharge',
+            staffDesignation: 'Lab Incharge / Instructor'
+        }));
+
+        const allLocations = [...rooms, ...labLocations];
+
         res.json({
             success: true,
             data: {
-                rooms,
+                rooms: allLocations,
+                classrooms: allLocations,
+                labs: labLocations,
                 currentAcademicYear: currentAcademicYear || { yearLabel: '2026-27' }
             }
         });

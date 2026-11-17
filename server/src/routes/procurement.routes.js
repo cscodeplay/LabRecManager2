@@ -193,8 +193,9 @@ router.get('/requests', authenticate, asyncHandler(async (req, res) => {
                 createdBy: { select: { firstName: true, lastName: true } },
                 approvedBy: { select: { firstName: true, lastName: true } },
                 items: { select: { id: true, itemName: true, quantity: true, estimatedUnitPrice: true, approvedUnitPrice: true, approvedVendorId: true } },
-                quotations: { select: { id: true, vendorId: true, totalAmount: true } },
-                academicYear: { select: { id: true, yearLabel: true, isCurrent: true } }
+                quotations: { select: { id: true, vendorId: true, quotationNumber: true, totalAmount: true } },
+                academicYear: { select: { id: true, yearLabel: true, isCurrent: true } },
+                committee: { select: { id: true, userId: true, role: true } }
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -527,6 +528,40 @@ router.post('/requests/:id/quotations', authenticate, asyncHandler(async (req, r
         });
     }
 
+    // Check if quotation for this vendor already exists
+    const existing = await prisma.vendorQuotation.findFirst({
+        where: { requestId: req.params.id, vendorId }
+    });
+
+    if (existing) {
+        const quotation = await prisma.vendorQuotation.update({
+            where: { id: existing.id },
+            data: {
+                quotationNumber: quotationNumber || existing.quotationNumber,
+                quotationDate: quotationDate ? new Date(quotationDate) : existing.quotationDate,
+                validUntil: validUntil ? new Date(validUntil) : existing.validUntil,
+                documentUrl: documentUrl || existing.documentUrl,
+                totalAmount: totalAmount || existing.totalAmount,
+                terms: terms !== undefined ? terms : existing.terms,
+                remarks: remarks !== undefined ? remarks : existing.remarks,
+                ...(items && items.length > 0 ? {
+                    items: {
+                        deleteMany: {},
+                        create: items.map(item => ({
+                            procurementItemId: item.procurementItemId,
+                            unitPrice: item.unitPrice,
+                            quantity: item.quantity,
+                            totalPrice: (parseFloat(item.unitPrice) || 0) * (item.quantity || 1),
+                            remarks: item.remarks
+                        }))
+                    }
+                } : {})
+            },
+            include: { vendor: { select: { name: true } }, items: true }
+        });
+        return res.json({ success: true, data: quotation, message: 'Quotation updated' });
+    }
+
     const quotation = await prisma.vendorQuotation.create({
         data: {
             requestId: req.params.id,
@@ -558,6 +593,52 @@ router.post('/requests/:id/quotations', authenticate, asyncHandler(async (req, r
     });
 
     res.status(201).json({ success: true, data: quotation, message: 'Quotation added' });
+}));
+
+/**
+ * @route   PUT /api/procurement/requests/:id/quotations/:quotationId
+ * @desc    Update quotation details, quotation number, and item prices
+ */
+router.put('/requests/:id/quotations/:quotationId', authenticate, asyncHandler(async (req, res) => {
+    const { quotationNumber, quotationDate, validUntil, documentUrl, terms, remarks, items } = req.body;
+
+    let totalAmount = undefined;
+    if (items) {
+        totalAmount = 0;
+        items.forEach(item => {
+            totalAmount += (parseFloat(item.unitPrice) || 0) * (item.quantity || 1);
+        });
+    }
+
+    const updateData = {};
+    if (quotationNumber !== undefined) updateData.quotationNumber = quotationNumber;
+    if (quotationDate !== undefined) updateData.quotationDate = quotationDate ? new Date(quotationDate) : null;
+    if (validUntil !== undefined) updateData.validUntil = validUntil ? new Date(validUntil) : null;
+    if (documentUrl !== undefined) updateData.documentUrl = documentUrl;
+    if (terms !== undefined) updateData.terms = terms;
+    if (remarks !== undefined) updateData.remarks = remarks;
+    if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
+
+    if (items && Array.isArray(items)) {
+        updateData.items = {
+            deleteMany: {},
+            create: items.map(item => ({
+                procurementItemId: item.procurementItemId,
+                unitPrice: item.unitPrice,
+                quantity: item.quantity,
+                totalPrice: (parseFloat(item.unitPrice) || 0) * (item.quantity || 1),
+                remarks: item.remarks
+            }))
+        };
+    }
+
+    const quotation = await prisma.vendorQuotation.update({
+        where: { id: req.params.quotationId },
+        data: updateData,
+        include: { vendor: { select: { name: true } }, items: true }
+    });
+
+    res.json({ success: true, data: quotation, message: 'Quotation updated successfully' });
 }));
 
 /**
@@ -799,6 +880,23 @@ router.get('/requests/:id/preview', authenticate, asyncHandler(async (req, res) 
 
     const vendors = request.quotations.map(q => q.vendor);
 
+    // Fetch loan vouchers generated for this procurement request
+    const voucherNotes = await prisma.adminNote.findMany({
+        where: {
+            category: 'classroom_loan_voucher',
+            content: { contains: req.params.id }
+        },
+        orderBy: { createdAt: 'asc' }
+    });
+
+    const vouchers = voucherNotes.map(n => {
+        try {
+            return { id: n.id, ...JSON.parse(n.content) };
+        } catch {
+            return null;
+        }
+    }).filter(Boolean);
+
     res.json({
         success: true,
         data: {
@@ -807,7 +905,8 @@ router.get('/requests/:id/preview', authenticate, asyncHandler(async (req, res) 
             comparison,
             vendors,
             totalApproved,
-            committee: request.committee
+            committee: request.committee,
+            vouchers
         }
     });
 }));
@@ -1237,8 +1336,7 @@ router.post('/requests/:id/classroom-issuance', authenticate, authorize('admin',
 
             const note = await prisma.adminNote.create({
                 data: {
-                    schoolId: req.user.schoolId,
-                    createdById: req.user.id,
+                    authorId: req.user.id,
                     title: `Classroom Loan Voucher - Room ${iss.roomNumber} (${iss.classSection || ''})`,
                     category: 'classroom_loan_voucher',
                     content: JSON.stringify(voucherData),

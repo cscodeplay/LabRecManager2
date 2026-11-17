@@ -657,6 +657,7 @@ export const procurementAPI = {
     emailCallQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/email-call-quotation`, data),
     // Quotations
     addQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/quotations`, data),
+    updateQuotation: (requestId, quotationId, data) => api.put(`/procurement/requests/${requestId}/quotations/${quotationId}`, data),
     // Approval
     approveRequest: (requestId, approvedItems) => api.post(`/procurement/requests/${requestId}/approve`, { approvedItems }),
     // Print data

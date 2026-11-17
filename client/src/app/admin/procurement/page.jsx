@@ -11,11 +11,12 @@ import {
     Calendar, Lock, Save, ChevronLeft, ChevronRight, Download,
     CloudUpload, Mail, Pencil, LayoutGrid, List, TrendingUp,
     Building2, Upload, Cloud, RefreshCw, FileCheck, Layers,
-    EyeOff, CheckCircle, ExternalLink, Sparkles, AlertCircle
+    EyeOff, CheckCircle, ExternalLink, Sparkles, AlertCircle, Clock
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI, labsAPI, default as api } from '@/lib/api';
 import MultiSourcePdfPickerModal from '@/components/MultiSourcePdfPickerModal';
+import ScanningItemModal from '@/components/ScanningItemModal';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import toast from 'react-hot-toast';
@@ -154,15 +155,28 @@ export default function ProcurementPage() {
     const [netAmountGst, setNetAmountGst] = useState(18);
     const [netAmountWarranty, setNetAmountWarranty] = useState('1 Year Standard Warranty');
 
-    // Step 9: Purchase Order PDF settings
+    // Step 9: Purchase Order PDF settings & 3-Mode options
     const [poNumber, setPoNumber] = useState('');
     const [poDate, setPoDate] = useState(new Date().toISOString().split('T')[0]);
+    const [poSourceMode, setPoSourceMode] = useState('editor'); // 'editor' | 'upload' | 'cloud'
+    const [poCloudDoc, setPoCloudDoc] = useState(null);
+    const [showPoCloudPicker, setShowPoCloudPicker] = useState(false);
+    const [poUploadFile, setPoUploadFile] = useState(null);
 
-    // Step 11: Classroom & Lab Hardware Issuance
+    // Step 10: Item verification scanning modal
+    const [scanningItemModal, setScanningItemModal] = useState({
+        isOpen: false,
+        item: null,
+        expectedQty: 1
+    });
+
+    // Step 11: Classroom & Lab Hardware Issuance (Unit-by-Unit)
     const [classroomMappings, setClassroomMappings] = useState([]);
     const [selectedClassroomId, setSelectedClassroomId] = useState('');
     const [selectedClassroomData, setSelectedClassroomData] = useState(null);
     const [classroomIssuances, setClassroomIssuances] = useState([]);
+    const [unitIssuances, setUnitIssuances] = useState([]);
+    const [liveDateTime, setLiveDateTime] = useState('');
     const [issuingHardware, setIssuingHardware] = useState(false);
     const [hardwareItemSerials, setHardwareItemSerials] = useState({});
     const [hardwareItemRemarks, setHardwareItemRemarks] = useState({});
@@ -170,6 +184,104 @@ export default function ProcurementPage() {
 
     // Step 12: Saving to cloud state
     const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+
+    // Live date-time running clock for Step 11
+    useEffect(() => {
+        const updateTime = () => {
+            const now = new Date();
+            setLiveDateTime(now.toLocaleDateString('en-GB') + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true }));
+        };
+        updateTime();
+        const timer = setInterval(updateTime, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Synchronize unit-by-unit hardware entries from Step 10 into Step 11
+    useEffect(() => {
+        if (!requestDetail?.request?.items || requestDetail.request.items.length === 0) return;
+
+        setUnitIssuances(prev => {
+            const existingMap = new Map();
+            (prev || []).forEach(u => {
+                if (u.unitKey) existingMap.set(u.unitKey, u);
+            });
+
+            const list = [];
+            requestDetail.request.items.forEach(item => {
+                const expected = editableQuantities[item.id] ?? item.quantity ?? 1;
+                const scannedSerials = receivedItems[item.id]?.serialNumbers || [];
+
+                for (let idx = 0; idx < expected; idx++) {
+                    const unitKey = `${item.id}_${idx}`;
+                    const existing = existingMap.get(unitKey);
+                    const defaultSerial = scannedSerials[idx] || hardwareItemSerials[item.id] || `SN-${(item.itemName || 'ITM').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${(idx + 1).toString().padStart(3, '0')}`;
+
+                    list.push({
+                        unitKey,
+                        itemId: item.id,
+                        itemName: item.itemName,
+                        unitIndex: idx + 1,
+                        totalUnits: expected,
+                        serialNumber: existing?.serialNumber || defaultSerial,
+                        classroomId: existing?.classroomId || '',
+                        roomNumber: existing?.roomNumber || '',
+                        classSection: existing?.classSection || '',
+                        staffName: existing?.staffName || '',
+                        staffDesignation: existing?.staffDesignation || '',
+                        remarks: existing?.remarks || ''
+                    });
+                }
+            });
+            return list;
+        });
+    }, [requestDetail?.request?.items, editableQuantities, receivedItems]);
+
+    // Change classroom for a specific unit
+    const handleUnitClassroomChange = (unitKey, classroomId) => {
+        const room = classroomMappings.find(cm => String(cm.id) === String(classroomId));
+        setUnitIssuances(prev => prev.map(u => {
+            if (u.unitKey === unitKey) {
+                if (!room) {
+                    return {
+                        ...u,
+                        classroomId: '',
+                        roomNumber: '',
+                        classSection: '',
+                        staffName: '',
+                        staffDesignation: ''
+                    };
+                }
+                const inchargeName = `${room.firstName || ''} ${room.lastName || ''}`.trim() || 'Class Incharge';
+                const roomLabel = room.className ? `${room.className} (${room.section || ''})` : (room.roomName || `Room ${room.roomNumber}`);
+                return {
+                    ...u,
+                    classroomId: room.id,
+                    roomNumber: String(room.roomNumber),
+                    classSection: roomLabel,
+                    staffName: inchargeName,
+                    staffDesignation: room.designation || 'Class Incharge / PGT'
+                };
+            }
+            return u;
+        }));
+    };
+
+    // Bulk apply a classroom to all units
+    const handleApplyClassroomToAll = (classroomId) => {
+        const room = classroomMappings.find(cm => String(cm.id) === String(classroomId));
+        if (!room) return;
+        const inchargeName = `${room.firstName || ''} ${room.lastName || ''}`.trim() || 'Class Incharge';
+        const roomLabel = room.className ? `${room.className} (${room.section || ''})` : (room.roomName || `Room ${room.roomNumber}`);
+        setUnitIssuances(prev => prev.map(u => ({
+            ...u,
+            classroomId: room.id,
+            roomNumber: String(room.roomNumber),
+            classSection: roomLabel,
+            staffName: inchargeName,
+            staffDesignation: room.designation || 'Class Incharge / PGT'
+        })));
+        toast.success(`Assigned all hardware units to Room ${room.roomNumber}`);
+    };
 
     // Validation functions for each step
     const validateStep = (step) => {
@@ -330,6 +442,18 @@ export default function ProcurementPage() {
                                     }
                                 }
                             } else {
+                                try {
+                                    await procurementAPI.updateQuotation(selectedRequest.id, existingQuotation.id, {
+                                        quotationNumber: qNumber,
+                                        items: items.map(item => ({
+                                            procurementItemId: item.id,
+                                            unitPrice: parseFloat(prices[item.id]) || 0,
+                                            quantity: item.quantity
+                                        }))
+                                    });
+                                } catch (updateErr) {
+                                    console.error('Quotation update error:', updateErr);
+                                }
                                 const docFile = vendorQuotationDocs[vendorId];
                                 if (docFile && docFile instanceof File) {
                                     try {
@@ -391,6 +515,22 @@ export default function ProcurementPage() {
                 case 9:
                     setSaveProgress({ active: true, percent: 50, statusText: 'Saving Purchase Order...' });
                     const activePoNumber = poNumber?.trim() || orderForm.poNumber?.trim() || `MSLDH/2026/${selectedRequest?.id?.slice(0, 4).toUpperCase()}`;
+                    if (poCloudDoc?.url) {
+                        try {
+                            await procurementAPI.updateRequest(selectedRequest.id, {
+                                poUrl: poCloudDoc.url,
+                                poNumber: activePoNumber
+                            });
+                        } catch (e) {
+                            console.error('PO Cloud update error:', e);
+                        }
+                    } else if (poUploadFile && poUploadFile instanceof File) {
+                        try {
+                            await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'po', poUploadFile);
+                        } catch (e) {
+                            console.error('PO Upload error:', e);
+                        }
+                    }
                     if (selectedVendorForPurchase) {
                         const items = requestDetail?.request?.items || [];
                         const prices = vendorQuotationPrices[selectedVendorForPurchase] || {};
@@ -463,7 +603,41 @@ export default function ProcurementPage() {
                     await openRequestDetail(selectedRequest, true); // Keep step!
                     break;
                 case 11:
-                    setSaveProgress({ active: true, percent: 50, statusText: 'Saving classroom issuances...' });
+                    setSaveProgress({ active: true, percent: 30, statusText: 'Issuing hardware to classrooms & generating loan vouchers...' });
+                    try {
+                        const unitsToIssue = unitIssuances && unitIssuances.length > 0 ? unitIssuances : [];
+                        const grouped = {};
+                        unitsToIssue.forEach(u => {
+                            const roomNum = u.roomNumber || (selectedClassroomData?.roomNumber ? String(selectedClassroomData.roomNumber) : '1');
+                            if (!grouped[roomNum]) {
+                                grouped[roomNum] = {
+                                    roomNumber: roomNum,
+                                    classSection: u.classSection || `Room ${roomNum}`,
+                                    staffName: u.staffName || 'Class Incharge',
+                                    staffDesignation: u.staffDesignation || 'Class Incharge / PGT',
+                                    items: []
+                                };
+                            }
+                            grouped[roomNum].items.push({
+                                nomenclature: u.itemName,
+                                serialNo: u.serialNumber || '-',
+                                quantity: 1,
+                                remarks: u.remarks || `Procured via ${requestDetail?.request?.title}`
+                            });
+                        });
+
+                        const issuancesPayload = Object.values(grouped);
+                        if (issuancesPayload.length > 0) {
+                            const res = await procurementAPI.issueClassroomHardware(selectedRequest.id, { issuances: issuancesPayload });
+                            if (res.data?.success && Array.isArray(res.data.data?.vouchers)) {
+                                setIssuedLoanVouchers(res.data.data.vouchers);
+                                toast.success(`Generated ${res.data.data.vouchers.length} Classroom Loan Voucher(s)`);
+                            }
+                        }
+                    } catch (issueErr) {
+                        console.error('Issuance in saveStepData error:', issueErr);
+                    }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing data...' });
                     await openRequestDetail(selectedRequest, true);
                     break;
                 case 12:
@@ -527,11 +701,11 @@ export default function ProcurementPage() {
             case 8:
                 return !!(requestDetail?.request?.proceedingsDate || proceedingsDate);
             case 9:
-                return !!(requestDetail?.request?.poNumber || orderForm.poNumber || poNumber);
+                return !!(requestDetail?.request?.poNumber || orderForm.poNumber || poNumber || poCloudDoc || poUploadFile);
             case 10:
                 return !!(billUpload || billNumber.trim() || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
             case 11:
-                return (classroomIssuances.length > 0 || issuedLoanVouchers.length > 0 || requestDetail?.request?.status === 'completed');
+                return (classroomIssuances.length > 0 || issuedLoanVouchers.length > 0 || unitIssuances.length > 0 || requestDetail?.request?.status === 'completed');
             case 12:
                 return requestDetail?.request?.status === 'completed';
             default:
@@ -672,9 +846,8 @@ export default function ProcurementPage() {
             setRequests(Array.isArray(reqRes.data?.data) ? reqRes.data.data : []);
             setVendors(Array.isArray(vendorRes.data?.data) ? vendorRes.data.data : []);
             setStaffList(Array.isArray(staffRes.data?.data) ? staffRes.data.data : []);
-            if (classMappingRes.data?.data?.classrooms) {
-                setClassroomMappings(classMappingRes.data.data.classrooms);
-            }
+            const rooms = classMappingRes.data?.data?.rooms || classMappingRes.data?.data?.classrooms || [];
+            setClassroomMappings(rooms);
         } catch (error) {
             console.error('Load data error:', error);
             toast.error('Failed to load data: ' + error.message);
@@ -981,11 +1154,11 @@ export default function ProcurementPage() {
                 @media print {
                     @page {
                         size: A4 portrait;
-                        margin: 12mm;
+                        margin: 18mm 16mm;
                     }
                     @page comparative-landscape {
                         size: A4 landscape;
-                        margin: 12mm;
+                        margin: 16mm 14mm;
                     }
                     html, body {
                         background: transparent !important;
@@ -996,7 +1169,7 @@ export default function ProcurementPage() {
                         width: 100% !important;
                         min-height: auto !important;
                         margin: 0 !important;
-                        padding: 10mm !important;
+                        padding: 0 !important;
                         box-shadow: none !important;
                         border-radius: 0 !important;
                         page-break-after: always !important;
@@ -1395,7 +1568,7 @@ export default function ProcurementPage() {
                     </p>
                 </div>
                 <div style="margin-top: 60px; float: right; text-align: left; font-size: 14px; line-height: 1.4;">
-                    <div style="color: #059669; font-family: cursive; font-size: 22px; font-weight: bold; margin-bottom: 4px;">Principal</div>
+                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
                     Principal<br/>
                     Senior Secondary Residential<br/>
                     School for Meritorious Students,<br/>
@@ -1499,6 +1672,99 @@ export default function ProcurementPage() {
                     </div>
                 </div>
             ` : ''}
+
+            <!-- CLASSROOM / LAB LOAN VOUCHERS (Official Format) -->
+            ${(() => {
+                const voucherDataList = (previewData.vouchers && previewData.vouchers.length > 0)
+                    ? previewData.vouchers
+                    : (issuedLoanVouchers.length > 0 ? issuedLoanVouchers : []);
+
+                if (!voucherDataList || voucherDataList.length === 0) return '';
+
+                return voucherDataList.map((v) => {
+                    const itemsRows = (v.items || []).map((it, idx) => `
+                        <tr>
+                            <td style="text-align: center; font-weight: bold; width: 6%; border: 1.5px solid #000; padding: 5px 8px;">${idx + 1}</td>
+                            <td style="font-weight: 600; width: 38%; border: 1.5px solid #000; padding: 5px 8px;">${it.nomenclature || it.itemName || ''}</td>
+                            <td style="font-family: monospace; width: 24%; border: 1.5px solid #000; padding: 5px 8px;">${it.serialNo && it.serialNo !== '-' ? it.serialNo : '-'}</td>
+                            <td style="text-align: center; font-weight: 600; width: 8%; border: 1.5px solid #000; padding: 5px 8px;">${it.quantity !== undefined && it.quantity !== null && it.quantity !== '' ? it.quantity : 1}</td>
+                            <td style="width: 24%; border: 1.5px solid #000; padding: 5px 8px;">${it.remarks || ''}</td>
+                        </tr>
+                    `).join('');
+
+                    return `
+                        <div class="page" style="page-break-before: always; page-break-inside: avoid; background: #fff; padding: 0;">
+                            ${renderLetterhead('')}
+                            <div style="font-size: 19px; font-weight: 800; letter-spacing: 1.5px; text-align: center; margin: 8px 0 14px 0; text-transform: uppercase; color: #000;">
+                                CLASSROOM / LAB LOAN VOUCHER
+                            </div>
+
+                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px; border: 1.5px solid #000;">
+                                <tr>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 700; background-color: #f8fafc; width: 18%;">Date & Time:</td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 600; width: 32%;">${v.dateStr || today}</td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 700; background-color: #f8fafc; text-align: center; width: 18%;">Room No.:</td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 14px; font-weight: 800; text-align: center; width: 32%;">${v.roomNumber || ''}</td>
+                                </tr>
+                                <tr>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 700; background-color: #f8fafc;">Issued To:</td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 600;">
+                                        ${v.staffName || 'Class Incharge'} ${v.staffDesignation ? `(${v.staffDesignation})` : ''}
+                                    </td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; font-weight: 700; background-color: #f8fafc; text-align: center;">Class / Session:</td>
+                                    <td style="border: 1.5px solid #000; padding: 5px 8px; font-size: 12px; text-align: center; font-weight: 600;">
+                                        ${v.classSection ? `${v.classSection} • ` : ''}${v.academicSession || '2026-27'}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; border: 1.5px solid #000;">
+                                <thead>
+                                    <tr style="background-color: #f1f5f9;">
+                                        <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 12px; font-weight: 800; width: 6%; text-align: center;">S. No.</th>
+                                        <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 12px; font-weight: 800; width: 38%; text-align: left;">Item Nomenclature</th>
+                                        <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 12px; font-weight: 800; width: 24%; text-align: left;">Serial No.</th>
+                                        <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 12px; font-weight: 800; width: 8%; text-align: center;">Qty</th>
+                                        <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 12px; font-weight: 800; width: 24%; text-align: left;">Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${itemsRows}
+                                </tbody>
+                            </table>
+
+                            <div style="border: 1.5px solid #000; padding: 8px 12px; margin-bottom: 14px; background: #fafafa; font-size: 11px; line-height: 1.45;">
+                                <strong style="display: block; margin-bottom: 4px;">Terms & Conditions of Issue:</strong>
+                                <ol style="margin: 0; padding-left: 18px;">
+                                    <li>The Receiver is fully responsible for the physical safety and proper operation of the issued hardware.</li>
+                                    <li>Any loss, damage, or technical fault must be reported to the issuing authority immediately.</li>
+                                    <li>The hardware must be used solely for the official or stated purpose of this loan.</li>
+                                    <li>The item must be returned on the due date or upon immediate demand by the issuing authority.</li>
+                                </ol>
+                            </div>
+
+                            <table style="width: 100%; border-collapse: collapse; margin-top: 15px; border: 1.5px solid #000;">
+                                <tr style="background-color: #f8fafc;">
+                                    <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 11.5px; font-weight: 700; width: 33.3%; text-align: center;">Issuer's Sign with Designation</th>
+                                    <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 11.5px; font-weight: 700; width: 33.4%; text-align: center;">Seal & Sign (Head of School)</th>
+                                    <th style="border: 1.5px solid #000; padding: 6px 8px; font-size: 11.5px; font-weight: 700; width: 33.3%; text-align: center;">Receiver's Sign with Designation</th>
+                                </tr>
+                                <tr>
+                                    <td style="border: 1.5px solid #000; height: 55px; vertical-align: bottom; text-align: center; padding: 4px;">
+                                        <div style="font-size: 11px; color: #334155; font-weight: 600;">${v.issuerSign || 'Lab Incharge'}</div>
+                                    </td>
+                                    <td style="border: 1.5px solid #000; height: 55px; vertical-align: bottom; text-align: center; padding: 4px;">
+                                        <div style="font-size: 11px; color: #334155; font-weight: 600;">${v.headOfSchoolSign || 'Principal'}</div>
+                                    </td>
+                                    <td style="border: 1.5px solid #000; height: 55px; vertical-align: bottom; text-align: center; padding: 4px;">
+                                        <div style="font-size: 11px; color: #334155; font-weight: 600;">${v.staffName || 'Class Incharge'}</div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    `;
+                }).join('');
+            })()}
         </body>
         </html>
         `;
@@ -1685,8 +1951,8 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Purchase Order - ${activePoNum}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 20mm; }
-                    body { font-family: 'Times New Roman', Times, serif; font-size: 15px; line-height: 1.6; color: #000; margin: 0; padding: 20px; }
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    body { font-family: 'Times New Roman', Times, serif; font-size: 15px; line-height: 1.6; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                     .letterhead { text-align: center; margin-bottom: 25px; }
                     .to-block { margin-bottom: 25px; line-height: 1.4; }
                     .subject-line { font-weight: bold; margin-bottom: 12px; }
@@ -1731,7 +1997,7 @@ export default function ProcurementPage() {
                     </p>
                 </div>
                 <div class="sign-block">
-                    <div style="color: #059669; font-family: cursive; font-size: 20px; margin-bottom: 4px; font-weight: bold;">Principal</div>
+                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
                     Principal<br/>
                     Senior Secondary Residential<br/>
                     School for Meritorious Students,<br/>
@@ -2604,7 +2870,8 @@ export default function ProcurementPage() {
             // Ensure classroom mappings are loaded for Step 11
             if (classroomMappings.length === 0) {
                 labsAPI.getClassroomMappings().then(r => {
-                    if (r.data?.data?.classrooms) setClassroomMappings(r.data.data.classrooms);
+                    const rooms = r.data?.data?.rooms || r.data?.data?.classrooms || [];
+                    if (rooms.length > 0) setClassroomMappings(rooms);
                 }).catch(() => {});
             }
 
@@ -2896,24 +3163,23 @@ export default function ProcurementPage() {
                                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                         {requests.map((req, rIdx) => {
                                             const getCompletedSteps = (r) => {
-                                                if (r.currentStep) {
-                                                    if (r.status === 'completed') return 12;
-                                                    return Math.min(12, Math.max(1, r.currentStep - 1));
-                                                }
+                                                if (r.status === 'completed') return 12;
                                                 let completed = 0;
-                                                if (r.purchaseLetterUrl || r.letterContent) completed++;
-                                                if ((r.committee?.length || 0) >= 3) completed++;
-                                                if ((r.items?.length || 0) >= 1) completed++;
+                                                if (r.purchaseLetterUrl || r.letterContent) completed = Math.max(completed, 1);
+                                                if ((r.committee?.length || 0) >= 3) completed = Math.max(completed, 2);
+                                                if ((r.items?.length || 0) >= 1) completed = Math.max(completed, 3);
                                                 const uniqueVendors = [...new Set((r.quotations || []).map(q => q.vendor?.id || q.vendorId))];
-                                                if (uniqueVendors.length >= 3) completed++;
-                                                if ((r.quotations?.length || 0) >= 3) completed++;
-                                                if (r.items?.[0]?.approvedVendorId) completed++;
-                                                if (r.items?.[0]?.approvedUnitPrice) completed++;
-                                                if (r.proceedingsDate) completed++;
-                                                if (r.poNumber) completed++;
-                                                if (r.billNumber || r.billUrl) completed++;
-                                                if (r.status === 'received' || r.status === 'completed') completed++;
-                                                if (r.status === 'completed') completed++;
+                                                if (uniqueVendors.length >= 3) completed = Math.max(completed, 4);
+                                                if ((r.quotations?.length || 0) >= 3 && r.quotations?.some(q => q.quotationNumber)) completed = Math.max(completed, 5);
+                                                if (r.items?.[0]?.approvedVendorId) completed = Math.max(completed, 6);
+                                                if (r.items?.[0]?.approvedUnitPrice) completed = Math.max(completed, 7);
+                                                if (r.proceedingsDate) completed = Math.max(completed, 8);
+                                                if (r.poNumber) completed = Math.max(completed, 9);
+                                                if (r.billNumber || r.billUrl || r.status === 'received' || r.status === 'paid') completed = Math.max(completed, 10);
+                                                if (r.status === 'received' || r.status === 'completed') completed = Math.max(completed, 11);
+                                                if (r.currentStep && r.currentStep > 1) {
+                                                    completed = Math.max(completed, r.currentStep - 1);
+                                                }
                                                 return Math.min(completed, 12);
                                             };
                                             const completedSteps = getCompletedSteps(req);
@@ -3002,24 +3268,23 @@ export default function ProcurementPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {requests.map(req => {
                                     const getCompletedSteps = (r) => {
-                                        if (r.currentStep) {
-                                            if (r.status === 'completed') return 12;
-                                            return Math.min(12, Math.max(1, r.currentStep - 1));
-                                        }
+                                        if (r.status === 'completed') return 12;
                                         let completed = 0;
-                                        if (r.purchaseLetterUrl || r.letterContent) completed++;
-                                        if ((r.committee?.length || 0) >= 3) completed++;
-                                        if ((r.items?.length || 0) >= 1) completed++;
+                                        if (r.purchaseLetterUrl || r.letterContent) completed = Math.max(completed, 1);
+                                        if ((r.committee?.length || 0) >= 3) completed = Math.max(completed, 2);
+                                        if ((r.items?.length || 0) >= 1) completed = Math.max(completed, 3);
                                         const uniqueVendors = [...new Set((r.quotations || []).map(q => q.vendor?.id || q.vendorId))];
-                                        if (uniqueVendors.length >= 3) completed++;
-                                        if ((r.quotations?.length || 0) >= 3) completed++;
-                                        if (r.items?.[0]?.approvedVendorId) completed++;
-                                        if (r.items?.[0]?.approvedUnitPrice) completed++;
-                                        if (r.proceedingsDate) completed++;
-                                        if (r.poNumber) completed++;
-                                        if (r.billNumber || r.billUrl) completed++;
-                                        if (r.status === 'received' || r.status === 'completed') completed++;
-                                        if (r.status === 'completed') completed++;
+                                        if (uniqueVendors.length >= 3) completed = Math.max(completed, 4);
+                                        if ((r.quotations?.length || 0) >= 3 && r.quotations?.some(q => q.quotationNumber)) completed = Math.max(completed, 5);
+                                        if (r.items?.[0]?.approvedVendorId) completed = Math.max(completed, 6);
+                                        if (r.items?.[0]?.approvedUnitPrice) completed = Math.max(completed, 7);
+                                        if (r.proceedingsDate) completed = Math.max(completed, 8);
+                                        if (r.poNumber) completed = Math.max(completed, 9);
+                                        if (r.billNumber || r.billUrl || r.status === 'received' || r.status === 'paid') completed = Math.max(completed, 10);
+                                        if (r.status === 'received' || r.status === 'completed') completed = Math.max(completed, 11);
+                                        if (r.currentStep && r.currentStep > 1) {
+                                            completed = Math.max(completed, r.currentStep - 1);
+                                        }
                                         return Math.min(completed, 12);
                                     };
                                     const completedSteps = getCompletedSteps(req);
@@ -3656,7 +3921,7 @@ export default function ProcurementPage() {
                                     <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 shadow-xs">
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             <div>
-                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">Memo Vide No. *</label>
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">Letter No. *</label>
                                                 <input
                                                     type="text"
                                                     className="input text-xs w-full"
@@ -3861,7 +4126,7 @@ Laboratory / IT Incharge`
 
                                                     {/* Ref & Date */}
                                                     <div className="flex justify-between items-center mb-4 text-[11px] font-semibold text-slate-700">
-                                                        <div>Memo No: <span className="font-mono text-indigo-700">{memoVideNo || requestDetail?.request?.memoVideNo || 'MSLDH/2026/PROC/___'}</span></div>
+                                                        <div>Letter No: <span className="font-mono text-indigo-700">{memoVideNo || requestDetail?.request?.memoVideNo || 'MSLDH/2026/PROC/___'}</span></div>
                                                         <div>Date: <span>{formatDate(proceedingsDate || new Date())}</span></div>
                                                     </div>
 
@@ -4451,6 +4716,18 @@ Laboratory / IT Incharge`
                                                                         placeholder="Quotation No. (e.g. QT-2024-001)"
                                                                         value={vendorQuotationNumbers[vendorId] || ''}
                                                                         onChange={e => setVendorQuotationNumbers(prev => ({ ...prev, [vendorId]: e.target.value }))}
+                                                                        onBlur={async () => {
+                                                                            const existingQuotation = requestDetail?.request?.quotations?.find(q => (q.vendor?.id || q.vendorId) === vendorId);
+                                                                            const qNumber = vendorQuotationNumbers[vendorId]?.trim();
+                                                                            if (existingQuotation && qNumber && qNumber !== existingQuotation.quotationNumber) {
+                                                                                try {
+                                                                                    await procurementAPI.updateQuotation(selectedRequest.id, existingQuotation.id, { quotationNumber: qNumber });
+                                                                                    toast.success(`Quotation number updated for ${vendor?.name}`);
+                                                                                } catch (err) {
+                                                                                    console.error('Failed to update quotation number:', err);
+                                                                                }
+                                                                            }
+                                                                        }}
                                                                         className="input text-xs py-1 px-2.5 w-44 font-mono"
                                                                     />
                                                                 </div>
@@ -4609,6 +4886,32 @@ Laboratory / IT Incharge`
                                                                 </div>
                                                             </div>
                                                         </div>
+
+                                                        {/* Embedded Preview for Attached Quotation Document */}
+                                                        {(() => {
+                                                            const existingQuotation = requestDetail?.request?.quotations?.find(q => (q.vendor?.id || q.vendorId) === vendorId);
+                                                            if (existingQuotation?.documentUrl) {
+                                                                const isPdf = existingQuotation.documentUrl.toLowerCase().includes('.pdf');
+                                                                return (
+                                                                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500 mb-1.5">
+                                                                            <span>Quotation Document Live Preview:</span>
+                                                                            <a href={existingQuotation.documentUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                                                <ExternalLink className="w-3 h-3" /> Full Screen
+                                                                            </a>
+                                                                        </div>
+                                                                        <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50">
+                                                                            {isPdf ? (
+                                                                                <iframe src={existingQuotation.documentUrl} title={`Quotation - ${vendor?.name}`} className="w-full h-full" />
+                                                                            ) : (
+                                                                                <img src={existingQuotation.documentUrl} alt="Quotation copy" className="w-full h-full object-contain" />
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        })()}
                                                     </div>
                                                 );
                                             })}
@@ -5191,10 +5494,35 @@ Laboratory / IT Incharge`
 
                                         return (
                                             <div className="space-y-4">
+                                                {/* 3-Mode Selector (Editor / Upload / Cloud Vault) */}
+                                                <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPoSourceMode('editor')}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${poSourceMode === 'editor' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" /> Official Letterhead & Editor
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPoSourceMode('upload')}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${poSourceMode === 'upload' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                    >
+                                                        <Upload className="w-3.5 h-3.5" /> Upload PO Document
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setPoSourceMode('cloud')}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${poSourceMode === 'cloud' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                                    >
+                                                        <Cloud className="w-3.5 h-3.5" /> Select from Cloud Vault
+                                                    </button>
+                                                </div>
+
                                                 {/* PO Meta Inputs */}
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
                                                     <div>
-                                                        <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Letter / PO No.</label>
+                                                        <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">Letter / PO No. *</label>
                                                         <input
                                                             type="text"
                                                             className="input text-xs w-full font-mono"
@@ -5223,91 +5551,181 @@ Laboratory / IT Incharge`
                                                     </div>
                                                 </div>
 
-                                                {/* Official A4 Purchase Order Preview Container (Attachment 1 Format) */}
-                                                <div className="w-full bg-slate-100 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-center">
-                                                    <div className="w-full max-w-[780px] bg-white text-black p-8 rounded-lg shadow-lg border border-slate-300 font-serif leading-relaxed text-sm">
-                                                        {/* Letterhead */}
-                                                        <div className="text-center mb-6">
-                                                            <img src={letterheadSrc} alt="School Letterhead" className="w-full max-h-[110px] object-contain mx-auto" />
-                                                        </div>
+                                                {/* MODE 1: Official A4 Purchase Order Preview (Attachment 1 Format) */}
+                                                {poSourceMode === 'editor' && (
+                                                    <div className="w-full bg-slate-100 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-center">
+                                                        <div className="w-full max-w-[780px] bg-white text-black p-8 rounded-lg shadow-lg border border-slate-300 font-serif leading-relaxed text-sm">
+                                                            {/* Letterhead */}
+                                                            <div className="text-center mb-6">
+                                                                <img src={letterheadSrc} alt="School Letterhead" className="w-full max-h-[110px] object-contain mx-auto" />
+                                                            </div>
 
-                                                        {/* To Block */}
-                                                        <div className="mb-5 leading-normal">
-                                                            To<br /><br />
-                                                            <strong className="text-base">{vendor?.name || 'Vendor Name'}</strong><br />
-                                                            {vendor?.address && <div className="text-slate-800 whitespace-pre-line">{vendor.address}</div>}
-                                                            {vendor?.phone && <div className="text-slate-800">Phone: {vendor.phone}</div>}
-                                                            {vendor?.gstin && <div className="text-slate-800">GSTIN: {vendor.gstin}</div>}
-                                                        </div>
+                                                            {/* To Block */}
+                                                            <div className="mb-5 leading-normal">
+                                                                To<br /><br />
+                                                                <strong className="text-base">{vendor?.name || 'Vendor Name'}</strong><br />
+                                                                {vendor?.address && <div className="text-slate-800 whitespace-pre-line">{vendor.address}</div>}
+                                                                {vendor?.phone && <div className="text-slate-800">Phone: {vendor.phone}</div>}
+                                                                {vendor?.gstin && <div className="text-slate-800">GSTIN: {vendor.gstin}</div>}
+                                                            </div>
 
-                                                        {/* Subject */}
-                                                        <div className="font-bold underline mb-3 text-base">
-                                                            Subject: Purchase order
-                                                        </div>
+                                                            {/* Subject */}
+                                                            <div className="font-bold underline mb-3 text-base">
+                                                                Subject: Purchase order
+                                                            </div>
 
-                                                        {/* Letter No & Date */}
-                                                        <div className="mb-5">
-                                                            Letter No: <strong>{activePoNum}</strong><br />
-                                                            Date: <strong>{dateFormatted}</strong>
-                                                        </div>
+                                                            {/* Letter No & Date */}
+                                                            <div className="mb-5">
+                                                                Letter No: <strong>{activePoNum}</strong><br />
+                                                                Date: <strong>{dateFormatted}</strong>
+                                                            </div>
 
-                                                        {/* Body content strictly mentioning items and quantities only */}
-                                                        <div className="space-y-3 mb-10 text-[15px]">
-                                                            <p>Sir,</p>
-                                                            <p className="pl-6 -indent-6">
-                                                                1. Reference your quotation{qNum ? ` no. ${qNum}` : ''}.
-                                                            </p>
-                                                            <p className="pl-6 -indent-6">
-                                                                2. You are requested to supply <strong>{items.map(item => {
-                                                                    const qty = editableQuantities[item.id] ?? item.quantity;
-                                                                    const qtyStr = qty < 10 ? `0${qty}` : `${qty}`;
-                                                                    return `${qtyStr} ${item.itemName}`;
-                                                                }).join(', ')}</strong> to this school as per rate quoted in your quotation.
-                                                            </p>
-                                                            <p className="pl-6 -indent-6">
-                                                                3. An early action is requested please.
-                                                            </p>
-                                                        </div>
+                                                            {/* Body content strictly mentioning items and quantities only */}
+                                                            <div className="space-y-3 mb-10 text-[15px]">
+                                                                <p>Sir,</p>
+                                                                <p className="pl-6 -indent-6">
+                                                                    1. Reference your quotation{qNum ? ` no. ${qNum}` : ''}.
+                                                                </p>
+                                                                <p className="pl-6 -indent-6">
+                                                                    2. You are requested to supply <strong>{items.map(item => {
+                                                                        const qty = editableQuantities[item.id] ?? item.quantity;
+                                                                        const qtyStr = qty < 10 ? `0${qty}` : `${qty}`;
+                                                                        return `${qtyStr} ${item.itemName}`;
+                                                                    }).join(', ')}</strong> to this school as per rate quoted in your quotation.
+                                                                </p>
+                                                                <p className="pl-6 -indent-6">
+                                                                    3. An early action is requested please.
+                                                                </p>
+                                                            </div>
 
-                                                        {/* Signature */}
-                                                        <div className="flex justify-end pt-6">
-                                                            <div className="text-left leading-tight">
-                                                                <div className="text-emerald-700 font-serif italic font-bold text-xl mb-1">Principal</div>
-                                                                Principal<br />
-                                                                Senior Secondary Residential<br />
-                                                                School for Meritorious Students,<br />
-                                                                Ludhiana
+                                                            {/* Signature with green cursive Principal styling */}
+                                                            <div className="flex justify-end pt-8">
+                                                                <div className="text-left leading-tight">
+                                                                    <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '4px' }}>
+                                                                        Principal
+                                                                    </div>
+                                                                    <div className="font-serif text-sm text-slate-800">
+                                                                        Principal<br />
+                                                                        Senior Secondary Residential<br />
+                                                                        School for Meritorious Students,<br />
+                                                                        Ludhiana
+                                                                    </div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
-                                                </div>
+                                                )}
 
-                                                {/* Upload Signed PO Document Option */}
-                                                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">Upload Executed / Signed PO Document (Optional)</label>
-                                                    <input
-                                                        type="file"
-                                                        className="input text-xs w-full"
-                                                        accept=".pdf,.jpg,.jpeg,.png"
-                                                        onChange={async (e) => {
-                                                            const file = e.target.files[0];
-                                                            if (file && selectedRequest?.id) {
-                                                                try {
-                                                                    await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'po', file);
-                                                                    setOrderForm({ ...orderForm, poUrl: file.name });
-                                                                    toast.success('PO document uploaded');
-                                                                } catch (err) {
-                                                                    toast.error('Upload failed');
+                                                {/* MODE 2: Upload Executed PO Document */}
+                                                {poSourceMode === 'upload' && (
+                                                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                                                            Upload Executed / Signed PO Document (PDF or Image)
+                                                        </label>
+                                                        <input
+                                                            type="file"
+                                                            className="input text-xs w-full"
+                                                            accept=".pdf,.jpg,.jpeg,.png"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files[0];
+                                                                if (file) {
+                                                                    setPoUploadFile(file);
+                                                                    try {
+                                                                        await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'po', file);
+                                                                        setOrderForm({ ...orderForm, poUrl: file.name });
+                                                                        toast.success('PO document uploaded successfully');
+                                                                        await openRequestDetail(selectedRequest, true);
+                                                                    } catch (err) {
+                                                                        toast.error('Upload failed');
+                                                                    }
                                                                 }
-                                                            }
-                                                        }}
-                                                    />
-                                                    {(orderForm.poUrl || requestDetail?.request?.poUrl) && (
-                                                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1.5">
-                                                            ✓ Document attached
+                                                            }}
+                                                        />
+                                                        {(poUploadFile || requestDetail?.request?.poUrl) && (
+                                                            <div className="space-y-2 pt-2">
+                                                                <div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                                                                    ✓ Document Attached: {poUploadFile?.name || requestDetail?.request?.poUrl}
+                                                                </div>
+                                                                <div className="w-full h-80 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100">
+                                                                    {requestDetail?.request?.poUrl && requestDetail.request.poUrl.toLowerCase().includes('.pdf') ? (
+                                                                        <iframe src={requestDetail.request.poUrl} title="Uploaded PO Preview" className="w-full h-full" />
+                                                                    ) : requestDetail?.request?.poUrl ? (
+                                                                        <img src={requestDetail.request.poUrl} alt="Uploaded PO" className="w-full h-full object-contain" />
+                                                                    ) : (
+                                                                        <div className="flex items-center justify-center h-full text-xs text-slate-400">File selected: {poUploadFile?.name}</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {/* MODE 3: Select PO from Cloud Vault */}
+                                                {poSourceMode === 'cloud' && (
+                                                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-4">
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                            <div>
+                                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                                                                    Select Purchase Order from Cloud Vault
+                                                                </h4>
+                                                                <p className="text-slate-500 text-xs">
+                                                                    Pick an existing PO file stored in Office Media Files or Cloud Vault.
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowPoCloudPicker(true)}
+                                                                className="btn bg-indigo-600 hover:bg-indigo-700 text-white text-xs py-2 px-3 flex items-center gap-1.5 shadow-xs shrink-0"
+                                                            >
+                                                                <Cloud className="w-4 h-4" /> Browse Cloud Vault
+                                                            </button>
                                                         </div>
-                                                    )}
-                                                </div>
+
+                                                        {poCloudDoc ? (
+                                                            <div className="space-y-3">
+                                                                <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-center justify-between">
+                                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                                        <div className="p-2 bg-indigo-600 text-white rounded-lg">
+                                                                            <FileText className="w-4 h-4" />
+                                                                        </div>
+                                                                        <div className="min-w-0">
+                                                                            <div className="font-bold text-xs text-indigo-900 dark:text-indigo-200 truncate">
+                                                                                {poCloudDoc.name}
+                                                                            </div>
+                                                                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400">Linked from Cloud Repository</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setShowPoCloudPicker(true)}
+                                                                        className="text-xs text-indigo-600 hover:underline font-semibold"
+                                                                    >
+                                                                        Change
+                                                                    </button>
+                                                                </div>
+
+                                                                {poCloudDoc.url && (
+                                                                    <div className="w-full h-80 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100">
+                                                                        <iframe
+                                                                            src={poCloudDoc.url}
+                                                                            title="Cloud PO Preview"
+                                                                            className="w-full h-full"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <div
+                                                                onClick={() => setShowPoCloudPicker(true)}
+                                                                className="p-8 border-2 border-dashed border-indigo-300 dark:border-indigo-800 rounded-xl text-center hover:bg-indigo-50/50 dark:hover:bg-indigo-950/20 cursor-pointer transition"
+                                                            >
+                                                                <Cloud className="w-8 h-8 mx-auto text-indigo-500 mb-2" />
+                                                                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Click to Select PO Document from Cloud Vault</p>
+                                                                <p className="text-[11px] text-slate-400 mt-0.5">Select stored PDF or Purchase Order from Office Media Files</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })()}
@@ -5416,8 +5834,24 @@ Laboratory / IT Incharge`
                                                         }}
                                                     />
                                                     {(billUpload || requestDetail?.request?.billUrl) && (
-                                                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center gap-1.5">
-                                                            ✓ Invoice Document Attached
+                                                        <div className="space-y-1.5 mt-2">
+                                                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between">
+                                                                <span>✓ Invoice Document Attached</span>
+                                                                {requestDetail?.request?.billUrl && (
+                                                                    <a href={requestDetail.request.billUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                                        <ExternalLink className="w-3 h-3" /> Full Screen
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100">
+                                                                {requestDetail?.request?.billUrl && requestDetail.request.billUrl.toLowerCase().includes('.pdf') ? (
+                                                                    <iframe src={requestDetail.request.billUrl} title="Invoice Bill Preview" className="w-full h-full" />
+                                                                ) : requestDetail?.request?.billUrl ? (
+                                                                    <img src={requestDetail.request.billUrl} alt="Invoice Document" className="w-full h-full object-contain" />
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center h-full text-xs text-slate-400">File attached: {billUpload?.name}</div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -5483,20 +5917,24 @@ Laboratory / IT Incharge`
                                                         }}
                                                     />
                                                     {(chequeUpload || requestDetail?.request?.chequeUrl) && (
-                                                        <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-1 flex items-center justify-between">
-                                                            <span className="flex items-center gap-1.5 font-semibold">
-                                                                ✓ Scanned Cheque Document Attached
-                                                            </span>
-                                                            {requestDetail?.request?.chequeUrl && (
-                                                                <a
-                                                                    href={requestDetail.request.chequeUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                                                                >
-                                                                    <Eye className="w-3.5 h-3.5" /> View Uploaded Cheque
-                                                                </a>
-                                                            )}
+                                                        <div className="space-y-1.5 mt-2">
+                                                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between">
+                                                                <span className="flex items-center gap-1.5">✓ Scanned Cheque Document Attached</span>
+                                                                {requestDetail?.request?.chequeUrl && (
+                                                                    <a href={requestDetail.request.chequeUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                                        <ExternalLink className="w-3 h-3" /> Full Screen
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100">
+                                                                {requestDetail?.request?.chequeUrl && requestDetail.request.chequeUrl.toLowerCase().includes('.pdf') ? (
+                                                                    <iframe src={requestDetail.request.chequeUrl} title="Cheque Preview" className="w-full h-full" />
+                                                                ) : requestDetail?.request?.chequeUrl ? (
+                                                                    <img src={requestDetail.request.chequeUrl} alt="Cheque Document" className="w-full h-full object-contain" />
+                                                                ) : (
+                                                                    <div className="flex items-center justify-center h-full text-xs text-slate-400">File attached: {chequeUpload?.name}</div>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                     )}
                                                 </div>
@@ -5529,67 +5967,58 @@ Laboratory / IT Incharge`
                                             <div className="space-y-3">
                                                 {requestDetail?.request?.items?.map((item, idx) => {
                                                     const expected = editableQuantities[item.id] ?? item.quantity;
-                                                    const received = receivedItems[item.id]?.received ?? 0;
+                                                    const verifiedQty = receivedItems[item.id]?.received ?? (receivedItems[item.id]?.serialNumbers?.length || 0);
                                                     const serials = receivedItems[item.id]?.serialNumbers || [];
+                                                    const isVerified = serials.length >= expected || verifiedQty >= expected;
 
                                                     return (
-                                                        <div key={item.id} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800">
-                                                            <div className="flex items-center justify-between mb-2">
+                                                        <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
+                                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-xs font-bold text-slate-400">{idx + 1}.</span>
-                                                                    <span className="font-semibold text-xs text-slate-800 dark:text-slate-200">{item.itemName}</span>
-                                                                    <span className="text-[11px] text-slate-500">(Expected: {expected} {item.unit || 'pcs'})</span>
+                                                                    <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-500 flex items-center justify-center shrink-0">{idx + 1}</span>
+                                                                    <div>
+                                                                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{item.itemName}</span>
+                                                                        <span className="text-[11px] text-slate-500 ml-1.5">(Expected: {expected} {item.unit || 'pcs'})</span>
+                                                                    </div>
                                                                 </div>
-                                                                <div className={`px-2 py-0.5 rounded text-[11px] font-bold ${received >= expected ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
-                                                                    {received}/{expected} Received
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex flex-wrap items-center gap-3">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <label className="text-[11px] font-medium text-slate-500">Received Qty:</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        className="input w-20 text-xs py-1"
-                                                                        min="0"
-                                                                        max={expected}
-                                                                        value={received}
-                                                                        onChange={e => setReceivedItems(prev => ({
-                                                                            ...prev,
-                                                                            [item.id]: { ...(prev[item.id] || {}), received: parseInt(e.target.value) || 0 }
-                                                                        }))}
-                                                                    />
-                                                                </div>
-                                                                <div className="flex-1 flex items-center gap-2 min-w-[200px]">
-                                                                    <ScanLine className="w-4 h-4 text-slate-400 shrink-0" />
-                                                                    <input
-                                                                        type="text"
-                                                                        className="input text-xs py-1 flex-1"
-                                                                        placeholder="Scan barcode or type serial & press Enter"
-                                                                        onKeyDown={e => {
-                                                                            if (e.key === 'Enter' && e.target.value.trim()) {
-                                                                                setReceivedItems(prev => ({
-                                                                                    ...prev,
-                                                                                    [item.id]: {
-                                                                                        ...(prev[item.id] || {}),
-                                                                                        serialNumbers: [...(prev[item.id]?.serialNumbers || []), e.target.value.trim()]
-                                                                                    }
-                                                                                }));
-                                                                                e.target.value = '';
-                                                                                toast.success('Serial number recorded');
-                                                                            }
-                                                                        }}
-                                                                    />
+                                                                <div className="flex items-center gap-2">
+                                                                    <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isVerified ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'}`}>
+                                                                        {serials.length} / {expected} Scanned
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setScanningItemModal({
+                                                                            isOpen: true,
+                                                                            item,
+                                                                            expectedQty: expected
+                                                                        })}
+                                                                        className="btn btn-primary text-xs py-1 px-3 flex items-center gap-1.5 shadow-xs"
+                                                                    >
+                                                                        <ScanLine className="w-3.5 h-3.5" /> Scan / Verify Serials
+                                                                    </button>
                                                                 </div>
                                                             </div>
 
-                                                            {serials.length > 0 && (
-                                                                <div className="flex flex-wrap gap-1 mt-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                            {/* Verification Progress Bar */}
+                                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-2">
+                                                                <div
+                                                                    className={`h-full transition-all duration-300 ${isVerified ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                                                                    style={{ width: `${Math.min(100, Math.round(((serials.length || verifiedQty) / (expected || 1)) * 100))}%` }}
+                                                                />
+                                                            </div>
+
+                                                            {serials.length > 0 ? (
+                                                                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                                                                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Recorded Serials:</span>
                                                                     {serials.map((sn, i) => (
                                                                         <span key={i} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] rounded-md border border-indigo-200 dark:border-indigo-800">
-                                                                            {sn}
+                                                                            #{i + 1} {sn}
                                                                         </span>
                                                                     ))}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-[11px] text-slate-400 italic pt-1">
+                                                                    No serial numbers scanned yet. Click "Scan / Verify Serials" to open barcode scanning modal.
                                                                 </div>
                                                             )}
                                                         </div>
@@ -5647,134 +6076,121 @@ Laboratory / IT Incharge`
                                     </div>
 
                                     <div className="space-y-4">
-                                        {/* Classroom & Incharge Selection */}
-                                        <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-                                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                                <Building2 className="w-4 h-4 text-indigo-600" /> 1. Target Classroom & Staff Incharge
-                                            </h4>
-
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                                                <div className="sm:col-span-2">
-                                                    <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Select Classroom / Lab *</label>
-                                                    <select
-                                                        className="input text-xs w-full"
-                                                        value={selectedClassroomId}
-                                                        onChange={e => {
-                                                            const id = e.target.value;
-                                                            setSelectedClassroomId(id);
-                                                            const mapping = classroomMappings.find(cm => String(cm.id) === String(id));
-                                                            setSelectedClassroomData(mapping || null);
-                                                        }}
-                                                    >
-                                                        <option value="">Select a classroom / lab...</option>
-                                                        {classroomMappings.map(cm => (
-                                                            <option key={cm.id} value={cm.id}>
-                                                                Room {cm.roomNumber} - {cm.className || cm.roomName || 'Classroom'} {cm.section ? `(${cm.section})` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                        {/* Running DateTime Toolbar & Batch Room Assign */}
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                                                    <Calendar className="w-4 h-4" />
                                                 </div>
-
                                                 <div>
-                                                    <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Class Incharge (Disabled / Auto)</label>
-                                                    <input
-                                                        type="text"
-                                                        disabled
-                                                        className="input text-xs w-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium cursor-not-allowed"
-                                                        value={selectedClassroomData ? `${selectedClassroomData.firstName || ''} ${selectedClassroomData.lastName || ''} (${selectedClassroomData.designation || 'Class Incharge'})`.trim() : 'Select classroom'}
-                                                    />
+                                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Running Issuance Date & Time</span>
+                                                    <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{liveDateTime}</span>
                                                 </div>
+                                            </div>
 
-                                                <div>
-                                                    <label className="font-semibold text-slate-600 dark:text-slate-400 block mb-1">Academic Session</label>
-                                                    <input
-                                                        type="text"
-                                                        disabled
-                                                        className="input text-xs w-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-mono cursor-not-allowed"
-                                                        value="2026-2027"
-                                                    />
-                                                </div>
+                                            {/* Quick Batch Classroom Assign Helper */}
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-slate-500 font-semibold whitespace-nowrap">Batch Assign All Units to:</span>
+                                                <select
+                                                    className="input text-xs py-1 font-medium"
+                                                    onChange={e => {
+                                                        if (e.target.value) {
+                                                            handleApplyClassroomToAll(e.target.value);
+                                                            e.target.value = '';
+                                                        }
+                                                    }}
+                                                >
+                                                    <option value="">Select a classroom / lab to apply...</option>
+                                                    {classroomMappings.map(cm => (
+                                                        <option key={cm.id} value={cm.id}>
+                                                            Room {cm.roomNumber} - {cm.className || cm.roomName || 'Classroom'} {cm.section ? `(${cm.section})` : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
                                             </div>
                                         </div>
 
-                                        {/* Hardware Enlistment & Serial Numbers */}
+                                        {/* Hardware Enlistment & Unit-by-Unit Classroom Assignment */}
                                         <div className="p-4 bg-slate-50/60 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
-                                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                                <Package className="w-4 h-4 text-emerald-600" /> 2. Hardware Enlistment & Serial Numbers
-                                            </h4>
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                    <Package className="w-4 h-4 text-emerald-600" /> Physical Hardware Units & Target Assignment
+                                                </h4>
+                                                <span className="text-[11px] text-slate-500 font-medium">
+                                                    {unitIssuances.length} Units to Assign
+                                                </span>
+                                            </div>
 
                                             <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                                                 <table className="w-full text-xs">
                                                     <thead>
-                                                        <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
-                                                            <th className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300 w-12">#</th>
-                                                            <th className="p-2.5 text-left font-bold text-slate-700 dark:text-slate-300">Item Nomenclature</th>
-                                                            <th className="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300 w-24">Quantity</th>
-                                                            <th className="p-2.5 text-left font-bold text-slate-700 dark:text-slate-300 w-64">Serial Number</th>
-                                                            <th className="p-2.5 text-left font-bold text-slate-700 dark:text-slate-300">Remarks / Location</th>
+                                                        <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                                                            <th className="p-2.5 text-center font-bold w-10">#</th>
+                                                            <th className="p-2.5 text-left font-bold w-44">Item Nomenclature</th>
+                                                            <th className="p-2.5 text-left font-bold w-40">Serial Number</th>
+                                                            <th className="p-2.5 text-left font-bold w-52">Target Classroom / Lab *</th>
+                                                            <th className="p-2.5 text-left font-bold w-44">Class Incharge (Auto)</th>
+                                                            <th className="p-2.5 text-left font-bold">Remarks / Purpose</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                                        {requestDetail?.request?.items?.map((item, idx) => {
-                                                            const qty = editableQuantities[item.id] ?? item.quantity;
-                                                            return (
-                                                                <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                                                                    <td className="p-2.5 text-center font-semibold text-slate-500">{idx + 1}</td>
-                                                                    <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">{item.itemName}</td>
-                                                                    <td className="p-2.5 text-center font-semibold text-slate-700 dark:text-slate-300">{qty} {item.unit || 'pcs'}</td>
-                                                                    <td className="p-2.5">
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <ScanLine className="w-4 h-4 text-slate-400 shrink-0" />
-                                                                            <input
-                                                                                type="text"
-                                                                                className="input text-xs py-1 font-mono w-full"
-                                                                                placeholder="Scan or enter Serial No."
-                                                                                value={hardwareItemSerials[item.id] || ''}
-                                                                                onChange={e => setHardwareItemSerials(prev => ({
-                                                                                    ...prev,
-                                                                                    [item.id]: e.target.value
-                                                                                }))}
-                                                                            />
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="p-2.5">
-                                                                        <input
-                                                                            type="text"
-                                                                            className="input text-xs py-1 w-full"
-                                                                            placeholder="e.g. Secured inside shutter"
-                                                                            value={hardwareItemRemarks[item.id] || ''}
-                                                                            onChange={e => setHardwareItemRemarks(prev => ({
-                                                                                ...prev,
-                                                                                [item.id]: e.target.value
-                                                                            }))}
-                                                                        />
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        })}
+                                                        {unitIssuances.map((unit, idx) => (
+                                                            <tr key={unit.unitKey || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                                                                <td className="p-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                                                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
+                                                                    <div>{unit.itemName}</div>
+                                                                    <span className="text-[10px] text-slate-400 font-normal">Unit {unit.unitIndex} of {unit.totalUnits}</span>
+                                                                </td>
+                                                                <td className="p-2.5">
+                                                                    <input
+                                                                        type="text"
+                                                                        className="input text-xs py-1 font-mono w-full"
+                                                                        placeholder="Serial No."
+                                                                        value={unit.serialNumber || ''}
+                                                                        onChange={e => {
+                                                                            const val = e.target.value;
+                                                                            setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, serialNumber: val } : u));
+                                                                        }}
+                                                                    />
+                                                                </td>
+                                                                <td className="p-2.5">
+                                                                    <select
+                                                                        className="input text-xs py-1 w-full font-medium"
+                                                                        value={unit.classroomId || ''}
+                                                                        onChange={e => handleUnitClassroomChange(unit.unitKey, e.target.value)}
+                                                                    >
+                                                                        <option value="">Select target room...</option>
+                                                                        {classroomMappings.map(cm => (
+                                                                            <option key={cm.id} value={cm.id}>
+                                                                                Room {cm.roomNumber} - {cm.className || cm.roomName || 'Classroom'} {cm.section ? `(${cm.section})` : ''}
+                                                                            </option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
+                                                                <td className="p-2.5">
+                                                                    <input
+                                                                        type="text"
+                                                                        disabled
+                                                                        className="input text-xs py-1 w-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium cursor-not-allowed truncate"
+                                                                        value={unit.staffName ? `${unit.staffName} (${unit.staffDesignation || 'Incharge'})` : 'Select classroom'}
+                                                                    />
+                                                                </td>
+                                                                <td className="p-2.5">
+                                                                    <input
+                                                                        type="text"
+                                                                        className="input text-xs py-1 w-full"
+                                                                        placeholder="e.g. Smart Room setup"
+                                                                        value={unit.remarks || ''}
+                                                                        onChange={e => {
+                                                                            const val = e.target.value;
+                                                                            setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, remarks: val } : u));
+                                                                        }}
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        ))}
                                                     </tbody>
                                                 </table>
-                                            </div>
-
-                                            <div className="flex justify-end pt-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={handleIssueHardwareToClassroom}
-                                                    disabled={issuingHardware || !selectedClassroomData?.roomNumber}
-                                                    className="btn btn-primary text-xs flex items-center gap-1.5"
-                                                >
-                                                    {issuingHardware ? (
-                                                        <>
-                                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                                            Issuing Hardware...
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <FileCheck className="w-4 h-4" />
-                                                            Issue Hardware & Generate Loan Voucher
-                                                        </>
-                                                    )}
-                                                </button>
                                             </div>
                                         </div>
 
@@ -6176,7 +6592,7 @@ Laboratory / IT Incharge`
                     </div>
                 )
             }
-            {/* Multi-Source Cloud Vault PDF Picker Modal */}
+            {/* Multi-Source Cloud Vault PDF Picker Modal for Letter (Step 1) */}
             <MultiSourcePdfPickerModal
                 isOpen={showCloudPicker}
                 onClose={() => setShowCloudPicker(false)}
@@ -6184,6 +6600,43 @@ Laboratory / IT Incharge`
                     setCloudSelectedDoc(doc);
                     setShowCloudPicker(false);
                     toast.success(`Selected "${doc.name}" from Cloud Vault`);
+                }}
+            />
+
+            {/* Multi-Source Cloud Vault PDF Picker Modal for PO (Step 9) */}
+            <MultiSourcePdfPickerModal
+                isOpen={showPoCloudPicker}
+                onClose={() => setShowPoCloudPicker(false)}
+                onSelectPdf={(doc) => {
+                    setPoCloudDoc(doc);
+                    setShowPoCloudPicker(false);
+                    toast.success(`Selected PO "${doc.name}" from Cloud Vault`);
+                }}
+            />
+
+            {/* Scanning Item Modal for Received Hardware Verification (Step 10) */}
+            <ScanningItemModal
+                isOpen={scanningItemModal.isOpen}
+                item={scanningItemModal.item}
+                expectedQty={scanningItemModal.expectedQty}
+                initialSerials={scanningItemModal.item ? (receivedItems[scanningItemModal.item.id]?.serialNumbers || []) : []}
+                initialRemarks={scanningItemModal.item ? (receivedItems[scanningItemModal.item.id]?.remarks || '') : ''}
+                onClose={() => setScanningItemModal({ isOpen: false, item: null, expectedQty: 1 })}
+                onSave={({ serialNumbers, receivedCount, remarks, condition }) => {
+                    if (scanningItemModal.item) {
+                        const itemId = scanningItemModal.item.id;
+                        setReceivedItems(prev => ({
+                            ...prev,
+                            [itemId]: {
+                                ...(prev[itemId] || {}),
+                                received: receivedCount,
+                                serialNumbers,
+                                remarks,
+                                condition
+                            }
+                        }));
+                        toast.success(`Verified ${serialNumbers.length} serials for ${scanningItemModal.item.itemName}`);
+                    }
                 }}
             />
         </div >
