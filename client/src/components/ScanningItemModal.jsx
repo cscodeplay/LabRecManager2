@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, ScanLine, Plus, Trash2, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { X, ScanLine, Plus, Trash2, Check, AlertCircle, Camera } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function ScanningItemModal({
@@ -17,18 +17,44 @@ export default function ScanningItemModal({
     const [currentInput, setCurrentInput] = useState('');
     const [remarks, setRemarks] = useState('');
     const [condition, setCondition] = useState('New / Intact (Working)');
+    const [showCamera, setShowCamera] = useState(false);
     const inputRef = useRef(null);
+    const activeItemIdRef = useRef(null);
+    const html5QrcodeScannerRef = useRef(null);
 
-    useEffect(() => {
-        if (isOpen) {
-            setSerials(Array.isArray(initialSerials) ? [...initialSerials] : []);
-            setRemarks(initialRemarks || '');
-            setCurrentInput('');
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 100);
+    // Stop camera helper
+    const stopCameraScanner = async () => {
+        if (html5QrcodeScannerRef.current) {
+            try {
+                if (html5QrcodeScannerRef.current.isScanning) {
+                    await html5QrcodeScannerRef.current.stop();
+                }
+                html5QrcodeScannerRef.current.clear();
+            } catch (e) {
+                console.warn('Scanner stop error:', e);
+            }
+            html5QrcodeScannerRef.current = null;
         }
-    }, [isOpen, initialSerials, initialRemarks]);
+        setShowCamera(false);
+    };
+
+    // Initialize state ONLY when modal opens or item changes (avoids resetting on parent re-renders)
+    useEffect(() => {
+        if (isOpen && item) {
+            if (activeItemIdRef.current !== item.id) {
+                activeItemIdRef.current = item.id;
+                setSerials(Array.isArray(initialSerials) ? [...initialSerials] : []);
+                setRemarks(initialRemarks || '');
+                setCurrentInput('');
+                setTimeout(() => {
+                    inputRef.current?.focus();
+                }, 100);
+            }
+        } else if (!isOpen) {
+            activeItemIdRef.current = null;
+            stopCameraScanner();
+        }
+    }, [isOpen, item]);
 
     if (!isOpen || !item) return null;
 
@@ -59,24 +85,66 @@ export default function ScanningItemModal({
         setSerials(prev => prev.filter((_, i) => i !== idx));
     };
 
-    const handleAutoGenerate = () => {
-        const prefix = (item.itemName || 'ITEM').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
-        const year = new Date().getFullYear();
-        const generated = [];
-        for (let i = 1; i <= expectedQty; i++) {
-            generated.push(`${prefix}-${year}-${i.toString().padStart(3, '0')}`);
+    const startCameraScanner = async () => {
+        setShowCamera(true);
+        try {
+            const { Html5Qrcode } = await import('html5-qrcode');
+            setTimeout(async () => {
+                try {
+                    const scannerId = 'barcode-camera-scanner-view';
+                    const element = document.getElementById(scannerId);
+                    if (!element) return;
+
+                    const scanner = new Html5Qrcode(scannerId);
+                    html5QrcodeScannerRef.current = scanner;
+                    await scanner.start(
+                        { facingMode: 'environment' },
+                        { fps: 12, qrbox: { width: 260, height: 130 } },
+                        (decodedText) => {
+                            if (decodedText) {
+                                handleAddSerial(decodedText);
+                            }
+                        },
+                        () => {} // ignore interim frames
+                    );
+                } catch (err) {
+                    console.error('Camera start error:', err);
+                    toast.error('Unable to access camera. Please check permissions.');
+                    setShowCamera(false);
+                }
+            }, 200);
+        } catch (e) {
+            toast.error('Scanner library not available');
+            setShowCamera(false);
         }
-        setSerials(generated);
-        toast.success(`Generated ${generated.length} sample serial numbers`);
+    };
+
+    const toggleCameraScanner = () => {
+        if (showCamera) {
+            stopCameraScanner();
+        } else {
+            startCameraScanner();
+        }
     };
 
     const handleSave = () => {
+        let finalSerials = [...serials];
+        const trimmed = currentInput.trim();
+        if (trimmed && !finalSerials.includes(trimmed)) {
+            finalSerials.push(trimmed);
+        }
+        stopCameraScanner();
         onSave({
-            serialNumbers: serials,
-            receivedCount: serials.length,
+            serialNumbers: finalSerials,
+            receivedCount: finalSerials.length,
             remarks,
             condition
         });
+        onClose();
+    };
+
+    const handleModalClose = () => {
+        stopCameraScanner();
         onClose();
     };
 
@@ -103,7 +171,7 @@ export default function ScanningItemModal({
                     </div>
                     <button
                         type="button"
-                        onClick={onClose}
+                        onClick={handleModalClose}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                     >
                         <X className="w-5 h-5" />
@@ -144,7 +212,7 @@ export default function ScanningItemModal({
                                 Barcode Scanner / Serial Input
                             </span>
                             <span className="text-[10px] text-slate-400 font-normal">
-                                Press Enter to add
+                                Press Enter or click Add
                             </span>
                         </label>
                         <div className="flex gap-2">
@@ -161,20 +229,50 @@ export default function ScanningItemModal({
                                 type="button"
                                 onClick={() => handleAddSerial()}
                                 disabled={!currentInput.trim()}
-                                className="btn btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-40"
+                                className="btn btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-40 shadow-xs"
                             >
                                 <Plus className="w-3.5 h-3.5" /> Add
                             </button>
-                        </div>
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px] text-slate-500">
-                            <span>Ready for USB/Bluetooth barcode scanner</span>
                             <button
                                 type="button"
-                                onClick={handleAutoGenerate}
-                                className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
+                                onClick={toggleCameraScanner}
+                                title={showCamera ? 'Close camera' : 'Open camera barcode scanner'}
+                                className={`btn text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs transition ${
+                                    showCamera
+                                        ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                        : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                }`}
                             >
-                                <Sparkles className="w-3 h-3" /> Auto-generate {expectedQty} serials
+                                <Camera className="w-3.5 h-3.5" /> {showCamera ? 'Stop Camera' : 'Camera'}
                             </button>
+                        </div>
+
+                        {/* Interactive Camera Viewport */}
+                        {showCamera && (
+                            <div className="mt-3 p-3 bg-black rounded-xl border border-slate-700 space-y-2">
+                                <div className="flex items-center justify-between text-xs text-slate-300 font-medium">
+                                    <span className="flex items-center gap-1.5">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                        Aim camera at product barcode / serial
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={stopCameraScanner}
+                                        className="text-xs text-rose-400 hover:text-rose-300 underline"
+                                    >
+                                        Close Camera
+                                    </button>
+                                </div>
+                                <div
+                                    id="barcode-camera-scanner-view"
+                                    className="w-full h-56 rounded-lg overflow-hidden bg-black flex items-center justify-center text-slate-400 text-xs"
+                                />
+                            </div>
+                        )}
+
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px] text-slate-500">
+                            <span>Ready for USB, Bluetooth & Camera barcode scanning</span>
+                            <span className="text-[10px] text-slate-400">Continuous scanning enabled</span>
                         </div>
                     </div>
 
@@ -198,7 +296,7 @@ export default function ScanningItemModal({
                         {serials.length === 0 ? (
                             <div className="p-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center text-slate-400 text-xs">
                                 <ScanLine className="w-8 h-8 mx-auto mb-1.5 opacity-40" />
-                                No serial numbers scanned yet. Scan or type above.
+                                No serial numbers scanned yet. Scan with camera, barcode reader, or type above.
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
@@ -265,7 +363,7 @@ export default function ScanningItemModal({
                 <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/50 flex items-center justify-end gap-2.5">
                     <button
                         type="button"
-                        onClick={onClose}
+                        onClick={handleModalClose}
                         className="btn btn-secondary text-xs py-2 px-3.5"
                     >
                         Cancel

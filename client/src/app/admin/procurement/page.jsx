@@ -1179,6 +1179,9 @@ export default function ProcurementPage() {
                         padding: 0 !important;
                         margin: 0 !important;
                     }
+                    .no-print-bar {
+                        display: none !important;
+                    }
                     .page {
                         width: 100% !important;
                         min-height: auto !important;
@@ -1203,9 +1206,36 @@ export default function ProcurementPage() {
                         height: auto !important;
                     }
                 }
+                .no-print-bar {
+                    width: 210mm;
+                    max-width: 96vw;
+                    margin: 16px auto 0 auto;
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 8px;
+                }
+                .no-print-bar button {
+                    background: #1e293b;
+                    color: #ffffff;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+                }
+                .no-print-bar button:hover { background: #0f172a; }
             </style>
         </head>
         <body>
+            <div class="no-print-bar">
+                <button type="button" onclick="window.print()">🖨️ Print Complete Docket</button>
+                <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+            </div>
             <!-- PAGE 1: REQUEST FOR NEW PURCHASE -->
             <div class="page">
                 ${renderLetterhead('1. Request for New Purchase')}
@@ -1853,9 +1883,152 @@ export default function ProcurementPage() {
         }
     };
 
+    const handlePrintRequirementLetter = () => {
+        const school = requestDetail?.request?.school || {};
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
+        const request = requestDetail?.request || {};
+        const dateFormatted = formatDate(proceedingsDate || request.createdAt || new Date());
+        const letterNo = memoVideNo || request.memoVideNo || `MSLDH/2026/PROC/${request.id?.slice(0, 4).toUpperCase() || '___'}`;
+        const items = request.items || [];
+
+        const defaultContent = `To,\nThe Principal,\n${school?.name || 'Senior Secondary Residential School for Meritorious Students'},\n${school?.district || 'Ludhiana'}.\n\nSubject: Requisition for ${request.title || 'Institutional Hardware/Supplies'}\n\nRespected Sir/Madam,\n\nIt is respectfully submitted that the following items are urgently required for the laboratory / institutional operations:\n\n${items.map((it, idx) => `${idx + 1}. ${it.itemName} - Qty: ${it.quantity} ${it.unit || 'pcs'}${it.specifications ? ` (${it.specifications})` : ''}`).join('\n')}\n\nKindly accord administrative and financial sanction to initiate the quotation procurement process for the above.\n\nThanking you,\nYours faithfully,\nRequisition Authority / Lab Incharge`;
+
+        const contentToPrint = letterContent || request.letterContent || defaultContent;
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Requirement Letter - ${letterNo}</title>
+                <style>
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13.5px;
+                        line-height: 1.6;
+                        color: #0f172a;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 22mm 20mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                    }
+                    .letterhead { text-align: center; margin-bottom: 22px; }
+                    .meta-bar {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 20px;
+                        font-size: 13px;
+                        font-weight: 600;
+                        border-bottom: 1px solid #cbd5e1;
+                        padding-bottom: 10px;
+                    }
+                    .content {
+                        white-space: pre-line;
+                        font-size: 13.5px;
+                        line-height: 1.7;
+                        margin-bottom: 40px;
+                    }
+                    .signatures {
+                        margin-top: 50px;
+                        display: flex;
+                        justify-content: space-between;
+                    }
+                    .sig-box {
+                        text-align: center;
+                        width: 180px;
+                    }
+                    .sig-line {
+                        border-top: 1.5px solid #0f172a;
+                        margin-top: 45px;
+                        padding-top: 6px;
+                        font-size: 12px;
+                        font-weight: bold;
+                    }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Letter</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+                </div>
+                <div class="print-sheet">
+                    <div class="letterhead">
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                    </div>
+                    <div class="meta-bar">
+                        <div>Letter No: <strong>${letterNo}</strong></div>
+                        <div>Date: <strong>${dateFormatted}</strong></div>
+                    </div>
+                    <div class="content">${contentToPrint}</div>
+                    <div class="signatures">
+                        <div class="sig-box">
+                            <div class="sig-line">Requisition Authority<br/><span style="font-size: 11px; font-weight: normal;">Lab / IT Incharge</span></div>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-line">Sanctioning Authority<br/><span style="font-size: 11px; font-weight: normal;">Principal / Director</span></div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
     const handlePrintNetAmount = () => {
         const school = requestDetail?.request?.school || {};
-        const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
         const vendor = vendors.find(v => v.id === selectedVendorForPurchase) || vendors[0];
         const items = requestDetail?.request?.items || [];
         const prices = vendorQuotationPrices[selectedVendorForPurchase] || {};
@@ -1875,9 +2048,9 @@ export default function ProcurementPage() {
                 <tr>
                     <td style="text-align: center; border: 1px solid #000; padding: 7px;">${idx + 1}</td>
                     <td style="border: 1px solid #000; padding: 7px; font-weight: bold; text-transform: uppercase;">${item.itemName}</td>
-                    <td style="text-align: right; border: 1px solid #000; padding: 7px; font-family: monospace;">${Math.round(unitWithGst).toLocaleString('en-IN')}</td>
+                    <td style="text-align: right; border: 1px solid #000; padding: 7px; font-family: monospace;">₹${Math.round(unitWithGst).toLocaleString('en-IN')}</td>
                     <td style="text-align: center; border: 1px solid #000; padding: 7px; font-weight: bold;">${qty}</td>
-                    <td style="text-align: right; border: 1px solid #000; padding: 7px; font-weight: bold; font-family: monospace;">${Math.round(itemTotal).toLocaleString('en-IN')}</td>
+                    <td style="text-align: right; border: 1px solid #000; padding: 7px; font-weight: bold; font-family: monospace;">₹${Math.round(itemTotal).toLocaleString('en-IN')}</td>
                 </tr>
             `;
         }).join('');
@@ -1892,8 +2065,52 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Net Amount - ${requestDetail?.request?.title}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 15mm; }
-                    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 20px; color: #000; }
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13.5px;
+                        line-height: 1.5;
+                        color: #000;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 22mm 20mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                    }
                     .letterhead { text-align: center; margin-bottom: 20px; }
                     .title { text-align: center; font-weight: 800; font-size: 15px; text-decoration: underline; margin-bottom: 22px; text-transform: uppercase; }
                     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
@@ -1902,42 +2119,275 @@ export default function ProcurementPage() {
                     .warranty { margin-top: 20px; font-size: 13px; font-weight: bold; text-transform: uppercase; }
                     .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
                     .sig-box { text-align: center; width: 160px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold; }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
                 </style>
             </head>
             <body>
-                <div class="letterhead">
-                    <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Net Amount</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
                 </div>
-                <div class="title">NET AMOUNT INCLUDING TAXES AND FORWARDING CHARGES</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width: 40px;">Sr.</th>
-                            <th>Item Name</th>
-                            <th style="width: 220px;">${vendor?.name || 'APPROVED VENDOR'} (WITH GST@${defaultGstRate}%)</th>
-                            <th style="width: 80px;">QUANTITY</th>
-                            <th style="width: 110px;">TOTAL (₹)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tableRows}
-                        <tr>
-                            <td colspan="4" style="text-align: right; border: 1px solid #000; padding: 8px; font-weight: bold;">TOTAL</td>
-                            <td style="text-align: right; border: 1px solid #000; padding: 8px; font-weight: bold; font-size: 14px;">${grandTotal.toLocaleString('en-IN')}</td>
-                        </tr>
-                    </tbody>
-                </table>
-                <div class="summary">
-                    TOTAL AMOUNT REQUIRED FOR HARDWARE PURCHASE IS RS. ${grandTotal.toLocaleString('en-IN')}<br/>
-                    (${words} ONLY)
+                <div class="print-sheet">
+                    <div class="letterhead">
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                    </div>
+                    <div class="title">NET AMOUNT INCLUDING TAXES AND FORWARDING CHARGES</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;">Sr.</th>
+                                <th>Item Name</th>
+                                <th style="width: 220px;">${vendor?.name || 'APPROVED VENDOR'} (WITH GST@${defaultGstRate}%)</th>
+                                <th style="width: 80px;">QUANTITY</th>
+                                <th style="width: 110px;">TOTAL (₹)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            <tr>
+                                <td colspan="4" style="text-align: right; border: 1px solid #000; padding: 8px; font-weight: bold;">TOTAL</td>
+                                <td style="text-align: right; border: 1px solid #000; padding: 8px; font-weight: bold; font-size: 14px;">${grandTotal.toLocaleString('en-IN')}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="summary">
+                        TOTAL AMOUNT REQUIRED FOR HARDWARE PURCHASE IS RS. ${grandTotal.toLocaleString('en-IN')}<br/>
+                        (${words} ONLY)
+                    </div>
+                    <div class="warranty">
+                        KINDLY NOTE THE ABOVE ITEMS ARE OF ${netAmountWarranty || '1 YEAR WARRANTY'}.
+                    </div>
+                    <div class="signatures">
+                        <div class="sig-box">Store Keeper</div>
+                        <div class="sig-box">Committee Members</div>
+                        <div class="sig-box">Principal</div>
+                    </div>
                 </div>
-                <div class="warranty">
-                    KINDLY NOTE THE ABOVE ITEMS ARE OF ${netAmountWarranty || '1 YEAR WARRANTY'}.
+            </body>
+            </html>
+        `;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
+    const handlePrintProceedings = () => {
+        const school = requestDetail?.request?.school || {};
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
+        const request = requestDetail?.request || {};
+        const committee = request?.committee || [];
+        const dateFormatted = proceedingsDate ? formatDate(proceedingsDate) : formatDate(new Date());
+        const memoNum = request?.memoVideNo || memoVideNo || 'MSLDH/2026/PROC/___';
+        const selectedVendor = vendors.find(v => v.id === selectedVendorForPurchase) || vendors[0];
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Proceedings of Committee - ${request.title || 'Procurement'}</title>
+                <style>
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13.5px;
+                        line-height: 1.6;
+                        color: #0f172a;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 22mm 20mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                    }
+                    .letterhead { text-align: center; margin-bottom: 18px; }
+                    .title-banner {
+                        text-align: center;
+                        font-weight: 800;
+                        font-size: 15px;
+                        text-decoration: underline;
+                        margin: 18px 0;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    table.meta-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 16px;
+                    }
+                    table.meta-table td {
+                        padding: 6px 8px;
+                        border: 1px solid #cbd5e1;
+                        font-size: 13px;
+                    }
+                    table.meta-table td.label {
+                        width: 170px;
+                        font-weight: bold;
+                        background: #f8fafc;
+                        color: #334155;
+                    }
+                    .recom-box {
+                        margin: 18px 0;
+                        padding: 14px;
+                        border: 1.5px solid #1e3a8a;
+                        background: #f0fdf4;
+                        border-radius: 6px;
+                    }
+                    .signatures {
+                        margin-top: 36px;
+                        display: flex;
+                        justify-content: space-between;
+                        flex-wrap: wrap;
+                    }
+                    .sig-box {
+                        text-align: center;
+                        width: 170px;
+                        margin-bottom: 20px;
+                    }
+                    .sig-line {
+                        border-top: 1.5px solid #0f172a;
+                        margin-top: 40px;
+                        padding-top: 5px;
+                        font-size: 11px;
+                        font-weight: bold;
+                    }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Proceedings</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
                 </div>
-                <div class="signatures">
-                    <div class="sig-box">Store Keeper</div>
-                    <div class="sig-box">Committee Members</div>
-                    <div class="sig-box">Principal</div>
+                <div class="print-sheet">
+                    <div class="letterhead">
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                    </div>
+                    <div class="title-banner">PROCEEDINGS OF COMMITTEE</div>
+
+                    <table class="meta-table">
+                        <tbody>
+                            <tr><td class="label">Proceeding of:</td><td>Committee to Recommend ${request.title || 'Procurement'}</td></tr>
+                            <tr><td class="label">Assembled at:</td><td>${school?.name || 'Institution Name'}${school?.district ? ', ' + school.district : ''}</td></tr>
+                            <tr><td class="label">Meeting Date:</td><td>${dateFormatted}</td></tr>
+                            <tr><td class="label">For the Purpose of:</td><td>To Examine Quotations and Recommend Purchase of ${request.title || 'Procurement'}</td></tr>
+                            <tr><td class="label">By Order of:</td><td>Vide Memo No. <strong>${memoNum}</strong></td></tr>
+                        </tbody>
+                    </table>
+
+                    <p style="margin: 12px 0; text-align: justify;">
+                        The Board having reassembled in pursuance of the above order proceeded to examine the quotations 
+                        received from the following dealers invited to supply <strong>${request.title || 'items'}</strong>:
+                    </p>
+
+                    <div style="margin: 12px 0;">
+                        <strong>1. Dealers Contacted (Step 4):</strong>
+                        <ol style="margin: 6px 0 12px 0; padding-left: 24px;">
+                            ${selectedVendorIds.length > 0 ? selectedVendorIds.map(vid => {
+                                const v = vendors.find(item => item.id === vid);
+                                return `<li>${v?.name || 'Vendor'}</li>`;
+                            }).join('') : vendors.map(v => `<li>${v.name}</li>`).join('')}
+                        </ol>
+                    </div>
+
+                    <div style="margin: 12px 0;">
+                        <strong>2. Sealed Quotations Received and Examined (Step 5):</strong>
+                        <ol style="margin: 6px 0 12px 0; padding-left: 24px;">
+                            ${selectedVendorIds.length > 0 ? selectedVendorIds.map(vid => {
+                                const v = vendors.find(item => item.id === vid);
+                                const qNum = vendorQuotationNumbers[vid];
+                                return `<li>${v?.name || 'Vendor'} - Quotation Ref: ${qNum || 'Received'}</li>`;
+                            }).join('') : '<li>No quotations recorded</li>'}
+                        </ol>
+                    </div>
+
+                    <p style="margin: 12px 0;"><strong>3. Comparative Statement of Rates:</strong> Placed at Appendix A.</p>
+
+                    <div class="recom-box">
+                        <p style="font-weight: bold; text-decoration: underline; margin: 0 0 6px 0; color: #166534; font-size: 13.5px;">Recommendation:</p>
+                        <p style="margin: 0; color: #14532d; font-size: 13px;">
+                            The committee unanimously recommends that the order be awarded to 
+                            <strong>${selectedVendor?.name || '________________'}</strong> having quoted the lowest responsive rate (L1) 
+                            complying with all required specifications and warranty terms.
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 30px;">
+                        <p style="margin-bottom: 20px; font-weight: bold;">Committee Signatures:</p>
+                        <div class="signatures">
+                            ${(committee && committee.length > 0 ? committee : [
+                                { role: 'chairperson', user: { firstName: 'Presiding', lastName: 'Officer' } },
+                                { role: 'member', user: { firstName: 'Committee', lastName: 'Member 1' } },
+                                { role: 'member', user: { firstName: 'Committee', lastName: 'Member 2' } }
+                            ]).map((member, idx) => `
+                                <div class="sig-box">
+                                    <div class="sig-line">
+                                        ${member.role === 'chairperson' ? 'Presiding Officer' : 'Member ' + (idx + 1)}
+                                    </div>
+                                    <div style="font-weight: bold; font-size: 12px; margin-top: 3px;">
+                                        ${member.user?.firstName || ''} ${member.user?.lastName || ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
                 </div>
             </body>
             </html>
@@ -1949,7 +2399,7 @@ export default function ProcurementPage() {
 
     const handlePrintPurchaseOrder = () => {
         const school = requestDetail?.request?.school || {};
-        const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
         const vendor = vendors.find(v => v.id === selectedVendorForPurchase) || vendors[0];
         const items = requestDetail?.request?.items || [];
         const activePoNum = poNumber || orderForm.poNumber || `MSLDH/2026/${selectedRequest?.id?.slice(0, 4).toUpperCase()}`;
@@ -1964,64 +2414,269 @@ export default function ProcurementPage() {
                 <title>Purchase Order - ${activePoNum}</title>
                 <style>
                     @page { size: A4 portrait; margin: 18mm 16mm; }
-                    body { font-family: 'Times New Roman', Times, serif; font-size: 15px; line-height: 1.6; color: #000; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: 'Times New Roman', Times, serif;
+                        font-size: 15px;
+                        line-height: 1.6;
+                        color: #000;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        font-family: Arial, sans-serif;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 22mm 20mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                    }
                     .letterhead { text-align: center; margin-bottom: 25px; }
-                    .to-block { margin-bottom: 25px; line-height: 1.4; }
-                    .subject-line { font-weight: bold; margin-bottom: 12px; }
+                    .to-block { margin-bottom: 22px; line-height: 1.45; }
+                    .subject-line { font-weight: bold; margin-bottom: 14px; }
                     .ref-date { margin-bottom: 20px; }
                     .body-content p { margin: 10px 0; }
                     .sign-block { margin-top: 50px; float: right; text-align: left; }
                     .clear { clear: both; }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
                 </style>
             </head>
             <body>
-                <div class="letterhead">
-                    <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Purchase Order</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
                 </div>
-                <div class="to-block">
-                    To<br/><br/>
-                    <strong>${vendor?.name || 'Vendor Name'}</strong><br/>
-                    ${vendor?.address ? `${vendor.address.replace(/\n/g, '<br/>')}<br/>` : ''}
-                    ${vendor?.phone ? `Phone: ${vendor.phone}<br/>` : ''}
-                    ${vendor?.gstin ? `GSTIN: ${vendor.gstin}` : ''}
+                <div class="print-sheet">
+                    <div class="letterhead">
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
+                    </div>
+                    <div class="to-block">
+                        To<br/><br/>
+                        <strong style="font-size: 16px;">${vendor?.name || 'Vendor Name'}</strong><br/>
+                        ${vendor?.address ? `${vendor.address.replace(/\n/g, '<br/>')}<br/>` : ''}
+                        ${vendor?.phone ? `Phone: ${vendor.phone}<br/>` : ''}
+                        ${vendor?.gstin ? `GSTIN: ${vendor.gstin}` : ''}
+                    </div>
+                    <div class="subject-line">
+                        <u>Subject: Purchase order</u>
+                    </div>
+                    <div class="ref-date">
+                        Letter No: <strong>${activePoNum}</strong><br/>
+                        Date: <strong>${dateFormatted}</strong>
+                    </div>
+                    <div class="body-content">
+                        <p>Sir,</p>
+                        <p style="padding-left: 28px; text-indent: -28px;">
+                            1. Reference your quotation${qNum ? ` no. ${qNum}` : ''}.
+                        </p>
+                        <p style="padding-left: 28px; text-indent: -28px;">
+                            2. You are requested to supply ${items.map(item => {
+                                const qty = editableQuantities[item.id] ?? item.quantity;
+                                const qtyStr = qty < 10 ? `0${qty}` : `${qty}`;
+                                return `${qtyStr} ${item.itemName}${item.specifications ? ` (${item.specifications})` : ''}`;
+                            }).join(', ')} to this school as per rate quoted in your quotation.
+                        </p>
+                        <p style="padding-left: 28px; text-indent: -28px;">
+                            3. An early action is requested please.
+                        </p>
+                    </div>
+                    <div class="sign-block">
+                        <div style="color: #047857; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 26px; line-height: 1.1; margin-bottom: 4px;">
+                            Principal
+                        </div>
+                        <div style="font-size: 14px; line-height: 1.4; color: #000;">
+                            Principal<br/>
+                            Senior Secondary Residential<br/>
+                            School for Meritorious Students,<br/>
+                            Ludhiana
+                        </div>
+                    </div>
+                    <div class="clear"></div>
                 </div>
-                <div class="subject-line">
-                    <u>Subject: Purchase order</u>
-                </div>
-                <div class="ref-date">
-                    Letter No: <strong>${activePoNum}</strong><br/>
-                    Date: <strong>${dateFormatted}</strong>
-                </div>
-                <div class="body-content">
-                    <p>Sir,</p>
-                    <p style="padding-left: 25px; text-indent: -25px;">
-                        1. Reference your quotation${qNum ? ` no. ${qNum}` : ''}.
-                    </p>
-                    <p style="padding-left: 25px; text-indent: -25px;">
-                        2. You are requested to supply ${items.map(item => {
-                            const qty = editableQuantities[item.id] ?? item.quantity;
-                            const qtyStr = qty < 10 ? `0${qty}` : `${qty}`;
-                            return `${qtyStr} ${item.itemName}`;
-                        }).join(', ')} to this school as per rate quoted in your quotation.
-                    </p>
-                    <p style="padding-left: 25px; text-indent: -25px;">
-                        3. An early action is requested please.
-                    </p>
-                </div>
-                <div class="sign-block">
-                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
-                    Principal<br/>
-                    Senior Secondary Residential<br/>
-                    School for Meritorious Students,<br/>
-                    Ludhiana
-                </div>
-                <div class="clear"></div>
             </body>
             </html>
         `;
         const printWindow = window.open('', '_blank');
         printWindow.document.write(html);
         printWindow.document.close();
+    };
+
+    const handlePrintLoanVoucher = (v) => {
+        const school = requestDetail?.request?.school || {};
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8" />
+                <title>Loan Voucher - Room ${v.roomNumber}</title>
+                <style>
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    * { box-sizing: border-box; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13px;
+                        line-height: 1.5;
+                        color: #0f172a;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 22mm 20mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                    }
+                    .letterhead { text-align: center; margin-bottom: 16px; }
+                    .title { text-align: center; font-weight: 800; font-size: 16px; text-decoration: underline; margin-bottom: 16px; text-transform: uppercase; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12.5px; }
+                    th, td { border: 1px solid #000; padding: 7px 9px; text-align: left; }
+                    th { background: #f2f2f2; font-weight: bold; }
+                    .signatures { display: flex; justify-content: space-between; margin-top: 50px; font-weight: bold; }
+                    .sig-box { text-align: center; width: 180px; border-top: 1.5px solid #000; padding-top: 5px; font-size: 11px; }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Voucher</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+                </div>
+                <div class="print-sheet">
+                    <div class="letterhead">
+                        <img src="${letterheadSrc}" style="width: 100%; max-height: 115px; object-fit: contain;" alt="Letterhead" />
+                    </div>
+                    <div class="title">LOAN VOUCHER</div>
+                    <table>
+                        <tr>
+                            <td style="width: 18%; font-weight: bold; background: #fafafa;">Date & Time:</td>
+                            <td style="width: 32%;">${v.voucherDate ? formatDate(v.voucherDate) : formatDate(new Date())}</td>
+                            <td style="width: 18%; font-weight: bold; background: #fafafa;">Room / Lab No.:</td>
+                            <td style="width: 32%; font-weight: bold;">${v.roomNumber}</td>
+                        </tr>
+                        <tr>
+                            <td style="font-weight: bold; background: #fafafa;">Issued To:</td>
+                            <td>${v.staffName} (${v.staffDesignation})</td>
+                            <td style="font-weight: bold; background: #fafafa;">Class Section:</td>
+                            <td>${v.classSection}</td>
+                        </tr>
+                    </table>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th style="width: 45px; text-align: center;">S. No.</th>
+                                <th>Item Nomenclature</th>
+                                <th style="width: 180px;">Serial No.</th>
+                                <th style="width: 200px;">Remarks</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${(v.items || []).map((it, idx) => `
+                                <tr>
+                                    <td style="text-align: center;">${idx + 1}</td>
+                                    <td><strong>${it.nomenclature}</strong></td>
+                                    <td style="font-family: monospace;">${it.serialNo || '-'}</td>
+                                    <td>${it.remarks || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="signatures">
+                        <div class="sig-box">Issuer's Sign with Designation<br/><br/><span style="font-size: 12px;">Lab Incharge</span></div>
+                        <div class="sig-box">Seal & Sign (Head of School)<br/><br/><span style="font-size: 12px;">Principal</span></div>
+                        <div class="sig-box">Receiver's Sign with Designation<br/><br/><span style="font-size: 12px;">${v.staffName}</span></div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+        const w = window.open('', '_blank');
+        w.document.write(html);
+        w.document.close();
     };
 
     const handleIssueHardwareToClassroom = async () => {
@@ -2079,7 +2734,7 @@ export default function ProcurementPage() {
             }
             const today = formatDate(new Date());
             const deadlineStr = formatDate(lastDateToSubmit);
-            const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
+            const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
 
             const html = `
             <!DOCTYPE html>
@@ -2088,115 +2743,171 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Call for Quotation - ${vendor.name}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 15mm; }
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
                     * { box-sizing: border-box; }
-                    body { font-family: Arial, Helvetica, sans-serif; padding: 20px; max-width: 820px; margin: auto; font-size: 14px; line-height: 1.5; color: #1e293b; }
-                    .letterhead { text-align: center; margin-bottom: 18px; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; }
-                    .letterhead img { max-height: 55px; margin-bottom: 4px; }
-                    .letterhead h2 { margin: 2px 0; color: #1e3a8a; font-size: 20px; text-transform: uppercase; font-weight: bold; }
-                    .vendor-address { background: #f8fafc; padding: 12px 16px; margin: 14px 0; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13.5px; }
-                    .meta-bar { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 13.5px; font-weight: 500; }
-                    .section-title { font-weight: bold; color: #1e3a8a; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; }
-                    .deadline-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 14px; border-radius: 6px; font-weight: bold; margin: 14px 0; font-size: 13.5px; }
-                    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13.5px;
+                        line-height: 1.5;
+                        color: #1e293b;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 20mm 18mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
+                    }
+                    .letterhead { text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; }
+                    .vendor-address { background: #f8fafc; padding: 12px 16px; margin: 14px 0; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+                    .meta-bar { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+                    .section-title { font-weight: bold; color: #1e3a8a; margin-bottom: 8px; font-size: 13.5px; text-transform: uppercase; }
+                    .deadline-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 14px; border-radius: 6px; font-weight: bold; margin: 14px 0; font-size: 13px; }
+                    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12.5px; }
                     th, td { border: 1px solid #cbd5e1; padding: 7px 9px; text-align: left; }
                     th { background: #f1f5f9; color: #0f172a; font-weight: bold; }
                     .text-center { text-align: center; }
-                    .signatures { display: flex; justify-content: space-between; margin-top: 45px; }
+                    .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
                     .signature { text-align: center; width: 180px; }
-                    .signature-line { border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 12px; font-weight: bold; margin-top: 45px; }
-                    @media print { body { padding: 0; } }
+                    .signature-line { border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 11px; font-weight: bold; margin-top: 45px; }
+                    @media print {
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }
+                    }
                 </style>
             </head>
             <body>
-                ${letterheadSrc ? `
-                    <div style="text-align: center; margin-bottom: 16px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">
-                        <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print Call Quotation</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+                </div>
+                <div class="print-sheet">
+                    <div>
+                        <div class="letterhead">
+                            <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                        </div>
+                        
+                        <div class="meta-bar">
+                            <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}</div>
+                            <div><strong>Date:</strong> ${today}</div>
+                        </div>
+
+                        <div class="vendor-address">
+                            <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold;">To,</div>
+                            <strong style="font-size: 14px; color: #0f172a;">${vendor.name}</strong><br/>
+                            ${vendor.contactPerson ? `Attn: ${vendor.contactPerson}<br/>` : ''}
+                            ${vendor.address || ''}<br/>
+                            ${vendor.phone ? `Phone: ${vendor.phone}` : ''} ${vendor.email ? `| Email: ${vendor.email}` : ''}<br/>
+                            ${vendor.gstin ? `GSTIN: ${vendor.gstin}` : ''}
+                        </div>
+
+                        <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 8px 12px; margin-bottom: 14px; font-weight: 600; color: #1e40af; font-size: 13.5px;">
+                            Subject: Request for Quotation - ${request.title}
+                        </div>
+
+                        <div class="deadline-box">
+                            ⏰ Quotation Submission Deadline: Please submit your sealed / signed quotation on or before <strong>${deadlineStr}</strong>.
+                        </div>
+
+                        <p style="margin: 10px 0;">Dear Sir / Madam,</p>
+                        <p style="margin: 6px 0 12px 0;">
+                            We invite you to submit your competitive sealed / signed quotation for the supply of items required for 
+                            <strong>${request.purpose || request.department || 'institutional laboratory purposes'}</strong>. 
+                            <strong>Please quote your Per-Unit Item Rate only (inclusive of GST, forwarding charges and freight)</strong> and state warranty coverage.
+                        </p>
+
+                        <div class="section-title">Items Required & Rate Quotation</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="text-center" style="width: 35px;">#</th>
+                                    <th>Item Name</th>
+                                    <th>Specifications</th>
+                                    <th class="text-center" style="width: 110px;">Warranty Required</th>
+                                    <th class="text-center" style="width: 50px;">Qty</th>
+                                    <th class="text-center" style="width: 50px;">Unit</th>
+                                    <th class="text-center" style="width: 140px;">Quoted Per-Unit Rate (₹ - with GST & Freight)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${request.items.map((item, i) => `
+                                    <tr>
+                                        <td class="text-center">${i + 1}</td>
+                                        <td><strong>${item.itemName}</strong></td>
+                                        <td>${item.specifications || '-'}</td>
+                                        <td class="text-center">${item.warranty || '1 Year Standard'}</td>
+                                        <td class="text-center"><strong>${item.quantity}</strong></td>
+                                        <td class="text-center">${item.unit || 'pcs'}</td>
+                                        <td style="border: 1px dashed #64748b; background: #fafafa;"></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+
+                        <div style="font-size: 12px; color: #475569; margin-top: 14px;">
+                            <strong>Terms & Conditions:</strong>
+                            <ul style="margin: 6px 0; padding-left: 20px;">
+                                <li><strong>Kindly quote Per-Unit Item Rate only</strong> (inclusive of all applicable taxes, GST, packing, and freight).</li>
+                                <li>Quotation must be valid for minimum 30 days from submission.</li>
+                                <li>Warranty terms and post-sales support must be clearly stated.</li>
+                                <li>Late submissions after ${deadlineStr} will not be considered.</li>
+                            </ul>
+                        </div>
                     </div>
-                ` : `
-                    <div class="letterhead">
-                        ${school?.logoUrl ? '<img src="' + school.logoUrl + '" alt="Logo" /><br/>' : ''}
-                        <h2>${school?.name || 'Institution Name'}</h2>
-                        <p style="margin: 2px 0; font-size: 12px; color: #64748b;">${school?.address || ''}${school?.pinCode ? ', PIN: ' + school.pinCode : ''}</p>
-                    </div>
-                `}
-                
-                <div class="meta-bar">
-                    <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}</div>
-                    <div><strong>Date:</strong> ${today}</div>
-                </div>
 
-                <div class="vendor-address">
-                    <div style="font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: bold;">To,</div>
-                    <strong style="font-size: 14px; color: #0f172a;">${vendor.name}</strong><br/>
-                    ${vendor.contactPerson ? `Attn: ${vendor.contactPerson}<br/>` : ''}
-                    ${vendor.address || ''}<br/>
-                    ${vendor.phone ? `Phone: ${vendor.phone}` : ''} ${vendor.email ? `| Email: ${vendor.email}` : ''}<br/>
-                    ${vendor.gstin ? `GSTIN: ${vendor.gstin}` : ''}
-                </div>
-
-                <div style="background: #eff6ff; border-left: 4px solid #2563eb; padding: 8px 12px; margin-bottom: 14px; font-weight: 600; color: #1e40af; font-size: 13.5px;">
-                    Subject: Request for Quotation - ${request.title}
-                </div>
-
-                <div class="deadline-box">
-                    ⏰ Quotation Submission Deadline: Please submit your sealed / signed quotation on or before <strong>${deadlineStr}</strong>.
-                </div>
-
-                <p style="margin: 10px 0;">Dear Sir / Madam,</p>
-                <p style="margin: 6px 0 12px 0;">
-                    We invite you to submit your competitive sealed / signed quotation for the supply of items required for 
-                    <strong>${request.purpose || request.department || 'institutional laboratory purposes'}</strong>. 
-                    <strong>Please quote your Per-Unit Item Rate only (inclusive of GST, forwarding charges and freight)</strong> and state warranty coverage.
-                </p>
-
-                <div class="section-title">Items Required & Rate Quotation</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th class="text-center" style="width: 35px;">#</th>
-                            <th>Item Name</th>
-                            <th>Specifications</th>
-                            <th class="text-center" style="width: 110px;">Warranty Required</th>
-                            <th class="text-center" style="width: 50px;">Qty</th>
-                            <th class="text-center" style="width: 50px;">Unit</th>
-                            <th class="text-center" style="width: 140px;">Quoted Per-Unit Rate (₹ - with GST & Freight)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${request.items.map((item, i) => `
-                            <tr>
-                                <td class="text-center">${i + 1}</td>
-                                <td><strong>${item.itemName}</strong></td>
-                                <td>${item.specifications || '-'}</td>
-                                <td class="text-center">${item.warranty || '1 Year Standard'}</td>
-                                <td class="text-center"><strong>${item.quantity}</strong></td>
-                                <td class="text-center">${item.unit || 'pcs'}</td>
-                                <td style="border: 1px dashed #64748b; background: #fafafa;"></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-
-                <div style="font-size: 12.5px; color: #475569; margin-top: 14px;">
-                    <strong>Terms & Conditions:</strong>
-                    <ul style="margin: 6px 0; padding-left: 20px;">
-                        <li><strong>Kindly quote Per-Unit Item Rate only</strong> (inclusive of all applicable taxes, GST, packing, and freight).</li>
-                        <li>Quotation must be valid for minimum 30 days from submission.</li>
-                        <li>Warranty terms and post-sales support must be clearly stated.</li>
-                        <li>Late submissions after ${deadlineStr} will not be considered.</li>
-                    </ul>
-                </div>
-
-                <div class="signatures">
-                    <div class="signature">
-                        <div class="signature-line">Prepared By</div>
-                    </div>
-                    <div class="signature">
-                        <div class="signature-line">Committee Chairperson</div>
-                    </div>
-                    <div class="signature">
-                        <div class="signature-line">Authorized Signatory<br/><span style="font-size: 11px; font-weight: normal;">${school?.name || ''}</span></div>
+                    <div class="signatures">
+                        <div class="signature">
+                            <div class="signature-line">Prepared By</div>
+                        </div>
+                        <div class="signature">
+                            <div class="signature-line">Committee Chairperson</div>
+                        </div>
+                        <div class="signature">
+                            <div class="signature-line">Authorized Signatory<br/><span style="font-size: 11px; font-weight: normal;">${school?.name || ''}</span></div>
+                        </div>
                     </div>
                 </div>
             </body>
@@ -2224,7 +2935,7 @@ export default function ProcurementPage() {
             const selectedVendors = vendors.filter(v => selectedVendorIds.includes(v.id));
             const today = formatDate(new Date());
             const deadlineStr = formatDate(lastDateToSubmit);
-            const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
+            const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
 
             const html = `
             <!DOCTYPE html>
@@ -2233,49 +2944,100 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Call for Quotations - ${request.title}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 15mm; }
+                    @page { size: A4 portrait; margin: 18mm 16mm; }
                     * { box-sizing: border-box; }
-                    body { font-family: Arial, Helvetica, sans-serif; font-size: 14px; line-height: 1.5; color: #1e293b; margin: 0; padding: 0; }
-                    .vendor-page { page-break-after: always; padding: 15px 20px; min-height: 95vh; display: flex; flex-direction: column; justify-content: space-between; }
-                    .vendor-page:last-child { page-break-after: avoid; }
-                    .header { text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 15px; }
-                    .header h2 { margin: 0 0 4px 0; color: #1e3a8a; font-size: 19px; text-transform: uppercase; font-weight: bold; }
-                    .header p { margin: 2px 0; font-size: 12px; color: #475569; }
-                    .call-banner { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 13.5px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; }
-                    .vendor-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; background: #f8fafc; font-size: 13.5px; }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background-color: #f1f5f9;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 13.5px;
+                        line-height: 1.5;
+                        color: #1e293b;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .no-print-bar {
+                        width: 210mm;
+                        max-width: 96vw;
+                        margin: 14px auto 0 auto;
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 8px;
+                    }
+                    .no-print-bar button {
+                        background: #1e293b;
+                        color: #ffffff;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 6px;
+                        cursor: pointer;
+                        font-size: 13px;
+                        font-weight: 600;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 6px;
+                    }
+                    .no-print-bar button:hover { background: #0f172a; }
+                    .print-sheet {
+                        width: 210mm;
+                        max-width: 96vw;
+                        min-height: 297mm;
+                        margin: 14px auto 30px auto;
+                        padding: 20mm 18mm;
+                        background: #ffffff;
+                        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                        border: 1px solid #cbd5e1;
+                        border-radius: 4px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
+                        page-break-after: always;
+                    }
+                    .print-sheet:last-child { page-break-after: avoid; }
+                    .letterhead { text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px; margin-bottom: 14px; }
+                    .call-banner { display: flex; justify-content: space-between; margin-bottom: 14px; font-size: 13px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 8px; font-weight: 600; }
+                    .vendor-box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; background: #f8fafc; font-size: 13px; }
                     .vendor-box strong { font-size: 14px; color: #0f172a; }
                     .subject-box { background: #eff6ff; border-left: 4px solid #2563eb; padding: 8px 12px; margin-bottom: 14px; font-weight: 600; color: #1e40af; font-size: 13.5px; }
-                    .deadline-badge { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 14px; border-radius: 6px; font-weight: bold; margin-bottom: 14px; font-size: 13.5px; }
-                    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+                    .deadline-badge { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 10px 14px; border-radius: 6px; font-weight: bold; margin-bottom: 14px; font-size: 13px; }
+                    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12.5px; }
                     th, td { border: 1px solid #334155; padding: 7px 9px; }
                     th { background: #f1f5f9; color: #0f172a; font-weight: bold; text-align: left; }
                     .text-center { text-align: center; }
-                    .terms { font-size: 12.5px; color: #334155; margin-top: 12px; }
+                    .terms { font-size: 12px; color: #334155; margin-top: 12px; }
                     .terms ul { margin: 6px 0; padding-left: 20px; }
                     .sig-container { display: flex; justify-content: space-between; margin-top: 40px; }
                     .sig-box { width: 180px; text-align: center; font-size: 12px; }
                     .sig-line { border-top: 1.5px solid #0f172a; margin-top: 40px; padding-top: 5px; font-weight: bold; }
                     @media print {
-                        body { padding: 0; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        .no-print-bar { display: none !important; }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: none !important;
+                            min-height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                            page-break-after: always;
+                        }
+                        .print-sheet:last-child { page-break-after: avoid; }
                     }
                 </style>
             </head>
             <body>
+                <div class="no-print-bar">
+                    <button type="button" onclick="window.print()">🖨️ Print All Call Quotations</button>
+                    <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+                </div>
                 ${selectedVendors.map((vendor, vIdx) => `
-                <div class="vendor-page">
+                <div class="print-sheet">
                     <div>
-                        ${letterheadSrc ? `
-                            <div style="text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1e3a8a; padding-bottom: 10px;">
-                                <img src="${letterheadSrc}" style="width: 100%; max-height: 125px; object-fit: contain;" alt="Letterhead" />
-                            </div>
-                        ` : `
-                            <div class="header">
-                                ${school?.logoUrl ? '<img src="' + school.logoUrl + '" style="max-height: 50px; margin-bottom: 4px;" alt="Logo" /><br/>' : ''}
-                                <h2>${school?.name || 'Institution Name'}</h2>
-                                <p>${school?.address || ''}${school?.pinCode ? ', PIN: ' + school.pinCode : ''}</p>
-                                <p>${school?.email ? 'Email: ' + school.email + ' ' : ''}${school?.phone1 ? '| Tel: ' + school.phone1 : ''}</p>
-                            </div>
-                        `}
+                        <div class="letterhead">
+                            <img src="${letterheadSrc}" style="width: 100%; max-height: 120px; object-fit: contain;" alt="Letterhead" />
+                        </div>
 
                         <div class="call-banner">
                             <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}-${vIdx + 1}</div>
@@ -2998,69 +3760,158 @@ export default function ProcurementPage() {
 
     const printComparison = () => {
         if (!requestDetail) return;
-        const { request, comparison } = requestDetail;
+        const { school, request, comparison } = requestDetail;
+        const letterheadSrc = school?.letterheadUrl || (typeof window !== 'undefined' ? `${window.location.origin}/letterhead.png` : '/letterhead.png');
         const vendorNames = [...new Set((request.quotations || []).map(q => q.vendor?.name || 'Vendor'))];
+        const today = formatDate(new Date());
+        const committee = request?.committee || [];
 
         const html = `
+        <!DOCTYPE html>
         <html>
-        <head><title>Comparative Statement - ${request.title}</title>
-        <style>
-            body { font-family: Arial, sans-serif; padding: 30px; }
-            h1 { text-align: center; margin-bottom: 10px; }
-            .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #333; padding: 8px; text-align: left; font-size: 12px; }
-            th { background: #f0f0f0; }
-            .lowest { background: #d4edda; font-weight: bold; }
-            .total-row { font-weight: bold; background: #f8f9fa; }
-            .signatures { display: flex; justify-content: space-between; margin-top: 50px; }
-            .signature { text-align: center; }
-            .signature-line { border-top: 1px solid #333; width: 150px; margin-top: 50px; padding-top: 5px; }
-        </style>
+        <head>
+            <meta charset="utf-8" />
+            <title>Comparative Statement - ${request.title}</title>
+            <style>
+                @page { size: A4 landscape; margin: 14mm 12mm; }
+                * { box-sizing: border-box; }
+                html, body {
+                    margin: 0;
+                    padding: 0;
+                    background-color: #f1f5f9;
+                    font-family: Arial, Helvetica, sans-serif;
+                    font-size: 12.5px;
+                    line-height: 1.4;
+                    color: #0f172a;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .no-print-bar {
+                    width: 297mm;
+                    max-width: 96vw;
+                    margin: 14px auto 0 auto;
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 8px;
+                }
+                .no-print-bar button {
+                    background: #1e293b;
+                    color: #ffffff;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .no-print-bar button:hover { background: #0f172a; }
+                .print-sheet {
+                    width: 297mm;
+                    max-width: 96vw;
+                    min-height: 210mm;
+                    margin: 14px auto 30px auto;
+                    padding: 16mm 14mm;
+                    background: #ffffff;
+                    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+                    border: 1px solid #cbd5e1;
+                    border-radius: 4px;
+                }
+                .letterhead { text-align: center; margin-bottom: 12px; }
+                .title { text-align: center; font-size: 16px; font-weight: bold; text-decoration: underline; margin-bottom: 8px; text-transform: uppercase; }
+                .meta-bar { display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 12.5px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+                th, td { border: 1px solid #334155; padding: 6px 8px; text-align: left; }
+                th { background: #f1f5f9; font-weight: bold; }
+                .text-center { text-align: center; }
+                .text-right { text-align: right; }
+                .lowest { background: #dcfce7 !important; font-weight: bold; color: #166534; }
+                .total-row { font-weight: bold; background: #f8f9fa; }
+                .signatures { display: flex; justify-content: space-between; margin-top: 35px; }
+                .sig-box { text-align: center; width: 160px; }
+                .sig-line { border-top: 1.5px solid #0f172a; margin-top: 35px; padding-top: 5px; font-size: 11px; font-weight: bold; }
+                @media print {
+                    html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                    .no-print-bar { display: none !important; }
+                    .print-sheet {
+                        width: 100% !important;
+                        max-width: none !important;
+                        min-height: auto !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        border: none !important;
+                        box-shadow: none !important;
+                    }
+                }
+            </style>
         </head>
         <body>
-            <h1>Comparative Statement</h1>
-            <div class="subtitle">${request.title} | ${request.department || 'General'}</div>
-            <p><strong>Purpose:</strong> ${request.purpose || 'N/A'}</p>
-            <table>
-                <thead>
-                    <tr>
-                        <th>S.No</th>
-                        <th>Item Description</th>
-                        ${vendorNames.map(v => `<th>${v}</th>`).join('')}
-                        <th>Lowest (Unit Rate)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${comparison.map((item, idx) => `
+            <div class="no-print-bar">
+                <button type="button" onclick="window.print()">🖨️ Print Statement</button>
+                <button type="button" onclick="window.close()" style="background: #64748b;">✕ Close</button>
+            </div>
+            <div class="print-sheet">
+                <div class="letterhead">
+                    <img src="${letterheadSrc}" style="width: 100%; max-height: 110px; object-fit: contain;" alt="Letterhead" />
+                </div>
+                <div class="title">Comparative Statement of Rates (Appendix A)</div>
+                <div class="meta-bar">
+                    <div><strong>Purpose:</strong> ${request.title} | ${request.department || 'General'}</div>
+                    <div><strong>Evaluation Date:</strong> ${today}</div>
+                </div>
+                <table>
+                    <thead>
                         <tr>
-                            <td>${idx + 1}</td>
-                            <td>${item.itemName}<br/><small>${item.specifications || ''}</small></td>
-                            ${vendorNames.map(vName => {
-            const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
-            const isLowest = vData && item.lowestPrice === vData.unitPrice;
-            return `<td class="${isLowest ? 'lowest' : ''}">₹${vData?.unitPrice?.toLocaleString() || '-'}</td>`;
-        }).join('')}
-                            <td class="lowest">₹${item.lowestPrice?.toLocaleString() || '-'}</td>
+                            <th class="text-center" style="width: 40px;">S.No</th>
+                            <th>Item Description & Specifications</th>
+                            ${vendorNames.map(v => `<th class="text-right">${v} (₹)</th>`).join('')}
+                            <th class="text-right" style="width: 140px;">Lowest Quoted Rate (₹)</th>
                         </tr>
+                    </thead>
+                    <tbody>
+                        ${comparison.map((item, idx) => `
+                            <tr>
+                                <td class="text-center">${idx + 1}</td>
+                                <td><strong>${item.itemName}</strong>${item.specifications ? `<br/><small style="color: #64748b;">${item.specifications}</small>` : ''}</td>
+                                ${vendorNames.map(vName => {
+                                    const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
+                                    const isLowest = vData && item.lowestPrice === vData.unitPrice;
+                                    return `<td class="text-right ${isLowest ? 'lowest' : ''}">₹${vData?.unitPrice?.toLocaleString() || '-'}</td>`;
+                                }).join('')}
+                                <td class="text-right lowest">₹${item.lowestPrice?.toLocaleString() || '-'}</td>
+                            </tr>
+                        `).join('')}
+                        <tr class="total-row">
+                            <td colspan="2" class="text-right">Total Quoted Unit Rates:</td>
+                            ${vendorNames.map(vName => {
+                                const total = comparison.reduce((sum, item) => {
+                                    const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
+                                    return sum + (vData?.unitPrice || 0);
+                                }, 0);
+                                return `<td class="text-right">₹${total.toLocaleString()}</td>`;
+                            }).join('')}
+                            <td class="text-right lowest">₹${comparison.reduce((sum, item) => sum + (item.lowestPrice || 0), 0).toLocaleString()}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div class="signatures">
+                    ${(committee && committee.length > 0 ? committee : [
+                        { role: 'chairperson', user: { firstName: 'Presiding', lastName: 'Officer' } },
+                        { role: 'member', user: { firstName: 'Committee', lastName: 'Member 1' } },
+                        { role: 'member', user: { firstName: 'Committee', lastName: 'Member 2' } }
+                    ]).map((member, idx) => `
+                        <div class="sig-box">
+                            <div class="sig-line">
+                                ${member.role === 'chairperson' ? 'Presiding Officer' : 'Member ' + (idx + 1)}
+                            </div>
+                            <div style="font-weight: bold; font-size: 11px; margin-top: 3px;">
+                                ${member.user?.firstName || ''} ${member.user?.lastName || ''}
+                            </div>
+                        </div>
                     `).join('')}
-                    <tr class="total-row">
-                        <td colspan="2">Total Unit Rates</td>
-                        ${vendorNames.map(vName => {
-            const total = comparison.reduce((sum, item) => {
-                const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
-                return sum + (vData?.unitPrice || 0);
-            }, 0);
-            return `<td>₹${total.toLocaleString()}</td>`;
-        }).join('')}
-                        <td class="lowest">₹${comparison.reduce((sum, item) => sum + (item.lowestPrice || 0), 0).toLocaleString()}</td>
-                    </tr>
-                </tbody>
-            </table>
-            <div class="signatures">
-                <div class="signature"><div class="signature-line">Prepared By</div></div>
-                <div class="signature"><div class="signature-line">Verified By</div></div>
-                <div class="signature"><div class="signature-line">Approved By</div></div>
+                </div>
             </div>
         </body>
         </html>`;
@@ -3068,7 +3919,6 @@ export default function ProcurementPage() {
         const printWindow = window.open('', '_blank');
         printWindow.document.write(html);
         printWindow.document.close();
-        printWindow.print();
     };
 
     if (!_hasHydrated || !isAuthenticated) return null;
@@ -3918,6 +4768,16 @@ export default function ProcurementPage() {
                                             <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">
                                                 Select how you wish to attach the official requirement / sanction letter for this procurement.
                                             </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handlePrintRequirementLetter}
+                                                title="Print Official Requirement Letter"
+                                                className="p-2.5 rounded-xl border border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 transition shadow-xs flex items-center gap-1.5 text-xs font-semibold"
+                                            >
+                                                <Printer className="w-4 h-4" /> Print / Preview
+                                            </button>
                                         </div>
                                     </div>
 
@@ -4993,7 +5853,7 @@ Laboratory / IT Incharge`
                             {/* Step 6: Comparative Statement */}
                             {workflowStep === 6 && (
                                 <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-2.5">
                                             <div className="p-2 rounded-lg bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-400">
                                                 <Calculator className="w-5 h-5" />
@@ -5002,6 +5862,16 @@ Laboratory / IT Incharge`
                                                 <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 6: Comparative Statement</h3>
                                                 <p className="text-xs text-slate-500">Item-by-item rate comparison across all received vendor quotations. Lowest total (L1) is automatically determined.</p>
                                             </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={printComparison}
+                                                title="Print Comparative Statement (Landscape)"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs flex items-center gap-1.5 text-xs font-semibold"
+                                            >
+                                                <Printer className="w-4 h-4" /> Print / Preview
+                                            </button>
                                         </div>
                                     </div>
 
@@ -5362,7 +6232,7 @@ Laboratory / IT Incharge`
                             {/* Step 8: Proceedings of Committee */}
                             {workflowStep === 8 && (
                                 <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-2.5">
                                             <div className="p-2 rounded-lg bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400">
                                                 <FileText className="w-5 h-5" />
@@ -5371,6 +6241,16 @@ Laboratory / IT Incharge`
                                                 <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 8: Proceedings of Committee</h3>
                                                 <p className="text-xs text-slate-500">Record of committee recommendations, meeting date, and vendor selection justification.</p>
                                             </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={handlePrintProceedings}
+                                                title="Print / Preview Official Proceedings"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition shadow-xs flex items-center gap-1.5 text-xs font-semibold"
+                                            >
+                                                <Printer className="w-4 h-4" /> Print / Preview
+                                            </button>
                                         </div>
                                     </div>
 
@@ -5454,6 +6334,111 @@ Laboratory / IT Incharge`
                                                         <div key={member.id} className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-center">
                                                             <div className="font-medium text-slate-800 dark:text-slate-200">{member.user?.firstName} {member.user?.lastName}</div>
                                                             <div className="text-[10px] text-slate-500 capitalize">{member.role === 'chairperson' ? 'Presiding Officer' : `Member ${idx}`}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Live A4 Sheet Preview of Proceedings on School Letterhead */}
+                                    <div className="w-full bg-slate-100 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-center mt-4">
+                                        <div className="w-full max-w-[780px] bg-white text-black p-8 rounded-lg shadow-lg border border-slate-300 font-sans leading-relaxed text-xs">
+                                            {/* School Letterhead */}
+                                            <div className="text-center mb-4">
+                                                <img
+                                                    src={requestDetail?.request?.school?.letterheadUrl || '/letterhead.png'}
+                                                    alt="School Letterhead"
+                                                    className="w-full max-h-24 object-contain mx-auto"
+                                                />
+                                            </div>
+
+                                            <div className="text-center font-extrabold text-sm underline uppercase tracking-wide mb-4 text-slate-900">
+                                                PROCEEDINGS OF COMMITTEE
+                                            </div>
+
+                                            <table className="w-full border-collapse mb-4 border border-slate-300 text-xs">
+                                                <tbody>
+                                                    <tr>
+                                                        <td className="p-2 border border-slate-300 font-bold bg-slate-50 w-40 text-slate-700">Proceeding of:</td>
+                                                        <td className="p-2 border border-slate-300">Committee to Recommend {requestDetail?.request?.title}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="p-2 border border-slate-300 font-bold bg-slate-50 text-slate-700">Assembled at:</td>
+                                                        <td className="p-2 border border-slate-300">{requestDetail?.request?.school?.name || 'Institution Name'}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="p-2 border border-slate-300 font-bold bg-slate-50 text-slate-700">Meeting Date:</td>
+                                                        <td className="p-2 border border-slate-300">{formatDate(proceedingsDate || new Date())}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="p-2 border border-slate-300 font-bold bg-slate-50 text-slate-700">For the Purpose of:</td>
+                                                        <td className="p-2 border border-slate-300">To Examine Quotations and Recommend Purchase of {requestDetail?.request?.title}</td>
+                                                    </tr>
+                                                    <tr>
+                                                        <td className="p-2 border border-slate-300 font-bold bg-slate-50 text-slate-700">By Order of:</td>
+                                                        <td className="p-2 border border-slate-300">Vide Memo No. <strong>{requestDetail?.request?.memoVideNo || memoVideNo || '___'}</strong></td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+
+                                            <p className="my-3 text-justify text-slate-800">
+                                                The Board having reassembled in pursuance of the above order proceeded to examine the quotations 
+                                                received from the following dealers invited to supply <strong>{requestDetail?.request?.title}</strong>:
+                                            </p>
+
+                                            <div className="my-2">
+                                                <strong className="text-slate-800">1. Dealers Contacted (Step 4):</strong>
+                                                <ol className="list-decimal list-inside pl-4 mt-1 space-y-0.5 text-slate-700">
+                                                    {selectedVendorIds.length > 0 ? selectedVendorIds.map(vid => {
+                                                        const v = vendors.find(vendor => vendor.id === vid);
+                                                        return <li key={vid}>{v?.name}</li>;
+                                                    }) : vendors.map(v => <li key={v.id}>{v.name}</li>)}
+                                                </ol>
+                                            </div>
+
+                                            <div className="my-2">
+                                                <strong className="text-slate-800">2. Sealed Quotations Received and Examined (Step 5):</strong>
+                                                <ol className="list-decimal list-inside pl-4 mt-1 space-y-0.5 text-slate-700">
+                                                    {selectedVendorIds.length > 0 ? selectedVendorIds.map(vid => {
+                                                        const v = vendors.find(vendor => vendor.id === vid);
+                                                        const qNum = vendorQuotationNumbers[vid];
+                                                        return <li key={vid}>{v?.name} - Quote Ref: {qNum || 'Received'}</li>;
+                                                    }) : <li>No quotations recorded</li>}
+                                                </ol>
+                                            </div>
+
+                                            <p className="my-2 text-slate-800"><strong>3. Comparative Statement of Rates:</strong> Placed at Appendix A.</p>
+
+                                            <div className="my-3 p-3 bg-emerald-50/80 border border-emerald-300 rounded text-emerald-900">
+                                                <div className="font-bold underline text-[11px] mb-1">Recommendation:</div>
+                                                <p className="text-xs">
+                                                    The committee unanimously recommends that the order be awarded to <strong>
+                                                        {selectedVendorForPurchase
+                                                            ? vendors.find(v => v.id === selectedVendorForPurchase)?.name
+                                                            : '________________'}
+                                                    </strong> having quoted the lowest responsive rate (L1) complying with all required specifications and warranty terms.
+                                                </p>
+                                            </div>
+
+                                            <div className="mt-8 pt-4 border-t border-slate-200">
+                                                <div className="font-bold text-slate-700 mb-6">Committee Signatures:</div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 text-center">
+                                                    {(requestDetail?.request?.committee && requestDetail.request.committee.length > 0
+                                                        ? requestDetail.request.committee
+                                                        : [
+                                                            { role: 'chairperson', user: { firstName: 'Presiding', lastName: 'Officer' } },
+                                                            { role: 'member', user: { firstName: 'Member', lastName: '1' } },
+                                                            { role: 'member', user: { firstName: 'Member', lastName: '2' } }
+                                                        ]
+                                                    ).map((member, idx) => (
+                                                        <div key={member.id || idx}>
+                                                            <div className="border-t border-slate-900 pt-1 text-[11px] font-bold">
+                                                                {member.role === 'chairperson' ? 'Presiding Officer' : `Member ${idx + 1}`}
+                                                            </div>
+                                                            <div className="text-[11px] text-slate-700">
+                                                                {member.user?.firstName} {member.user?.lastName}
+                                                            </div>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -6263,77 +7248,8 @@ Laboratory / IT Incharge`
                                                             </div>
                                                             <button
                                                                 type="button"
-                                                                onClick={() => {
-                                                                    const school = requestDetail?.request?.school || {};
-                                                                    const letterheadSrc = school?.letterheadUrl || '/letterhead.png';
-                                                                    const html = `
-                                                                        <!DOCTYPE html>
-                                                                        <html>
-                                                                        <head>
-                                                                            <meta charset="utf-8" />
-                                                                            <title>Loan Voucher - Room ${v.roomNumber}</title>
-                                                                            <style>
-                                                                                @page { size: A4 portrait; margin: 15mm; }
-                                                                                body { font-family: Arial, sans-serif; font-size: 13px; color: #000; margin: 0; padding: 15px; }
-                                                                                .letterhead { text-align: center; margin-bottom: 15px; }
-                                                                                .title { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 15px; }
-                                                                                table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 12px; }
-                                                                                th, td { border: 1px solid #000; padding: 6px 8px; text-align: left; }
-                                                                                th { background: #f2f2f2; font-weight: bold; }
-                                                                                .signatures { display: flex; justify-content: space-between; margin-top: 50px; font-weight: bold; }
-                                                                                .sig-box { text-align: center; width: 180px; border-top: 1px solid #000; padding-top: 5px; }
-                                                                            </style>
-                                                                        </head>
-                                                                        <body>
-                                                                            <div class="letterhead"><img src="${letterheadSrc}" style="width: 100%; max-height: 110px; object-fit: contain;" /></div>
-                                                                            <div class="title">LOAN VOUCHER</div>
-                                                                            <table>
-                                                                                <tr>
-                                                                                    <td style="width: 15%; font-weight: bold;">Date & Time:</td>
-                                                                                    <td style="width: 35%;">${v.voucherDate ? formatDate(v.voucherDate) : formatDate(new Date())}</td>
-                                                                                    <td style="width: 15%; font-weight: bold;">Room No.:</td>
-                                                                                    <td style="width: 35%; font-weight: bold;">${v.roomNumber}</td>
-                                                                                </tr>
-                                                                                <tr>
-                                                                                    <td style="font-weight: bold;">Issued To:</td>
-                                                                                    <td>${v.staffName} (${v.staffDesignation})</td>
-                                                                                    <td style="font-weight: bold;">Class / Session:</td>
-                                                                                    <td>${v.classSection} • 2026-2027</td>
-                                                                                </tr>
-                                                                            </table>
-                                                                            <table>
-                                                                                <thead>
-                                                                                    <tr>
-                                                                                        <th style="width: 40px; text-align: center;">S. No.</th>
-                                                                                        <th>Item Nomenclature</th>
-                                                                                        <th style="width: 180px;">Serial No.</th>
-                                                                                        <th style="width: 200px;">Remarks</th>
-                                                                                    </tr>
-                                                                                </thead>
-                                                                                <tbody>
-                                                                                    ${(v.items || []).map((it, idx) => `
-                                                                                        <tr>
-                                                                                            <td style="text-align: center;">${idx + 1}</td>
-                                                                                            <td><strong>${it.nomenclature}</strong></td>
-                                                                                            <td style="font-family: monospace;">${it.serialNo || '-'}</td>
-                                                                                            <td>${it.remarks || '-'}</td>
-                                                                                        </tr>
-                                                                                    `).join('')}
-                                                                                </tbody>
-                                                                            </table>
-                                                                            <div class="signatures">
-                                                                                <div class="sig-box">Issuer's Sign with Designation<br/><br/>Lab Incharge</div>
-                                                                                <div class="sig-box">Seal & Sign (Head of School)<br/><br/>Principal</div>
-                                                                                <div class="sig-box">Receiver's Sign with Designation<br/><br/>${v.staffName}</div>
-                                                                            </div>
-                                                                        </body>
-                                                                        </html>
-                                                                    `;
-                                                                    const w = window.open('', '_blank');
-                                                                    w.document.write(html);
-                                                                    w.document.close();
-                                                                }}
-                                                                className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+                                                                onClick={() => handlePrintLoanVoucher(v)}
+                                                                className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition shadow-xs"
                                                                 title="Print Loan Voucher"
                                                             >
                                                                 <Printer className="w-4 h-4" />
@@ -6669,6 +7585,7 @@ Laboratory / IT Incharge`
 
             {/* Scanning Item Modal for Received Hardware Verification (Step 10) */}
             <ScanningItemModal
+                key={scanningItemModal.item?.id || 'scanning-item-modal'}
                 isOpen={scanningItemModal.isOpen}
                 item={scanningItemModal.item}
                 expectedQty={scanningItemModal.expectedQty}
