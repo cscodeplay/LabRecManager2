@@ -73,7 +73,7 @@ export default function ScanningItemModal({
     const handleSave = () => {
         onSave({
             serialNumbers: serials,
-            receivedCount: serials.length > 0 ? serials.length : expectedQty,
+            receivedCount: serials.length,
             remarks,
             condition
         });

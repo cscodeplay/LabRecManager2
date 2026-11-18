@@ -196,7 +196,7 @@ export default function ProcurementPage() {
         return () => clearInterval(timer);
     }, []);
 
-    // Synchronize unit-by-unit hardware entries from Step 10 into Step 11
+    // Synchronize unit-by-unit hardware entries from Step 10 into Step 11 strictly for verified serials
     useEffect(() => {
         if (!requestDetail?.request?.items || requestDetail.request.items.length === 0) return;
 
@@ -208,21 +208,19 @@ export default function ProcurementPage() {
 
             const list = [];
             requestDetail.request.items.forEach(item => {
-                const expected = editableQuantities[item.id] ?? item.quantity ?? 1;
                 const scannedSerials = receivedItems[item.id]?.serialNumbers || [];
 
-                for (let idx = 0; idx < expected; idx++) {
+                scannedSerials.forEach((sn, idx) => {
                     const unitKey = `${item.id}_${idx}`;
                     const existing = existingMap.get(unitKey);
-                    const defaultSerial = scannedSerials[idx] || hardwareItemSerials[item.id] || `SN-${(item.itemName || 'ITM').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase()}-${(idx + 1).toString().padStart(3, '0')}`;
 
                     list.push({
                         unitKey,
                         itemId: item.id,
                         itemName: item.itemName,
                         unitIndex: idx + 1,
-                        totalUnits: expected,
-                        serialNumber: existing?.serialNumber || defaultSerial,
+                        totalUnits: scannedSerials.length,
+                        serialNumber: existing?.serialNumber || sn,
                         classroomId: existing?.classroomId || '',
                         roomNumber: existing?.roomNumber || '',
                         classSection: existing?.classSection || '',
@@ -230,7 +228,7 @@ export default function ProcurementPage() {
                         staffDesignation: existing?.staffDesignation || '',
                         remarks: existing?.remarks || ''
                     });
-                }
+                });
             });
             return list;
         });
@@ -493,13 +491,29 @@ export default function ProcurementPage() {
                     if (selectedVendorForPurchase) {
                         const items = requestDetail?.request?.items || [];
                         const prices = vendorQuotationPrices[selectedVendorForPurchase] || {};
-                        const approvedItems = items.map(item => ({
-                            itemId: item.id,
-                            vendorId: item.approvedVendorId || selectedVendorForPurchase,
-                            unitPrice: item.approvedUnitPrice || parseFloat(prices[item.id]) || 0,
-                            quantity: editableQuantities[item.id] ?? item.quantity
-                        }));
-                        await procurementAPI.approveRequest(selectedRequest.id, approvedItems);
+                        const defaultGstRate = vendorGlobalGst[selectedVendorForPurchase] ?? (vendorGstSettings[selectedVendorForPurchase]?.gstRate ?? netAmountGst);
+
+                        let subtotal = 0;
+                        let totalGst = 0;
+
+                        const approvedItems = items.map(item => {
+                            const price = item.approvedUnitPrice || parseFloat(prices[item.id]) || 0;
+                            const qty = editableQuantities[item.id] ?? item.quantity;
+                            const itemGstRate = vendorItemGst[selectedVendorForPurchase]?.[item.id] ?? defaultGstRate;
+
+                            subtotal += price * qty;
+                            totalGst += (price * itemGstRate / 100) * qty;
+
+                            return {
+                                itemId: item.id,
+                                vendorId: item.approvedVendorId || selectedVendorForPurchase,
+                                unitPrice: price,
+                                quantity: qty
+                            };
+                        });
+
+                        const grandTotal = Math.round(subtotal + totalGst);
+                        await procurementAPI.approveRequest(selectedRequest.id, approvedItems, grandTotal);
                     }
                     await openRequestDetail(selectedRequest, true);
                     break;
@@ -734,7 +748,7 @@ export default function ProcurementPage() {
         return numberToWords(Math.floor(num / 10000000)) + ' Crore' + (num % 10000000 ? ' ' + numberToWords(num % 10000000) : '');
     };
 
-    // Calculate vendor total from prices map (includes item GST or global GST)
+    // Calculate vendor total from prices map (per-unit rates; includes item GST or global GST)
     const calculateVendorTotal = (vendorId, includeGst = true) => {
         const prices = vendorQuotationPrices[vendorId] || {};
         const defaultGst = vendorGlobalGst[vendorId] ?? (vendorGstSettings[vendorId]?.gstRate ?? 18);
@@ -745,7 +759,7 @@ export default function ProcurementPage() {
 
         requestDetail?.request?.items?.forEach(item => {
             const price = parseFloat(prices[item.id]) || 0;
-            const base = price * item.quantity;
+            const base = price; // Per-unit item rate
             const rate = itemGsts[item.id] !== undefined ? itemGsts[item.id] : defaultGst;
             subtotal += base;
             totalGst += base * (rate / 100);
@@ -757,7 +771,7 @@ export default function ProcurementPage() {
         return subtotal;
     };
 
-    // Calculate total GST amount for vendor
+    // Calculate total GST amount for vendor based on per-unit rates
     const calculateVendorGstTotal = (vendorId) => {
         const prices = vendorQuotationPrices[vendorId] || {};
         const defaultGst = vendorGlobalGst[vendorId] ?? (vendorGstSettings[vendorId]?.gstRate ?? 18);
@@ -766,7 +780,7 @@ export default function ProcurementPage() {
         let totalGst = 0;
         requestDetail?.request?.items?.forEach(item => {
             const price = parseFloat(prices[item.id]) || 0;
-            const base = price * item.quantity;
+            const base = price; // Per-unit item rate
             const rate = itemGsts[item.id] !== undefined ? itemGsts[item.id] : defaultGst;
             totalGst += base * (rate / 100);
         });
@@ -1359,7 +1373,6 @@ export default function ProcurementPage() {
                             <tr>
                                 <th style="width: 30px; text-align: center;">#</th>
                                 <th>Item Description</th>
-                                <th style="width: 45px; text-align: center;">Qty</th>
                                 <th style="width: 80px; text-align: center;">Warranty</th>
                                 ${vendorNames.map(v => `<th style="text-align: right; background: #e0e7ff;">${v}<br/><span style="font-size: 10px; font-weight: normal;">(Unit Price)</span></th>`).join('')}
                                 <th style="text-align: right; background: #dcfce7; width: 90px;">L1 Price</th>
@@ -1372,7 +1385,6 @@ export default function ProcurementPage() {
                                 return `<tr>
                                     <td style="text-align: center;">${i + 1}</td>
                                     <td><strong>${item.itemName}</strong></td>
-                                    <td style="text-align: center;">${item.quantity}</td>
                                     <td style="text-align: center;">${item.specifications || '-'}</td>
                                     ${vendorNames.map(vName => {
                                         const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
@@ -1384,12 +1396,12 @@ export default function ProcurementPage() {
                                 </tr>`;
                             }).join('')}
                             <tr class="total-row">
-                                <td colspan="4" style="text-align: right;"><strong>Total Base Amount:</strong></td>
+                                <td colspan="3" style="text-align: right;"><strong>Total Base Unit Rates:</strong></td>
                                 ${vendorNames.map(vName => {
-                                    const total = comparison.reduce((sum, item) => sum + ((Object.values(item.vendorPrices).find(vp => vp.vendorName === vName)?.unitPrice || 0) * item.quantity), 0);
+                                    const total = comparison.reduce((sum, item) => sum + (Object.values(item.vendorPrices).find(vp => vp.vendorName === vName)?.unitPrice || 0), 0);
                                     return `<td style="text-align: right;">₹${total.toLocaleString()}</td>`;
                                 }).join('')}
-                                <td class="lowest" colspan="2" style="text-align: right;">₹${comparison.reduce((sum, item) => sum + ((item.lowestPrice || 0) * item.quantity), 0).toLocaleString()}</td>
+                                <td class="lowest" colspan="2" style="text-align: right;">₹${comparison.reduce((sum, item) => sum + (item.lowestPrice || 0), 0).toLocaleString()}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -2812,13 +2824,16 @@ export default function ProcurementPage() {
                 setEditableQuantities(qtys);
             }
 
-            // Restore received items
-            if (data.request?.items?.some(item => item.receivedQty > 0)) {
+            // Restore received items strictly from recorded serial numbers
+            if (data.request?.items?.some(item => (item.serialNumbers?.length || 0) > 0)) {
                 const received = {};
                 data.request.items.forEach(item => {
-                    received[item.id] = { received: item.receivedQty || 0, serialNumbers: [] };
+                    const sns = item.serialNumbers || [];
+                    received[item.id] = { received: sns.length, serialNumbers: sns };
                 });
                 setReceivedItems(received);
+            } else {
+                setReceivedItems({});
             }
 
             // Restore bill/cheque info
@@ -3012,9 +3027,8 @@ export default function ProcurementPage() {
                     <tr>
                         <th>S.No</th>
                         <th>Item Description</th>
-                        <th>Qty</th>
                         ${vendorNames.map(v => `<th>${v}</th>`).join('')}
-                        <th>Lowest</th>
+                        <th>Lowest (Unit Rate)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -3022,7 +3036,6 @@ export default function ProcurementPage() {
                         <tr>
                             <td>${idx + 1}</td>
                             <td>${item.itemName}<br/><small>${item.specifications || ''}</small></td>
-                            <td>${item.quantity} ${item.unit || ''}</td>
                             ${vendorNames.map(vName => {
             const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
             const isLowest = vData && item.lowestPrice === vData.unitPrice;
@@ -3032,15 +3045,15 @@ export default function ProcurementPage() {
                         </tr>
                     `).join('')}
                     <tr class="total-row">
-                        <td colspan="3">Total (Qty × Unit Price)</td>
+                        <td colspan="2">Total Unit Rates</td>
                         ${vendorNames.map(vName => {
             const total = comparison.reduce((sum, item) => {
                 const vData = Object.values(item.vendorPrices).find(vp => vp.vendorName === vName);
-                return sum + ((vData?.unitPrice || 0) * item.quantity);
+                return sum + (vData?.unitPrice || 0);
             }, 0);
             return `<td>₹${total.toLocaleString()}</td>`;
         }).join('')}
-                        <td class="lowest">₹${comparison.reduce((sum, item) => sum + ((item.lowestPrice || 0) * item.quantity), 0).toLocaleString()}</td>
+                        <td class="lowest">₹${comparison.reduce((sum, item) => sum + (item.lowestPrice || 0), 0).toLocaleString()}</td>
                     </tr>
                 </tbody>
             </table>
@@ -3186,7 +3199,8 @@ export default function ProcurementPage() {
                                             const totalUnits = (req.items || []).reduce((acc, it) => acc + (parseInt(it.quantity) || 1), 0);
                                             const quotesCount = (req.quotations || []).length;
                                             const approvedVendorName = req.items?.[0]?.approvedVendor?.name || vendors.find(v => v.id === req.items?.[0]?.approvedVendorId)?.name;
-                                            const netAmount = parseFloat(req.approvedTotal || req.estimatedTotal || 0);
+                                            const hasApprovedNetAmount = Boolean(req.approvedTotal && parseFloat(req.approvedTotal) > 0);
+                                            const netAmount = hasApprovedNetAmount ? parseFloat(req.approvedTotal) : null;
 
                                             return (
                                                 <tr key={req.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition">
@@ -3241,9 +3255,13 @@ export default function ProcurementPage() {
                                                     </td>
                                                     <td className="p-3 text-right">
                                                         <div className="font-mono font-bold text-slate-900 dark:text-slate-100 text-sm">
-                                                            {netAmount > 0 ? `₹${Math.round(netAmount).toLocaleString('en-IN')}` : '—'}
+                                                            {netAmount !== null ? `₹${Math.round(netAmount).toLocaleString('en-IN')}` : '—'}
                                                         </div>
-                                                        {req.approvedTotal && <div className="text-[10px] text-emerald-600 font-medium">With GST</div>}
+                                                        {hasApprovedNetAmount ? (
+                                                            <div className="text-[10px] text-emerald-600 font-medium">Net Total (Step 7)</div>
+                                                        ) : (
+                                                            <div className="text-[10px] text-slate-400 italic">Pending Step 7</div>
+                                                        )}
                                                     </td>
                                                     <td className="p-3 text-slate-600 dark:text-slate-400 text-[11px]">
                                                         <div>{req.createdBy?.firstName || '-'}</div>
@@ -3326,7 +3344,7 @@ export default function ProcurementPage() {
                                                 </div>
 
                                                 {/* Stats Row */}
-                                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400 mb-3">
+                                                <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-400 mb-2.5">
                                                     <span className="flex items-center gap-1">
                                                         <Package className="w-3 h-3" /> {req.items?.length || 0} items
                                                     </span>
@@ -3335,6 +3353,18 @@ export default function ProcurementPage() {
                                                     </span>
                                                     <span className="flex items-center gap-1">
                                                         <Users className="w-3 h-3" /> {req.createdBy?.firstName}
+                                                    </span>
+                                                </div>
+
+                                                {/* Net Amount Badge */}
+                                                <div className="flex items-center justify-between text-xs py-1.5 px-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-lg mb-3">
+                                                    <span className="text-slate-500 font-medium">Net Amount:</span>
+                                                    <span className="font-mono font-bold text-slate-900 dark:text-slate-100">
+                                                        {req.approvedTotal && parseFloat(req.approvedTotal) > 0 ? (
+                                                            `₹${Math.round(parseFloat(req.approvedTotal)).toLocaleString('en-IN')}`
+                                                        ) : (
+                                                            <span className="text-slate-400 font-normal italic">Pending Step 7</span>
+                                                        )}
                                                     </span>
                                                 </div>
                                             </div>
@@ -4282,14 +4312,21 @@ Laboratory / IT Incharge`
                                                                 />
                                                             </div>
                                                             <div>
-                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required</label>
-                                                                <input
-                                                                    type="text"
-                                                                    className="input text-xs py-1.5 mt-1"
-                                                                    placeholder="e.g. 1 Year Standard / 3 Years"
-                                                                    value={editingItemForm.warranty}
-                                                                    onChange={e => setEditingItemForm({ ...editingItemForm, warranty: e.target.value })}
-                                                                />
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required (Years)</label>
+                                                                <div className="relative mt-1">
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="1"
+                                                                        className="input text-xs py-1.5 pr-14"
+                                                                        placeholder="e.g. 1, 2, 3"
+                                                                        value={editingItemForm.warranty}
+                                                                        onChange={e => setEditingItemForm({ ...editingItemForm, warranty: e.target.value })}
+                                                                    />
+                                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">
+                                                                        Year{parseInt(editingItemForm.warranty) === 1 ? '' : 's'}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                             <div className="md:col-span-2">
                                                                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
@@ -4359,7 +4396,7 @@ Laboratory / IT Incharge`
                                                                 <span className="w-5 h-5 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-xs font-bold">{idx + 1}</span>
                                                                 <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">{item.itemName}</span>
                                                                 <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[11px] rounded-full font-medium">
-                                                                    Warranty: {item.warranty || '1 Year Standard'}
+                                                                    Warranty: {item.warranty ? `${item.warranty} Year${parseInt(item.warranty) === 1 ? '' : 's'}` : '1 Year'}
                                                                 </span>
                                                             </div>
                                                             {item.specifications && (
@@ -4427,14 +4464,21 @@ Laboratory / IT Incharge`
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required</label>
-                                                        <input
-                                                            type="text"
-                                                            className="input text-xs py-1.5 mt-1"
-                                                            placeholder="e.g. 1 Year Onsite / 3 Years Warranty"
-                                                            value={newItemForm.warranty}
-                                                            onChange={e => setNewItemForm({ ...newItemForm, warranty: e.target.value })}
-                                                        />
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required (Years)</label>
+                                                        <div className="relative mt-1">
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                step="1"
+                                                                className="input text-xs py-1.5 pr-14"
+                                                                placeholder="e.g. 1, 2, 3"
+                                                                value={newItemForm.warranty}
+                                                                onChange={e => setNewItemForm({ ...newItemForm, warranty: e.target.value })}
+                                                            />
+                                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">
+                                                                Year{parseInt(newItemForm.warranty) === 1 ? '' : 's'}
+                                                            </span>
+                                                        </div>
                                                     </div>
                                                     <div className="md:col-span-2">
                                                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
@@ -4763,12 +4807,11 @@ Laboratory / IT Incharge`
                                                                 <thead>
                                                                     <tr className="bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400">
                                                                         <th className="border border-slate-200 dark:border-slate-800 p-2 text-left">Item Description</th>
-                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '90px' }}>Warranty</th>
-                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '50px' }}>Qty</th>
-                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '105px' }}>Unit Rate (₹)</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '100px' }}>Warranty</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '120px' }}>Quoted Unit Rate (₹)</th>
                                                                         <th className="border border-slate-200 dark:border-slate-800 p-2 text-center" style={{ width: '70px' }}>GST %</th>
-                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '85px' }}>GST Amt (₹)</th>
-                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '100px' }}>Item Total (₹)</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '90px' }}>GST Amt (₹)</th>
+                                                                        <th className="border border-slate-200 dark:border-slate-800 p-2 text-right" style={{ width: '120px' }}>Rate Incl. GST (₹)</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody>
@@ -4777,7 +4820,7 @@ Laboratory / IT Incharge`
                                                                         const itemRateGst = vendorItemGst[vendorId]?.[item.id] !== undefined
                                                                             ? vendorItemGst[vendorId][item.id]
                                                                             : globalGst;
-                                                                        const baseAmt = unitRate * item.quantity;
+                                                                        const baseAmt = unitRate;
                                                                         const gstAmt = baseAmt * (itemRateGst / 100);
                                                                         const itemTotal = baseAmt + gstAmt;
 
@@ -4788,10 +4831,7 @@ Laboratory / IT Incharge`
                                                                                     {item.specifications && <div className="text-[10px] text-slate-500 truncate max-w-xs">{item.specifications}</div>}
                                                                                 </td>
                                                                                 <td className="border border-slate-200 dark:border-slate-800 p-2 text-center text-[10px] font-medium text-slate-600 dark:text-slate-400">
-                                                                                    {item.warranty || 'Standard'}
-                                                                                </td>
-                                                                                <td className="border border-slate-200 dark:border-slate-800 p-2 text-center font-bold">
-                                                                                    {item.quantity}
+                                                                                    {item.warranty ? `${item.warranty} Year${parseInt(item.warranty) === 1 ? '' : 's'}` : '1 Year'}
                                                                                 </td>
                                                                                 <td className="border border-slate-200 dark:border-slate-800 p-2 text-right">
                                                                                     <input
@@ -4876,13 +4916,13 @@ Laboratory / IT Incharge`
                                                             </div>
                                                             <div className="text-right flex items-center justify-end gap-4 text-xs">
                                                                 <div>
-                                                                    <span className="text-slate-500">Subtotal:</span> <strong className="font-mono">₹{subtotal.toLocaleString()}</strong>
+                                                                    <span className="text-slate-500">Base Unit Rates:</span> <strong className="font-mono">₹{subtotal.toLocaleString()}</strong>
                                                                 </div>
                                                                 <div>
                                                                     <span className="text-slate-500">Total GST:</span> <strong className="font-mono">₹{totalGst.toLocaleString()}</strong>
                                                                 </div>
                                                                 <div className="text-sm font-bold text-orange-900 dark:text-orange-300 bg-orange-100/70 dark:bg-orange-950/50 px-2.5 py-1 rounded-lg">
-                                                                    Grand Total: ₹{grandTotal.toLocaleString()}
+                                                                    Grand Total (Unit Rates): ₹{grandTotal.toLocaleString()}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -5014,7 +5054,6 @@ Laboratory / IT Incharge`
                                                 <tr className="bg-slate-50 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800">
                                                     <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300 w-12">#</th>
                                                     <th className="p-3 text-left font-bold text-slate-700 dark:text-slate-300">Item Name</th>
-                                                    <th className="p-3 text-center font-bold text-slate-700 dark:text-slate-300 w-16">Qty</th>
                                                     <th className="p-3 text-center font-bold text-slate-700 dark:text-slate-300 w-24">Warranty</th>
                                                     {selectedVendorIds.map(vid => {
                                                         const v = vendors.find(v => v.id === vid);
@@ -5040,18 +5079,16 @@ Laboratory / IT Incharge`
                                                         <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition">
                                                             <td className="p-3 text-slate-500">{idx + 1}</td>
                                                             <td className="p-3 font-medium text-slate-800 dark:text-slate-200">{item.itemName}</td>
-                                                            <td className="p-3 text-center text-slate-600 dark:text-slate-400">{item.quantity} {item.unit || 'pcs'}</td>
-                                                            <td className="p-3 text-center text-slate-600 dark:text-slate-400">{item.warranty || '-'}</td>
+                                                            <td className="p-3 text-center text-slate-600 dark:text-slate-400">
+                                                                {item.warranty ? `${item.warranty} Year${parseInt(item.warranty) === 1 ? '' : 's'}` : '-'}
+                                                            </td>
                                                             {selectedVendorIds.map(vid => {
                                                                 const price = parseFloat(vendorQuotationPrices[vid]?.[item.id]) || 0;
                                                                 const isL1 = vid === lowestId;
                                                                 return (
                                                                     <td key={vid} className={`p-3 text-right font-mono border-l border-slate-200 dark:border-slate-800 ${isL1 ? 'bg-emerald-50/40 dark:bg-emerald-950/20 font-semibold text-emerald-800 dark:text-emerald-200' : 'text-slate-700 dark:text-slate-300'}`}>
                                                                         {price > 0 ? (
-                                                                            <div>
-                                                                                <div>₹{(price * item.quantity).toLocaleString()}</div>
-                                                                                <div className="text-[10px] text-slate-400 font-normal">@ ₹{price.toLocaleString()}/ea</div>
-                                                                            </div>
+                                                                            <div className="font-bold">₹{price.toLocaleString()}</div>
                                                                         ) : '-'}
                                                                     </td>
                                                                 );
@@ -5061,7 +5098,7 @@ Laboratory / IT Incharge`
                                                 })}
                                                 {/* Subtotal Row */}
                                                 <tr className="bg-slate-50/70 dark:bg-slate-800/60 font-semibold text-slate-700 dark:text-slate-300 border-t-2 border-slate-300 dark:border-slate-700">
-                                                    <td colSpan={4} className="p-3 text-right">Base Subtotal:</td>
+                                                    <td colSpan={3} className="p-3 text-right">Base Subtotal (Unit Rates):</td>
                                                     {selectedVendorIds.map(vid => {
                                                         const subtotal = calculateVendorTotal(vid, false);
                                                         const { vendorId: lowestId } = getLowestVendor();
@@ -5074,7 +5111,7 @@ Laboratory / IT Incharge`
                                                 </tr>
                                                 {/* GST Total Row */}
                                                 <tr className="bg-slate-50/40 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400">
-                                                    <td colSpan={4} className="p-2.5 text-right text-[11px]">Total GST:</td>
+                                                    <td colSpan={3} className="p-2.5 text-right text-[11px]">Total GST:</td>
                                                     {selectedVendorIds.map(vid => {
                                                         const gst = calculateVendorGstTotal(vid);
                                                         const { vendorId: lowestId } = getLowestVendor();
@@ -5087,7 +5124,7 @@ Laboratory / IT Incharge`
                                                 </tr>
                                                 {/* Grand Total Row */}
                                                 <tr className="font-extrabold text-slate-900 dark:text-slate-100 border-t border-slate-300 dark:border-slate-700 bg-slate-100/70 dark:bg-slate-800">
-                                                    <td colSpan={4} className="p-3 text-right text-xs">GRAND TOTAL (Incl. GST):</td>
+                                                    <td colSpan={3} className="p-3 text-right text-xs">GRAND TOTAL (Unit Rates Incl. GST):</td>
                                                     {selectedVendorIds.map(vid => {
                                                         const total = calculateVendorTotal(vid, true);
                                                         const { vendorId: lowestId } = getLowestVendor();
@@ -5947,29 +5984,18 @@ Laboratory / IT Incharge`
                                                 <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
                                                     <Package className="w-4 h-4 text-emerald-600" /> 3. Received Items Verification & Inventory
                                                 </h4>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const update = {};
-                                                        requestDetail?.request?.items?.forEach(item => {
-                                                            const expected = editableQuantities[item.id] ?? item.quantity;
-                                                            update[item.id] = { ...(receivedItems[item.id] || {}), received: expected };
-                                                        });
-                                                        setReceivedItems(prev => ({ ...prev, ...update }));
-                                                        toast.success('All items marked as fully received');
-                                                    }}
-                                                    className="btn btn-secondary text-xs py-1 px-2.5"
-                                                >
-                                                    Mark All Received
-                                                </button>
+                                                <span className="text-[11px] text-slate-500 font-medium">
+                                                    Serial scanning required for inventory & classroom issuance
+                                                </span>
                                             </div>
 
                                             <div className="space-y-3">
                                                 {requestDetail?.request?.items?.map((item, idx) => {
                                                     const expected = editableQuantities[item.id] ?? item.quantity;
-                                                    const verifiedQty = receivedItems[item.id]?.received ?? (receivedItems[item.id]?.serialNumbers?.length || 0);
                                                     const serials = receivedItems[item.id]?.serialNumbers || [];
-                                                    const isVerified = serials.length >= expected || verifiedQty >= expected;
+                                                    const verifiedQty = serials.length;
+                                                    const isVerified = expected > 0 && verifiedQty >= expected;
+                                                    const progressPercent = expected > 0 ? Math.min(100, Math.round((verifiedQty / expected) * 100)) : 0;
 
                                                     return (
                                                         <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
@@ -5982,8 +6008,14 @@ Laboratory / IT Incharge`
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-center gap-2">
-                                                                    <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isVerified ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'}`}>
-                                                                        {serials.length} / {expected} Scanned
+                                                                    <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                                                        isVerified
+                                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                                            : verifiedQty > 0
+                                                                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                                                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                                    }`}>
+                                                                        {verifiedQty} / {expected} Scanned {isVerified ? '(Complete)' : verifiedQty > 0 ? '(Partial)' : '(Pending)'}
                                                                     </div>
                                                                     <button
                                                                         type="button"
@@ -6003,7 +6035,7 @@ Laboratory / IT Incharge`
                                                             <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-2">
                                                                 <div
                                                                     className={`h-full transition-all duration-300 ${isVerified ? 'bg-emerald-500' : 'bg-indigo-600'}`}
-                                                                    style={{ width: `${Math.min(100, Math.round(((serials.length || verifiedQty) / (expected || 1)) * 100))}%` }}
+                                                                    style={{ width: `${progressPercent}%` }}
                                                                 />
                                                             </div>
 
@@ -6121,77 +6153,98 @@ Laboratory / IT Incharge`
                                                 </span>
                                             </div>
 
-                                            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                                                <table className="w-full text-xs">
-                                                    <thead>
-                                                        <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
-                                                            <th className="p-2.5 text-center font-bold w-10">#</th>
-                                                            <th className="p-2.5 text-left font-bold w-44">Item Nomenclature</th>
-                                                            <th className="p-2.5 text-left font-bold w-40">Serial Number</th>
-                                                            <th className="p-2.5 text-left font-bold w-52">Target Classroom / Lab *</th>
-                                                            <th className="p-2.5 text-left font-bold w-44">Class Incharge (Auto)</th>
-                                                            <th className="p-2.5 text-left font-bold">Remarks / Purpose</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                                                        {unitIssuances.map((unit, idx) => (
-                                                            <tr key={unit.unitKey || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                                                                <td className="p-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
-                                                                <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
-                                                                    <div>{unit.itemName}</div>
-                                                                    <span className="text-[10px] text-slate-400 font-normal">Unit {unit.unitIndex} of {unit.totalUnits}</span>
-                                                                </td>
-                                                                <td className="p-2.5">
-                                                                    <input
-                                                                        type="text"
-                                                                        className="input text-xs py-1 font-mono w-full"
-                                                                        placeholder="Serial No."
-                                                                        value={unit.serialNumber || ''}
-                                                                        onChange={e => {
-                                                                            const val = e.target.value;
-                                                                            setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, serialNumber: val } : u));
-                                                                        }}
-                                                                    />
-                                                                </td>
-                                                                <td className="p-2.5">
-                                                                    <select
-                                                                        className="input text-xs py-1 w-full font-medium"
-                                                                        value={unit.classroomId || ''}
-                                                                        onChange={e => handleUnitClassroomChange(unit.unitKey, e.target.value)}
-                                                                    >
-                                                                        <option value="">Select target room...</option>
-                                                                        {classroomMappings.map(cm => (
-                                                                            <option key={cm.id} value={cm.id}>
-                                                                                Room {cm.roomNumber} - {cm.className || cm.roomName || 'Classroom'} {cm.section ? `(${cm.section})` : ''}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                </td>
-                                                                <td className="p-2.5">
-                                                                    <input
-                                                                        type="text"
-                                                                        disabled
-                                                                        className="input text-xs py-1 w-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium cursor-not-allowed truncate"
-                                                                        value={unit.staffName ? `${unit.staffName} (${unit.staffDesignation || 'Incharge'})` : 'Select classroom'}
-                                                                    />
-                                                                </td>
-                                                                <td className="p-2.5">
-                                                                    <input
-                                                                        type="text"
-                                                                        className="input text-xs py-1 w-full"
-                                                                        placeholder="e.g. Smart Room setup"
-                                                                        value={unit.remarks || ''}
-                                                                        onChange={e => {
-                                                                            const val = e.target.value;
-                                                                            setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, remarks: val } : u));
-                                                                        }}
-                                                                    />
-                                                                </td>
+                                            {unitIssuances.length === 0 ? (
+                                                <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-dashed border-amber-300 dark:border-amber-800 space-y-3">
+                                                    <div className="w-12 h-12 mx-auto rounded-full bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                                                        <AlertCircle className="w-6 h-6" />
+                                                    </div>
+                                                    <div className="max-w-md mx-auto">
+                                                        <h5 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-1">No Hardware Units Verified Yet</h5>
+                                                        <p className="text-xs text-slate-500">
+                                                            Classroom and lab assignment requires physical hardware units with verified serial numbers. Please scan or record serial numbers in Step 10 (Item Verification & Inventory) to enable classroom assignment.
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setWorkflowStep(10)}
+                                                        className="btn btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5 shadow-xs"
+                                                    >
+                                                        <ScanLine className="w-4 h-4" /> Go to Step 10 (Scan Serials)
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
+                                                                <th className="p-2.5 text-center font-bold w-10">#</th>
+                                                                <th className="p-2.5 text-left font-bold w-44">Item Nomenclature</th>
+                                                                <th className="p-2.5 text-left font-bold w-40">Serial Number</th>
+                                                                <th className="p-2.5 text-left font-bold w-52">Target Classroom / Lab *</th>
+                                                                <th className="p-2.5 text-left font-bold w-44">Class Incharge (Auto)</th>
+                                                                <th className="p-2.5 text-left font-bold">Remarks / Purpose</th>
                                                             </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                                            {unitIssuances.map((unit, idx) => (
+                                                                <tr key={unit.unitKey || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
+                                                                    <td className="p-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                                                                    <td className="p-2.5 font-bold text-slate-800 dark:text-slate-200">
+                                                                        <div>{unit.itemName}</div>
+                                                                        <span className="text-[10px] text-slate-400 font-normal">Unit {unit.unitIndex} of {unit.totalUnits}</span>
+                                                                    </td>
+                                                                    <td className="p-2.5">
+                                                                        <input
+                                                                            type="text"
+                                                                            className="input text-xs py-1 font-mono w-full"
+                                                                            placeholder="Serial No."
+                                                                            value={unit.serialNumber || ''}
+                                                                            onChange={e => {
+                                                                                const val = e.target.value;
+                                                                                setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, serialNumber: val } : u));
+                                                                            }}
+                                                                        />
+                                                                    </td>
+                                                                    <td className="p-2.5">
+                                                                        <select
+                                                                            className="input text-xs py-1 w-full font-medium"
+                                                                            value={unit.classroomId || ''}
+                                                                            onChange={e => handleUnitClassroomChange(unit.unitKey, e.target.value)}
+                                                                        >
+                                                                            <option value="">Select target room...</option>
+                                                                            {classroomMappings.map(cm => (
+                                                                                <option key={cm.id} value={cm.id}>
+                                                                                    Room {cm.roomNumber} - {cm.className || cm.roomName || 'Classroom'} {cm.section ? `(${cm.section})` : ''}
+                                                                                </option>
+                                                                            ))}
+                                                                        </select>
+                                                                    </td>
+                                                                    <td className="p-2.5">
+                                                                        <input
+                                                                            type="text"
+                                                                            disabled
+                                                                            className="input text-xs py-1 w-full bg-slate-100 dark:bg-slate-800 text-slate-500 font-medium cursor-not-allowed truncate"
+                                                                            value={unit.staffName ? `${unit.staffName} (${unit.staffDesignation || 'Incharge'})` : 'Select classroom'}
+                                                                        />
+                                                                    </td>
+                                                                    <td className="p-2.5">
+                                                                        <input
+                                                                            type="text"
+                                                                            className="input text-xs py-1 w-full"
+                                                                            placeholder="e.g. Smart Room setup"
+                                                                            value={unit.remarks || ''}
+                                                                            onChange={e => {
+                                                                                const val = e.target.value;
+                                                                                setUnitIssuances(prev => prev.map(u => u.unitKey === unit.unitKey ? { ...u, remarks: val } : u));
+                                                                            }}
+                                                                        />
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Issued Vouchers History */}

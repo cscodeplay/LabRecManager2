@@ -659,7 +659,7 @@ export const procurementAPI = {
     addQuotation: (requestId, data) => api.post(`/procurement/requests/${requestId}/quotations`, data),
     updateQuotation: (requestId, quotationId, data) => api.put(`/procurement/requests/${requestId}/quotations/${quotationId}`, data),
     // Approval
-    approveRequest: (requestId, approvedItems) => api.post(`/procurement/requests/${requestId}/approve`, { approvedItems }),
+    approveRequest: (requestId, approvedItems, approvedTotal) => api.post(`/procurement/requests/${requestId}/approve`, { approvedItems, approvedTotal }),
     // Print data
     getPrintData: (requestId) => api.get(`/procurement/requests/${requestId}/print`),
     // Staff & Committee

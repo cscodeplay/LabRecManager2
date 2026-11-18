@@ -646,9 +646,7 @@ router.put('/requests/:id/quotations/:quotationId', authenticate, asyncHandler(a
  * @desc    Approve procurement with selected vendors and quantities
  */
 router.post('/requests/:id/approve', authenticate, authorize('admin', 'principal'), asyncHandler(async (req, res) => {
-    const { approvedItems } = req.body; // [{itemId, vendorId, unitPrice, quantity}]
-
-    let approvedTotal = 0;
+    const { approvedItems, approvedTotal: customApprovedTotal } = req.body; // [{itemId, vendorId, unitPrice, quantity}]
 
     for (const item of approvedItems) {
         await prisma.procurementItem.update({
@@ -659,17 +657,24 @@ router.post('/requests/:id/approve', authenticate, authorize('admin', 'principal
                 quantity: item.quantity
             }
         });
-        approvedTotal += (parseFloat(item.unitPrice) || 0) * (item.quantity || 0);
+    }
+
+    const updateData = {
+        status: 'approved',
+        approvedById: req.user.id,
+        approvedAt: new Date()
+    };
+
+    if (customApprovedTotal !== undefined && customApprovedTotal !== null) {
+        const parsedCustomTotal = parseFloat(customApprovedTotal);
+        if (!isNaN(parsedCustomTotal)) {
+            updateData.approvedTotal = parsedCustomTotal;
+        }
     }
 
     const request = await prisma.procurementRequest.update({
         where: { id: req.params.id },
-        data: {
-            status: 'approved',
-            approvedById: req.user.id,
-            approvedAt: new Date(),
-            approvedTotal
-        }
+        data: updateData
     });
 
     res.json({ success: true, data: request, message: 'Procurement approved' });
