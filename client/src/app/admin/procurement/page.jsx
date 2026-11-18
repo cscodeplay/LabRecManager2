@@ -151,6 +151,15 @@ export default function ProcurementPage() {
     // Step 3: Collapsible Item Form
     const [isItemFormCollapsed, setIsItemFormCollapsed] = useState(true);
 
+    // Step 4: Call for Quotation letter number & extra agreement conditions
+    const [cfqLetterNo, setCfqLetterNo] = useState('');
+    const [cfqAgreementMode, setCfqAgreementMode] = useState('editor'); // 'editor' | 'upload' | 'cloud'
+    const [cfqAgreementText, setCfqAgreementText] = useState('');
+    const [cfqAgreementFile, setCfqAgreementFile] = useState(null);
+    const [cfqAgreementFileUrl, setCfqAgreementFileUrl] = useState('');
+    const [cfqCloudDoc, setCfqCloudDoc] = useState(null);
+    const [showCfqCloudPicker, setShowCfqCloudPicker] = useState(false);
+
     // Step 7: Net Amount (Attachment 2 format)
     const [netAmountGst, setNetAmountGst] = useState(18);
     const [netAmountWarranty, setNetAmountWarranty] = useState('1 Year Standard Warranty');
@@ -406,7 +415,29 @@ export default function ProcurementPage() {
                     await openRequestDetail(selectedRequest, true);
                     break;
                 case 4:
-                    // Selected vendors are tracked in state
+                    // Persist CFQ Letter No & extra agreement settings if any
+                    try {
+                        let uploadedAgreementUrl = cfqAgreementFileUrl;
+                        if (cfqAgreementFile) {
+                            setSaveProgress({ active: true, percent: 50, statusText: 'Uploading agreement document...' });
+                            const formData = new FormData();
+                            formData.append('file', cfqAgreementFile);
+                            formData.append('folder', 'procurement-agreements');
+                            const upRes = await uploadAPI.uploadFile(formData);
+                            uploadedAgreementUrl = upRes.data?.url || upRes.data?.data?.url || '';
+                            setCfqAgreementFileUrl(uploadedAgreementUrl);
+                        }
+                        await procurementAPI.updateRequest(selectedRequest.id, {
+                            cfqLetterNo: cfqLetterNo.trim(),
+                            cfqAgreementMode,
+                            cfqAgreementText: cfqAgreementText.trim(),
+                            cfqAgreementFileUrl: cfqCloudDoc?.url || uploadedAgreementUrl || '',
+                            cfqCloudDoc: cfqCloudDoc || null
+                        });
+                    } catch (err) {
+                        console.error('Failed to save Step 4 CFQ settings:', err);
+                    }
+                    await openRequestDetail(selectedRequest, true);
                     break;
                 case 5:
                     setSaveProgress({ active: true, percent: 45, statusText: 'Saving vendor quotations...' });
@@ -900,7 +931,7 @@ export default function ProcurementPage() {
                 itemName: newItemForm.itemName.trim(),
                 specifications: newItemForm.specifications?.trim() || null,
                 warranty: newItemForm.warranty?.trim() || null,
-                quantity: parseInt(newItemForm.quantity) || 1,
+                quantity: 1, // Quantity is per-unit; final total quantities are decided at Step 7 Net Amount
                 unit: newItemForm.unit,
                 estimatedUnitPrice: parseFloat(newItemForm.estimatedUnitPrice) || null
             });
@@ -918,7 +949,7 @@ export default function ProcurementPage() {
             itemName: item.itemName,
             specifications: item.specifications || '',
             warranty: item.warranty || '',
-            quantity: item.quantity,
+            quantity: item.quantity || 1,
             unit: item.unit || 'pcs',
             estimatedUnitPrice: item.estimatedUnitPrice || ''
         });
@@ -1168,25 +1199,27 @@ export default function ProcurementPage() {
                 @media print {
                     @page {
                         size: A4 portrait;
-                        margin: 18mm 16mm;
+                        margin: 0;
                     }
                     @page comparative-landscape {
                         size: A4 landscape;
-                        margin: 16mm 14mm;
+                        margin: 0;
                     }
                     html, body {
-                        background: transparent !important;
+                        background: #ffffff !important;
                         padding: 0 !important;
                         margin: 0 !important;
+                        width: 100% !important;
                     }
                     .no-print-bar {
                         display: none !important;
                     }
                     .page {
                         width: 100% !important;
-                        min-height: auto !important;
+                        min-height: 100% !important;
                         margin: 0 !important;
-                        padding: 0 !important;
+                        padding: 18mm 16mm !important;
+                        box-sizing: border-box !important;
                         box-shadow: none !important;
                         border-radius: 0 !important;
                         page-break-after: always !important;
@@ -1196,7 +1229,7 @@ export default function ProcurementPage() {
                         width: 100% !important;
                         height: auto !important;
                         max-height: none !important;
-                        padding: 10mm !important;
+                        padding: 14mm 12mm !important;
                         overflow: visible !important;
                     }
                     .comparative-content-rotated {
@@ -1329,7 +1362,7 @@ export default function ProcurementPage() {
                             <td><strong>${item.itemName}</strong></td>
                             <td>${item.specifications || '-'}</td>
                             <td style="text-align: center;">${item.warranty || '1 Year Standard'}</td>
-                            <td style="text-align: center;"><strong>${item.quantity}</strong></td>
+                            <td style="text-align: center;"><strong>1</strong></td>
                             <td style="text-align: center;">${item.unit || 'pcs'}</td>
                         </tr>`).join('')}
                     </tbody>
@@ -1338,8 +1371,8 @@ export default function ProcurementPage() {
                 <div class="summary-box">
                     <strong>Terms & Conditions:</strong>
                     <ul style="margin: 6px 0; padding-left: 20px;">
+                        <li><strong>Kindly quote Per-Unit Item Rate only</strong> (inclusive of all applicable taxes, GST, packing, and forwarding).</li>
                         <li>Quotations must be valid for at least 30 days from submission date.</li>
-                        <li>Rates must include all taxes, packing, forwarding, and on-site delivery.</li>
                         <li>Warranty terms and post-sales technical support must be clearly stated.</li>
                         <li>Submission must be received on or before ${formatDate(lastDateToSubmit || new Date(Date.now() + 7 * 86400000))}.</li>
                     </ul>
@@ -1352,10 +1385,17 @@ export default function ProcurementPage() {
                     </ol>
                 </div>
 
-                <div class="signatures">
+                <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 35px;">
                     <div class="signature"><div class="signature-line">Prepared By</div></div>
                     <div class="signature"><div class="signature-line">Committee Chairperson</div></div>
-                    <div class="signature"><div class="signature-line">Authorized Signatory</div></div>
+                    <div style="text-align: left; min-width: 200px;">
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
+                        <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                            Principal<br/>
+                            ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                            ${school?.district || 'Ludhiana'}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1507,13 +1547,17 @@ export default function ProcurementPage() {
                         return sum + (unitPriceWithGst * it.quantity);
                     }, 0)).toUpperCase()} ONLY)
                 </div>
-                <div style="margin-top: 18px; font-weight: bold; font-size: 13px; text-transform: uppercase;">
-                    KINDLY NOTE THE ABOVE ITEMS ARE OF 1 YEAR WARRANTY.
-                </div>
-                <div class="signatures">
+                <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px;">
                     <div class="signature"><div class="signature-line">Store Keeper</div></div>
                     <div class="signature"><div class="signature-line">Committee Members</div></div>
-                    <div class="signature"><div class="signature-line">Principal</div></div>
+                    <div style="text-align: left; min-width: 190px;">
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 20px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
+                        <div style="font-size: 12.5px; line-height: 1.35; color: #000;">
+                            Principal<br/>
+                            ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                            ${school?.district || 'Ludhiana'}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1576,6 +1620,17 @@ export default function ProcurementPage() {
                         `).join('') || '<div style="text-align: center; width: 100%;">No committee members assigned</div>'}
                     </div>
                 </div>
+
+                <div style="margin-top: 30px; float: right; text-align: left;">
+                    <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Approved & Counter-Signed:</div>
+                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
+                    <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                        Principal<br/>
+                        ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                        ${school?.district || 'Ludhiana'}
+                    </div>
+                </div>
+                <div style="clear: both;"></div>
             </div>
 
             <!-- PAGE: PURCHASE ORDER (Matching Official School Format - Attachment 1) -->
@@ -1610,10 +1665,9 @@ export default function ProcurementPage() {
                     </p>
                 </div>
                 <div style="margin-top: 60px; float: right; text-align: left; font-size: 14px; line-height: 1.4;">
-                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
+                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
                     Principal<br/>
-                    Senior Secondary Residential<br/>
-                    School for Meritorious Students,<br/>
+                    Senior Secondary Residential School for Meritorious Students,<br/>
                     Ludhiana
                 </div>
                 <div style="clear: both;"></div>
@@ -1902,7 +1956,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Requirement Letter - ${letterNo}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -1981,14 +2035,15 @@ export default function ProcurementPage() {
                         font-weight: bold;
                     }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2009,12 +2064,20 @@ export default function ProcurementPage() {
                         <div>Date: <strong>${dateFormatted}</strong></div>
                     </div>
                     <div class="content">${contentToPrint}</div>
-                    <div class="signatures">
+                    <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 50px;">
                         <div class="sig-box">
                             <div class="sig-line">Requisition Authority<br/><span style="font-size: 11px; font-weight: normal;">Lab / IT Incharge</span></div>
                         </div>
-                        <div class="sig-box">
-                            <div class="sig-line">Sanctioning Authority<br/><span style="font-size: 11px; font-weight: normal;">Principal / Director</span></div>
+                        <div style="text-align: left; min-width: 200px;">
+                            <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Sanctioned By:</div>
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">
+                                Principal
+                            </div>
+                            <div style="font-size: 13.5px; line-height: 1.35; color: #000;">
+                                Principal<br/>
+                                ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                                ${school?.district || 'Ludhiana'}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2065,7 +2128,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Net Amount - ${requestDetail?.request?.title}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -2116,18 +2179,18 @@ export default function ProcurementPage() {
                     table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 13px; }
                     th { border: 1px solid #000; padding: 8px; font-weight: 800; text-align: center; background: #fff; }
                     .summary { margin-top: 25px; font-size: 13px; font-weight: bold; text-transform: uppercase; line-height: 1.8; }
-                    .warranty { margin-top: 20px; font-size: 13px; font-weight: bold; text-transform: uppercase; }
                     .signatures { display: flex; justify-content: space-between; margin-top: 60px; }
                     .sig-box { text-align: center; width: 160px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold; }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2166,13 +2229,19 @@ export default function ProcurementPage() {
                         TOTAL AMOUNT REQUIRED FOR HARDWARE PURCHASE IS RS. ${grandTotal.toLocaleString('en-IN')}<br/>
                         (${words} ONLY)
                     </div>
-                    <div class="warranty">
-                        KINDLY NOTE THE ABOVE ITEMS ARE OF ${netAmountWarranty || '1 YEAR WARRANTY'}.
-                    </div>
-                    <div class="signatures">
-                        <div class="sig-box">Store Keeper</div>
-                        <div class="sig-box">Committee Members</div>
-                        <div class="sig-box">Principal</div>
+                    <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px;">
+                        <div class="sig-box" style="text-align: center; width: 150px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold;">Store Keeper</div>
+                        <div class="sig-box" style="text-align: center; width: 150px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold;">Committee Members</div>
+                        <div style="text-align: left; min-width: 190px;">
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">
+                                Principal
+                            </div>
+                            <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                                Principal<br/>
+                                ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                                ${school?.district || 'Ludhiana'}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </body>
@@ -2199,7 +2268,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Proceedings of Committee - ${request.title || 'Procurement'}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -2297,14 +2366,15 @@ export default function ProcurementPage() {
                         font-weight: bold;
                     }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2388,6 +2458,19 @@ export default function ProcurementPage() {
                             `).join('')}
                         </div>
                     </div>
+
+                    <div style="margin-top: 36px; float: right; text-align: left;">
+                        <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Approved & Counter-Signed:</div>
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
+                            Principal
+                        </div>
+                        <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                            Principal<br/>
+                            Senior Secondary Residential School for Meritorious Students,<br/>
+                            Ludhiana
+                        </div>
+                    </div>
+                    <div style="clear: both;"></div>
                 </div>
             </body>
             </html>
@@ -2413,7 +2496,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Purchase Order - ${activePoNum}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -2468,14 +2551,15 @@ export default function ProcurementPage() {
                     .sign-block { margin-top: 50px; float: right; text-align: left; }
                     .clear { clear: both; }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2522,13 +2606,12 @@ export default function ProcurementPage() {
                         </p>
                     </div>
                     <div class="sign-block">
-                        <div style="color: #047857; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 26px; line-height: 1.1; margin-bottom: 4px;">
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 26px; line-height: 1.1; margin-bottom: 4px;">
                             Principal
                         </div>
                         <div style="font-size: 14px; line-height: 1.4; color: #000;">
                             Principal<br/>
-                            Senior Secondary Residential<br/>
-                            School for Meritorious Students,<br/>
+                            Senior Secondary Residential School for Meritorious Students,<br/>
                             Ludhiana
                         </div>
                     </div>
@@ -2553,7 +2636,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Loan Voucher - Room ${v.roomNumber}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -2607,14 +2690,15 @@ export default function ProcurementPage() {
                     .signatures { display: flex; justify-content: space-between; margin-top: 50px; font-weight: bold; }
                     .sig-box { text-align: center; width: 180px; border-top: 1.5px solid #000; padding-top: 5px; font-size: 11px; }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2743,7 +2827,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Call for Quotation - ${vendor.name}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -2801,18 +2885,19 @@ export default function ProcurementPage() {
                     th, td { border: 1px solid #cbd5e1; padding: 7px 9px; text-align: left; }
                     th { background: #f1f5f9; color: #0f172a; font-weight: bold; }
                     .text-center { text-align: center; }
-                    .signatures { display: flex; justify-content: space-between; margin-top: 40px; }
-                    .signature { text-align: center; width: 180px; }
+                    .signatures { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; }
+                    .signature { text-align: center; width: 170px; }
                     .signature-line { border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 11px; font-weight: bold; margin-top: 45px; }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
                         }
@@ -2831,7 +2916,7 @@ export default function ProcurementPage() {
                         </div>
                         
                         <div class="meta-bar">
-                            <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}</div>
+                            <div><strong>Letter No:</strong> ${cfqLetterNo || `CFQ-${request.id?.slice(0, 8).toUpperCase()}`}</div>
                             <div><strong>Date:</strong> ${today}</div>
                         </div>
 
@@ -2859,7 +2944,7 @@ export default function ProcurementPage() {
                             <strong>Please quote your Per-Unit Item Rate only (inclusive of GST, forwarding charges and freight)</strong> and state warranty coverage.
                         </p>
 
-                        <div class="section-title">Items Required & Rate Quotation</div>
+                        <div class="section-title">Items Required & Rate Quotation (Per-Unit Basis)</div>
                         <table>
                             <thead>
                                 <tr>
@@ -2879,7 +2964,7 @@ export default function ProcurementPage() {
                                         <td><strong>${item.itemName}</strong></td>
                                         <td>${item.specifications || '-'}</td>
                                         <td class="text-center">${item.warranty || '1 Year Standard'}</td>
-                                        <td class="text-center"><strong>${item.quantity}</strong></td>
+                                        <td class="text-center"><strong>1</strong></td>
                                         <td class="text-center">${item.unit || 'pcs'}</td>
                                         <td style="border: 1px dashed #64748b; background: #fafafa;"></td>
                                     </tr>
@@ -2894,6 +2979,8 @@ export default function ProcurementPage() {
                                 <li>Quotation must be valid for minimum 30 days from submission.</li>
                                 <li>Warranty terms and post-sales support must be clearly stated.</li>
                                 <li>Late submissions after ${deadlineStr} will not be considered.</li>
+                                ${cfqAgreementText ? `<li style="color: #0f172a; font-weight: 500;"><strong>Special Condition / Agreement:</strong> ${cfqAgreementText.replace(/\n/g, '<br/>')}</li>` : ''}
+                                ${cfqCloudDoc?.url || cfqAgreementFileUrl ? `<li style="color: #1e40af; font-weight: 500;"><strong>Attached Conditions Document:</strong> See annexed specifications / terms document (${cfqCloudDoc?.name || cfqAgreementFile?.name || 'Attached Agreement Document'}).</li>` : ''}
                             </ul>
                         </div>
                     </div>
@@ -2905,8 +2992,15 @@ export default function ProcurementPage() {
                         <div class="signature">
                             <div class="signature-line">Committee Chairperson</div>
                         </div>
-                        <div class="signature">
-                            <div class="signature-line">Authorized Signatory<br/><span style="font-size: 11px; font-weight: normal;">${school?.name || ''}</span></div>
+                        <div style="text-align: left; min-width: 200px;">
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
+                                Principal
+                            </div>
+                            <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                                Principal<br/>
+                                Senior Secondary Residential School for Meritorious Students,<br/>
+                                Ludhiana
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -2944,7 +3038,7 @@ export default function ProcurementPage() {
                 <meta charset="utf-8" />
                 <title>Call for Quotations - ${request.title}</title>
                 <style>
-                    @page { size: A4 portrait; margin: 18mm 16mm; }
+                    @page { size: A4 portrait; margin: 0; }
                     * { box-sizing: border-box; }
                     html, body {
                         margin: 0;
@@ -3007,23 +3101,24 @@ export default function ProcurementPage() {
                     .text-center { text-align: center; }
                     .terms { font-size: 12px; color: #334155; margin-top: 12px; }
                     .terms ul { margin: 6px 0; padding-left: 20px; }
-                    .sig-container { display: flex; justify-content: space-between; margin-top: 40px; }
-                    .sig-box { width: 180px; text-align: center; font-size: 12px; }
+                    .sig-container { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; }
+                    .sig-box { width: 170px; text-align: center; font-size: 12px; }
                     .sig-line { border-top: 1.5px solid #0f172a; margin-top: 40px; padding-top: 5px; font-weight: bold; }
                     @media print {
-                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                        html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                         .no-print-bar { display: none !important; }
                         .print-sheet {
                             width: 100% !important;
                             max-width: none !important;
-                            min-height: auto !important;
+                            min-height: 100% !important;
                             margin: 0 !important;
-                            padding: 0 !important;
+                            padding: 18mm 16mm !important;
+                            box-sizing: border-box !important;
                             border: none !important;
                             box-shadow: none !important;
-                            page-break-after: always;
+                            page-break-after: always !important;
                         }
-                        .print-sheet:last-child { page-break-after: avoid; }
+                        .print-sheet:last-child { page-break-after: avoid !important; }
                     }
                 </style>
             </head>
@@ -3040,7 +3135,7 @@ export default function ProcurementPage() {
                         </div>
 
                         <div class="call-banner">
-                            <div><strong>Ref No:</strong> CFQ-${request.id?.slice(0, 8).toUpperCase()}-${vIdx + 1}</div>
+                            <div><strong>Letter No:</strong> ${cfqLetterNo ? `${cfqLetterNo}/${vIdx + 1}` : `CFQ-${request.id?.slice(0, 8).toUpperCase()}-${vIdx + 1}`}</div>
                             <div><strong>Date:</strong> ${today}</div>
                         </div>
 
@@ -3087,7 +3182,7 @@ export default function ProcurementPage() {
                                     <td><strong>${item.itemName}</strong></td>
                                     <td>${item.specifications || 'Standard specifications'}</td>
                                     <td class="text-center">${item.warranty || '1 Year Standard'}</td>
-                                    <td class="text-center"><strong>${item.quantity}</strong></td>
+                                    <td class="text-center"><strong>1</strong></td>
                                     <td class="text-center">${item.unit || 'pcs'}</td>
                                     <td style="border: 1px dashed #64748b; background: #fafafa;"></td>
                                 </tr>
@@ -3102,19 +3197,28 @@ export default function ProcurementPage() {
                                 <li>Quotation must be valid for a minimum of 30 days from submission date.</li>
                                 <li>Warranty and after-sales support details must be clearly specified.</li>
                                 <li>Late submissions past the deadline (${deadlineStr}) will not be entertained.</li>
+                                ${cfqAgreementText ? `<li style="color: #0f172a; font-weight: 500;"><strong>Special Condition / Agreement:</strong> ${cfqAgreementText.replace(/\n/g, '<br/>')}</li>` : ''}
+                                ${cfqCloudDoc?.url || cfqAgreementFileUrl ? `<li style="color: #1e40af; font-weight: 500;"><strong>Attached Conditions Document:</strong> See annexed specifications / terms document (${cfqCloudDoc?.name || cfqAgreementFile?.name || 'Attached Agreement Document'}).</li>` : ''}
                             </ul>
                         </div>
                     </div>
 
-                    <div class="sig-container">
+                    <div class="sig-container" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px;">
                         <div class="sig-box">
                             <div class="sig-line">Prepared By</div>
                         </div>
                         <div class="sig-box">
                             <div class="sig-line">Committee Convener</div>
                         </div>
-                        <div class="sig-box">
-                            <div class="sig-line">Authorized Signatory<br/><span style="font-size: 11px; font-weight: normal;">${school?.name || ''}</span></div>
+                        <div style="text-align: left; min-width: 200px;">
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
+                                Principal
+                            </div>
+                            <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                                Principal<br/>
+                                Senior Secondary Residential School for Meritorious Students,<br/>
+                                Ludhiana
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3644,6 +3748,17 @@ export default function ProcurementPage() {
                 });
             }
 
+            // Restore Step 4 Call for Quotation Letter No & Agreement settings
+            setCfqLetterNo(data.request?.cfqLetterNo || `MSLDH/2026/CFQ/${data.request?.id?.slice(0, 4).toUpperCase() || '001'}`);
+            setCfqAgreementMode(data.request?.cfqAgreementMode || 'editor');
+            setCfqAgreementText(data.request?.cfqAgreementText || '');
+            setCfqAgreementFileUrl(data.request?.cfqAgreementFileUrl || '');
+            if (data.request?.cfqCloudDoc) {
+                setCfqCloudDoc(data.request.cfqCloudDoc);
+            } else {
+                setCfqCloudDoc(null);
+            }
+
             // Ensure classroom mappings are loaded for Step 11
             if (classroomMappings.length === 0) {
                 labsAPI.getClassroomMappings().then(r => {
@@ -3773,7 +3888,7 @@ export default function ProcurementPage() {
             <meta charset="utf-8" />
             <title>Comparative Statement - ${request.title}</title>
             <style>
-                @page { size: A4 landscape; margin: 14mm 12mm; }
+                @page { size: A4 landscape; margin: 0; }
                 * { box-sizing: border-box; }
                 html, body {
                     margin: 0;
@@ -3833,14 +3948,15 @@ export default function ProcurementPage() {
                 .sig-box { text-align: center; width: 160px; }
                 .sig-line { border-top: 1.5px solid #0f172a; margin-top: 35px; padding-top: 5px; font-size: 11px; font-weight: bold; }
                 @media print {
-                    html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; }
+                    html, body { background: #ffffff !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
                     .no-print-bar { display: none !important; }
                     .print-sheet {
                         width: 100% !important;
                         max-width: none !important;
-                        min-height: auto !important;
+                        min-height: 100% !important;
                         margin: 0 !important;
-                        padding: 0 !important;
+                        padding: 14mm 12mm !important;
+                        box-sizing: border-box !important;
                         border: none !important;
                         box-shadow: none !important;
                     }
@@ -5196,17 +5312,7 @@ Laboratory / IT Incharge`
                                                                     onChange={e => setEditingItemForm({ ...editingItemForm, specifications: e.target.value })}
                                                                 />
                                                             </div>
-                                                            <div className="grid grid-cols-3 gap-2 md:col-span-2">
-                                                                <div>
-                                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Quantity</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        min="1"
-                                                                        className="input text-xs py-1.5 mt-1"
-                                                                        value={editingItemForm.quantity}
-                                                                        onChange={e => setEditingItemForm({ ...editingItemForm, quantity: e.target.value })}
-                                                                    />
-                                                                </div>
+                                                            <div className="grid grid-cols-2 gap-2 md:col-span-2">
                                                                 <div>
                                                                     <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Unit</label>
                                                                     <select
@@ -5265,7 +5371,7 @@ Laboratory / IT Incharge`
                                                         </div>
                                                         <div className="flex items-center gap-3 self-end sm:self-center">
                                                             <div className="text-right text-xs">
-                                                                <div className="font-semibold text-slate-800 dark:text-slate-200">{item.quantity} {item.unit || 'pcs'}</div>
+                                                                <div className="font-semibold text-slate-800 dark:text-slate-200">Unit: {item.unit || 'pcs'}</div>
                                                                 {item.estimatedUnitPrice && (
                                                                     <div className="text-slate-500 text-[11px]">Est: ₹{item.estimatedUnitPrice}</div>
                                                                 )}
@@ -5350,16 +5456,6 @@ Laboratory / IT Incharge`
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Quantity</label>
-                                                        <input
-                                                            type="number"
-                                                            className="input text-xs py-1.5 mt-1"
-                                                            min="1"
-                                                            value={newItemForm.quantity}
-                                                            onChange={e => setNewItemForm({ ...newItemForm, quantity: e.target.value })}
-                                                        />
-                                                    </div>
-                                                    <div>
                                                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Unit</label>
                                                         <select
                                                             className="input text-xs py-1.5 mt-1"
@@ -5440,28 +5536,150 @@ Laboratory / IT Incharge`
                                     </div>
 
                                     {/* Submission Deadline & Global Action Bar */}
-                                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+                                    <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-xs">
                                         <div>
                                             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                                                <Calendar className="w-4 h-4 text-purple-600" /> Quotation Submission Deadline *
+                                                <FileText className="w-4 h-4 text-purple-600" /> Quotation Letter No. (Appears on All Calls) *
                                             </label>
                                             <input
-                                                type="date"
-                                                value={lastDateToSubmit}
-                                                onChange={e => setLastDateToSubmit(e.target.value)}
-                                                className="input text-xs py-1.5 px-3 mt-1 font-medium"
+                                                type="text"
+                                                value={cfqLetterNo}
+                                                onChange={e => setCfqLetterNo(e.target.value)}
+                                                placeholder="e.g. MSLDH/2026/CFQ/001"
+                                                className="input text-xs py-1.5 px-3 mt-1 font-mono font-medium w-full"
                                             />
+                                            <p className="text-[11px] text-slate-400 mt-1">This official reference number is printed on all individual & clubbed quotation calls.</p>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+                                            <div className="flex-1">
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                                    <Calendar className="w-4 h-4 text-purple-600" /> Quotation Submission Deadline *
+                                                </label>
+                                                <input
+                                                    type="date"
+                                                    value={lastDateToSubmit}
+                                                    onChange={e => setLastDateToSubmit(e.target.value)}
+                                                    className="input text-xs py-1.5 px-3 mt-1 font-medium w-full"
+                                                />
+                                            </div>
                                             <button
                                                 type="button"
                                                 onClick={generateClubbedCallQuotations}
                                                 disabled={selectedVendorIds.length === 0}
-                                                className="btn bg-purple-600 hover:bg-purple-700 text-white text-xs py-2 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-40"
+                                                className="btn bg-purple-600 hover:bg-purple-700 text-white text-xs py-2 px-3 flex items-center gap-1.5 shadow-xs disabled:opacity-40 whitespace-nowrap"
                                             >
                                                 <Printer className="w-4 h-4" /> Clubbed Call Quotations (Single PDF)
                                             </button>
                                         </div>
+                                    </div>
+
+                                    {/* Extra Agreement / Special Terms 3-Option Switcher */}
+                                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mb-4 shadow-xs space-y-3">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                                            <div>
+                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                                                    <FileCheck className="w-4 h-4 text-purple-600" /> Extra Agreement Conditions / Tender Documents
+                                                </h4>
+                                                <p className="text-[11px] text-slate-500">Optionally append custom terms, warranty clauses, or uploaded SLA/tender documents to all quotation letters.</p>
+                                            </div>
+                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg text-xs font-medium">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCfqAgreementMode('editor')}
+                                                    className={`px-2.5 py-1 rounded-md transition ${cfqAgreementMode === 'editor' ? 'bg-white dark:bg-slate-700 shadow-xs text-purple-700 dark:text-purple-300 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                                                >
+                                                    Rich Text Terms
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCfqAgreementMode('upload')}
+                                                    className={`px-2.5 py-1 rounded-md transition ${cfqAgreementMode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-xs text-purple-700 dark:text-purple-300 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                                                >
+                                                    Upload PDF/Word
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCfqAgreementMode('cloud')}
+                                                    className={`px-2.5 py-1 rounded-md transition ${cfqAgreementMode === 'cloud' ? 'bg-white dark:bg-slate-700 shadow-xs text-purple-700 dark:text-purple-300 font-bold' : 'text-slate-600 hover:text-slate-900'}`}
+                                                >
+                                                    Cloud Vault
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {cfqAgreementMode === 'editor' && (
+                                            <div>
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                                                    Inline Special Terms & Conditions:
+                                                </label>
+                                                <textarea
+                                                    value={cfqAgreementText}
+                                                    onChange={e => setCfqAgreementText(e.target.value)}
+                                                    placeholder="e.g. 1. Delivery within 10 days of order. 2. On-site 1-year replacement warranty. 3. 100% payment after testing and physical verification."
+                                                    className="input text-xs min-h-[70px] w-full"
+                                                />
+                                            </div>
+                                        )}
+
+                                        {cfqAgreementMode === 'upload' && (
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                                                    Upload Agreement / Terms Document:
+                                                </label>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <input
+                                                        type="file"
+                                                        accept=".pdf,.doc,.docx"
+                                                        onChange={e => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setCfqAgreementFile(file);
+                                                                toast.success(`Selected "${file.name}"`);
+                                                            }
+                                                        }}
+                                                        className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100"
+                                                    />
+                                                    {cfqAgreementFile && (
+                                                        <span className="text-xs text-emerald-600 font-medium">✓ Selected: {cfqAgreementFile.name}</span>
+                                                    )}
+                                                </div>
+                                                {cfqAgreementFileUrl && !cfqAgreementFile && (
+                                                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                                                        <span>Active document:</span>
+                                                        <a href={cfqAgreementFileUrl} target="_blank" rel="noreferrer" className="text-purple-600 underline font-semibold flex items-center gap-1">
+                                                            <Eye className="w-3.5 h-3.5" /> View Uploaded Document
+                                                        </a>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {cfqAgreementMode === 'cloud' && (
+                                            <div className="space-y-2">
+                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                                                    Select from Institution Cloud Vault:
+                                                </label>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowCfqCloudPicker(true)}
+                                                        className="btn btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5"
+                                                    >
+                                                        <Cloud className="w-3.5 h-3.5 text-purple-600" /> Choose from Cloud Vault
+                                                    </button>
+                                                    {cfqCloudDoc && (
+                                                        <div className="flex items-center gap-2 text-xs">
+                                                            <span className="text-emerald-600 font-semibold">✓ {cfqCloudDoc.name}</span>
+                                                            {cfqCloudDoc.url && (
+                                                                <a href={cfqCloudDoc.url} target="_blank" rel="noreferrer" className="text-purple-600 underline font-medium flex items-center gap-1">
+                                                                    <Eye className="w-3.5 h-3.5" /> Preview Document
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Vendor Selection Cards Grid */}
@@ -6100,15 +6318,6 @@ Laboratory / IT Incharge`
                                                                     onChange={e => setNetAmountGst(parseFloat(e.target.value) || 18)}
                                                                 />
                                                             </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <label className="text-slate-500 font-medium">Warranty Notice:</label>
-                                                                <input
-                                                                    type="text"
-                                                                    className="input text-xs py-0.5 w-44"
-                                                                    value={netAmountWarranty}
-                                                                    onChange={e => setNetAmountWarranty(e.target.value)}
-                                                                />
-                                                            </div>
                                                         </div>
                                                     </div>
 
@@ -6179,18 +6388,24 @@ Laboratory / IT Incharge`
                                                                     TOTAL AMOUNT REQUIRED FOR HARDWARE PURCHASE IS RS. {grandTotal.toLocaleString('en-IN')}<br />
                                                                     ({numberToWords(grandTotal).toUpperCase()} ONLY)
                                                                 </div>
-                                                                <div className="text-teal-700 dark:text-teal-400 pt-1 border-t border-slate-100 dark:border-slate-800 font-bold">
-                                                                    KINDLY NOTE THE ABOVE ITEMS ARE OF {netAmountWarranty.toUpperCase() || '1 YEAR WARRANTY'}.
-                                                                </div>
                                                             </div>
                                                         );
                                                     })()}
 
                                                     {/* Signatories preview */}
-                                                    <div className="grid grid-cols-3 gap-4 pt-6 text-center text-xs">
-                                                        <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300">Store Keeper</div>
-                                                        <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300">Committee Members</div>
-                                                        <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300">Principal</div>
+                                                    <div className="grid grid-cols-3 gap-4 pt-6 text-xs">
+                                                        <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300 text-center">Store Keeper</div>
+                                                        <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300 text-center">Committee Members</div>
+                                                        <div className="text-left pt-1">
+                                                            <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '18px', lineHeight: '1.1', marginBottom: '2px' }}>
+                                                                Principal
+                                                            </div>
+                                                            <div className="text-[12px] text-slate-800 dark:text-slate-200 leading-tight">
+                                                                Principal<br />
+                                                                Senior Secondary Residential School for Meritorious Students,<br />
+                                                                Ludhiana
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -6337,6 +6552,21 @@ Laboratory / IT Incharge`
                                                         </div>
                                                     ))}
                                                 </div>
+
+                                                {/* Approved & Counter-Signed by Principal */}
+                                                <div className="flex justify-end pt-8">
+                                                    <div className="text-left leading-tight">
+                                                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Approved & Counter-Signed:</div>
+                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '3px' }}>
+                                                            Principal
+                                                        </div>
+                                                        <div className="font-serif text-xs text-slate-800">
+                                                            Principal<br />
+                                                            Senior Secondary Residential School for Meritorious Students,<br />
+                                                            Ludhiana
+                                                        </div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -6441,6 +6671,21 @@ Laboratory / IT Incharge`
                                                             </div>
                                                         </div>
                                                     ))}
+                                                </div>
+
+                                                {/* Approved & Counter-Signed by Principal */}
+                                                <div className="flex justify-end pt-8">
+                                                    <div className="text-left leading-tight">
+                                                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Approved & Counter-Signed:</div>
+                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '3px' }}>
+                                                            Principal
+                                                        </div>
+                                                        <div className="font-serif text-xs text-slate-800">
+                                                            Principal<br />
+                                                            Senior Secondary Residential School for Meritorious Students,<br />
+                                                            Ludhiana
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -7580,6 +7825,17 @@ Laboratory / IT Incharge`
                     setPoCloudDoc(doc);
                     setShowPoCloudPicker(false);
                     toast.success(`Selected PO "${doc.name}" from Cloud Vault`);
+                }}
+            />
+
+            {/* Multi-Source Cloud Vault PDF Picker Modal for Extra CFQ Conditions (Step 4) */}
+            <MultiSourcePdfPickerModal
+                isOpen={showCfqCloudPicker}
+                onClose={() => setShowCfqCloudPicker(false)}
+                onSelectPdf={(doc) => {
+                    setCfqCloudDoc(doc);
+                    setShowCfqCloudPicker(false);
+                    toast.success(`Selected "${doc.name}" from Cloud Vault`);
                 }}
             />
 
