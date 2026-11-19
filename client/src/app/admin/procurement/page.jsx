@@ -1388,11 +1388,12 @@ export default function ProcurementPage() {
                 <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 35px;">
                     <div class="signature"><div class="signature-line">Prepared By</div></div>
                     <div class="signature"><div class="signature-line">Committee Chairperson</div></div>
-                    <div style="text-align: left; min-width: 200px;">
-                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
-                        <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                    <div style="text-align: left; min-width: 200px; font-family: 'Times New Roman', Georgia, serif;">
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
+                        <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                             Principal<br/>
-                            ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                            Senior Secondary Residential<br/>
+                            School for Meritorious Students,<br/>
                             ${school?.district || 'Ludhiana'}
                         </div>
                     </div>
@@ -1550,11 +1551,12 @@ export default function ProcurementPage() {
                 <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px;">
                     <div class="signature"><div class="signature-line">Store Keeper</div></div>
                     <div class="signature"><div class="signature-line">Committee Members</div></div>
-                    <div style="text-align: left; min-width: 190px;">
-                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 20px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
-                        <div style="font-size: 12.5px; line-height: 1.35; color: #000;">
+                    <div style="text-align: left; min-width: 190px; font-family: 'Times New Roman', Georgia, serif;">
+                        <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
+                        <div style="font-size: 13.5px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                             Principal<br/>
-                            ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                            Senior Secondary Residential<br/>
+                            School for Meritorious Students,<br/>
                             ${school?.district || 'Ludhiana'}
                         </div>
                     </div>
@@ -1621,12 +1623,13 @@ export default function ProcurementPage() {
                     </div>
                 </div>
 
-                <div style="margin-top: 30px; float: right; text-align: left;">
+                <div style="margin-top: 30px; float: right; text-align: left; font-family: 'Times New Roman', Georgia, serif;">
                     <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Approved & Counter-Signed:</div>
-                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">Principal</div>
-                    <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                    <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
+                    <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                         Principal<br/>
-                        ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                        Senior Secondary Residential<br/>
+                        School for Meritorious Students,<br/>
                         ${school?.district || 'Ludhiana'}
                     </div>
                 </div>
@@ -1664,10 +1667,11 @@ export default function ProcurementPage() {
                         3. An early action is requested please.
                     </p>
                 </div>
-                <div style="margin-top: 60px; float: right; text-align: left; font-size: 14px; line-height: 1.4;">
+                <div style="margin-top: 60px; float: right; text-align: left; font-size: 14px; line-height: 1.35; font-family: 'Times New Roman', Georgia, serif;">
                     <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">Principal</div>
                     Principal<br/>
-                    Senior Secondary Residential School for Meritorious Students,<br/>
+                    Senior Secondary Residential<br/>
+                    School for Meritorious Students,<br/>
                     Ludhiana
                 </div>
                 <div style="clear: both;"></div>
@@ -2068,14 +2072,15 @@ export default function ProcurementPage() {
                         <div class="sig-box">
                             <div class="sig-line">Requisition Authority<br/><span style="font-size: 11px; font-weight: normal;">Lab / IT Incharge</span></div>
                         </div>
-                        <div style="text-align: left; min-width: 200px;">
+                        <div style="text-align: left; min-width: 200px; font-family: 'Times New Roman', Georgia, serif;">
                             <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Sanctioned By:</div>
-                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
                                 Principal
                             </div>
-                            <div style="font-size: 13.5px; line-height: 1.35; color: #000;">
+                            <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                                 Principal<br/>
-                                ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                                Senior Secondary Residential<br/>
+                                School for Meritorious Students,<br/>
                                 ${school?.district || 'Ludhiana'}
                             </div>
                         </div>
@@ -2232,13 +2237,14 @@ export default function ProcurementPage() {
                     <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px;">
                         <div class="sig-box" style="text-align: center; width: 150px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold;">Store Keeper</div>
                         <div class="sig-box" style="text-align: center; width: 150px; border-top: 1px solid #000; padding-top: 5px; font-size: 12px; font-weight: bold;">Committee Members</div>
-                        <div style="text-align: left; min-width: 190px;">
-                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 22px; line-height: 1.1; margin-bottom: 3px;">
+                        <div style="text-align: left; min-width: 190px; font-family: 'Times New Roman', Georgia, serif;">
+                            <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
                                 Principal
                             </div>
-                            <div style="font-size: 13px; line-height: 1.35; color: #000;">
+                            <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                                 Principal<br/>
-                                ${school?.name || 'Senior Secondary Residential School for Meritorious Students'},<br/>
+                                Senior Secondary Residential<br/>
+                                School for Meritorious Students,<br/>
                                 ${school?.district || 'Ludhiana'}
                             </div>
                         </div>
@@ -2459,14 +2465,15 @@ export default function ProcurementPage() {
                         </div>
                     </div>
 
-                    <div style="margin-top: 36px; float: right; text-align: left;">
+                    <div style="margin-top: 36px; float: right; text-align: left; font-family: 'Times New Roman', Georgia, serif;">
                         <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Approved & Counter-Signed:</div>
                         <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
                             Principal
                         </div>
-                        <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                        <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                             Principal<br/>
-                            Senior Secondary Residential School for Meritorious Students,<br/>
+                            Senior Secondary Residential<br/>
+                            School for Meritorious Students,<br/>
                             Ludhiana
                         </div>
                     </div>
@@ -2605,13 +2612,14 @@ export default function ProcurementPage() {
                             3. An early action is requested please.
                         </p>
                     </div>
-                    <div class="sign-block">
+                    <div class="sign-block" style="font-family: 'Times New Roman', Georgia, serif;">
                         <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 26px; line-height: 1.1; margin-bottom: 4px;">
                             Principal
                         </div>
-                        <div style="font-size: 14px; line-height: 1.4; color: #000;">
+                        <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                             Principal<br/>
-                            Senior Secondary Residential School for Meritorious Students,<br/>
+                            Senior Secondary Residential<br/>
+                            School for Meritorious Students,<br/>
                             Ludhiana
                         </div>
                     </div>
@@ -2992,13 +3000,14 @@ export default function ProcurementPage() {
                         <div class="signature">
                             <div class="signature-line">Committee Chairperson</div>
                         </div>
-                        <div style="text-align: left; min-width: 200px;">
+                        <div style="text-align: left; min-width: 200px; font-family: 'Times New Roman', Georgia, serif;">
                             <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
                                 Principal
                             </div>
-                            <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                            <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                                 Principal<br/>
-                                Senior Secondary Residential School for Meritorious Students,<br/>
+                                Senior Secondary Residential<br/>
+                                School for Meritorious Students,<br/>
                                 Ludhiana
                             </div>
                         </div>
@@ -3210,13 +3219,14 @@ export default function ProcurementPage() {
                         <div class="sig-box">
                             <div class="sig-line">Committee Convener</div>
                         </div>
-                        <div style="text-align: left; min-width: 200px;">
+                        <div style="text-align: left; min-width: 200px; font-family: 'Times New Roman', Georgia, serif;">
                             <div style="color: #15803d; font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-style: italic; font-weight: bold; font-size: 24px; line-height: 1.1; margin-bottom: 4px;">
                                 Principal
                             </div>
-                            <div style="font-size: 13.5px; line-height: 1.4; color: #000;">
+                            <div style="font-size: 14px; line-height: 1.35; color: #000; font-family: 'Times New Roman', Georgia, serif;">
                                 Principal<br/>
-                                Senior Secondary Residential School for Meritorious Students,<br/>
+                                Senior Secondary Residential<br/>
+                                School for Meritorious Students,<br/>
                                 Ludhiana
                             </div>
                         </div>
@@ -6397,12 +6407,13 @@ Laboratory / IT Incharge`
                                                         <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300 text-center">Store Keeper</div>
                                                         <div className="border-t border-slate-400 pt-1 font-bold text-slate-700 dark:text-slate-300 text-center">Committee Members</div>
                                                         <div className="text-left pt-1">
-                                                            <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '18px', lineHeight: '1.1', marginBottom: '2px' }}>
+                                                            <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '3px' }}>
                                                                 Principal
                                                             </div>
-                                                            <div className="text-[12px] text-slate-800 dark:text-slate-200 leading-tight">
+                                                            <div className="font-serif text-[13px] text-slate-800 dark:text-slate-200 leading-tight">
                                                                 Principal<br />
-                                                                Senior Secondary Residential School for Meritorious Students,<br />
+                                                                Senior Secondary Residential<br />
+                                                                School for Meritorious Students,<br />
                                                                 Ludhiana
                                                             </div>
                                                         </div>
@@ -6557,12 +6568,13 @@ Laboratory / IT Incharge`
                                                 <div className="flex justify-end pt-8">
                                                     <div className="text-left leading-tight">
                                                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Approved & Counter-Signed:</div>
-                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '3px' }}>
+                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '22px', lineHeight: '1.1', marginBottom: '3px' }}>
                                                             Principal
                                                         </div>
-                                                        <div className="font-serif text-xs text-slate-800">
+                                                        <div className="font-serif text-[13px] text-slate-800 dark:text-slate-200 leading-tight">
                                                             Principal<br />
-                                                            Senior Secondary Residential School for Meritorious Students,<br />
+                                                            Senior Secondary Residential<br />
+                                                            School for Meritorious Students,<br />
                                                             Ludhiana
                                                         </div>
                                                     </div>
@@ -6677,12 +6689,13 @@ Laboratory / IT Incharge`
                                                 <div className="flex justify-end pt-8">
                                                     <div className="text-left leading-tight">
                                                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Approved & Counter-Signed:</div>
-                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '20px', lineHeight: '1.1', marginBottom: '3px' }}>
+                                                        <div style={{ color: '#15803d', fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif", fontStyle: 'italic', fontWeight: 'bold', fontSize: '22px', lineHeight: '1.1', marginBottom: '3px' }}>
                                                             Principal
                                                         </div>
-                                                        <div className="font-serif text-xs text-slate-800">
+                                                        <div className="font-serif text-[13px] text-slate-800 dark:text-slate-200 leading-tight">
                                                             Principal<br />
-                                                            Senior Secondary Residential School for Meritorious Students,<br />
+                                                            Senior Secondary Residential<br />
+                                                            School for Meritorious Students,<br />
                                                             Ludhiana
                                                         </div>
                                                     </div>
