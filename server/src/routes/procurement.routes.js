@@ -754,9 +754,10 @@ router.get('/staff', authenticate, asyncHandler(async (req, res) => {
         const staff = await prisma.user.findMany({
             where: {
                 schoolId: req.user.schoolId,
-                role: { in: ['admin', 'principal', 'instructor', 'lab_assistant'] }
+                role: { not: 'student' }
             },
-            select: { id: true, firstName: true, lastName: true, role: true, email: true }
+            select: { id: true, firstName: true, lastName: true, role: true, email: true, phone: true },
+            orderBy: [{ role: 'asc' }, { firstName: 'asc' }]
         });
         console.log('Found staff:', staff.length);
         res.json({ success: true, data: staff });

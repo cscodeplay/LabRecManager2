@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -20,6 +20,7 @@ import MultiSourcePdfPickerModal from '@/components/MultiSourcePdfPickerModal';
 import ScanningItemModal from '@/components/ScanningItemModal';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
+import EditorFormatBar from '@/components/EditorFormatBar';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -145,9 +146,16 @@ export default function ProcurementPage() {
     const [procurementViewMode, setProcurementViewMode] = useState('list');
 
     // Step 1: 3-way Letter Mode ('upload' | 'cloud' | 'editor')
-    const [letterSourceMode, setLetterSourceMode] = useState('upload');
+    const [letterSourceMode, setLetterSourceMode] = useState('editor');
     const [showCloudPicker, setShowCloudPicker] = useState(false);
     const [cloudSelectedDoc, setCloudSelectedDoc] = useState(null);
+    const letterTextareaRef = useRef(null);
+    const cfqTextareaRef = useRef(null);
+
+    // Step 2: Candidates Filter and Per-Candidate Role State
+    const [candidateSearch, setCandidateSearch] = useState('');
+    const [candidateRoleFilter, setCandidateRoleFilter] = useState('all');
+    const [candidateRoles, setCandidateRoles] = useState({});
 
     // Step 3: Collapsible Item Form
     const [isItemFormCollapsed, setIsItemFormCollapsed] = useState(true);
@@ -1066,7 +1074,26 @@ export default function ProcurementPage() {
             toast.success('Committee member added');
             setSelectedStaffId('');
             setCommitteeRole('member');
-            openRequestDetail(selectedRequest);
+            await openRequestDetail(selectedRequest, true);
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Failed to add member');
+        }
+    };
+
+    const handleAddCandidate = async (candidateUserId, role = 'member') => {
+        if (!candidateUserId) return;
+        if (requestDetail?.request?.committee?.some(m => m.userId === candidateUserId)) {
+            toast.error('This member is already in the committee');
+            return;
+        }
+        if ((requestDetail?.request?.committee?.length || 0) >= 5) {
+            toast.error('Maximum 5 committee members allowed');
+            return;
+        }
+        try {
+            await procurementAPI.addCommitteeMember(selectedRequest.id, { userId: candidateUserId, role });
+            toast.success('Committee member appointed');
+            await openRequestDetail(selectedRequest, true);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to add member');
         }
@@ -3778,6 +3805,7 @@ export default function ProcurementPage() {
         setSelectedVendorIds([]);
         setLetterContent('');
         setLetterUpload(null);
+        setLetterSourceMode('editor');
     };
 
     const handleCreateRequest = async () => {
@@ -3873,9 +3901,12 @@ export default function ProcurementPage() {
             // Restore local state from server data
             if (data.request?.letterContent) {
                 setLetterContent(data.request.letterContent);
-            }
-            if (data.request?.purchaseLetterUrl) {
+                setLetterSourceMode('editor');
+            } else if (data.request?.purchaseLetterUrl) {
                 setLetterUpload({ name: data.request.purchaseLetterName || 'Uploaded Document' });
+                setLetterSourceMode('upload');
+            } else {
+                setLetterSourceMode('editor');
             }
             if (data.request?.memoVideNo) {
                 setMemoVideNo(data.request.memoVideNo);
@@ -4325,6 +4356,183 @@ export default function ProcurementPage() {
         printWindow.document.write(html);
         printWindow.document.close();
     };
+
+    const currentCommittee = requestDetail?.request?.committee || [];
+    const filteredCandidates = staffList.filter(s => {
+        if (candidateRoleFilter !== 'all' && s.role !== candidateRoleFilter) return false;
+        if (candidateSearch.trim()) {
+            const q = candidateSearch.toLowerCase();
+            const fullName = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+            const role = (s.role || '').toLowerCase();
+            const email = (s.email || '').toLowerCase();
+            if (!fullName.includes(q) && !role.includes(q) && !email.includes(q)) return false;
+        }
+        return true;
+    });
+
+    const step1DefaultTemplates = [
+        {
+            name: 'Smart Classroom & IT Hardware Requisition',
+            description: 'Interactive panels, desktop units, webcams, audio setup & networking',
+            content: `To: The Principal,
+Senior Secondary Residential School for Meritorious Students, Ludhiana.
+
+Subject: Requisition for Procurement of Smart Classroom & Computer Lab Hardware
+
+Respected Sir/Madam,
+It is respectfully submitted that for the smooth conduct of smart classes, digital demonstrations, and computer laboratory sessions, the following hardware equipment and peripherals are urgently required for the academic session 2026-27:
+
+1. Interactive Display Systems / Touch Panels
+2. High-performance Computing Units with UPS backup
+3. High-definition interactive webcams, digital microphones, and allied audio hardware
+4. Gigabit network switches, Cat6 structured cabling, and power distribution units
+
+The detailed specifications and estimated costs have been prepared in accordance with institutional norms. Administrative approval and financial sanction may kindly be accorded to initiate the purchase proceedings through the duly constituted committee.
+
+Thanking you.
+Yours obediently,
+Laboratory / IT Incharge`
+        },
+        {
+            name: 'Science Laboratory Equipment & Glassware',
+            description: 'Physics & Chemistry lab apparatus, glassware, chemicals and consumables',
+            content: `To: The Principal,
+Senior Secondary Residential School for Meritorious Students, Ludhiana.
+
+Subject: Requisition for Procurement of Physics & Chemistry Lab Equipment and Consumables
+
+Respected Sir/Madam,
+It is respectfully submitted that practical laboratory experiments for Classes 11 and 12 are scheduled to commence. In order to facilitate curriculum experiments and board examinations, the following scientific instruments and chemical reagents are urgently required:
+
+1. Optical Benches, Galvanometers, and Resistance Boxes
+2. Digital Weighing Scales, Burettes, and Borosilicate Glassware
+3. Standard Chemical Reagents and Analytical Grade Salts
+4. Safety goggles, eyewash stations, and acid-resistant personal protective equipment
+
+Administrative approval and sanction of funds may kindly be granted to proceed with inviting competitive sealed quotations.
+
+Thanking you.
+Yours obediently,
+Science Department Incharge`
+        },
+        {
+            name: 'Library Infrastructure & Reference Books',
+            description: 'Racks, study furniture, accession registers and reference materials',
+            content: `To: The Principal,
+Senior Secondary Residential School for Meritorious Students, Ludhiana.
+
+Subject: Requisition for Procurement of Library Furniture and Storage Fixtures
+
+Respected Sir/Madam,
+It is respectfully submitted that to accommodate newly accessioned books, reference periodicals, and student study desks, additional reading room furniture and secure storage units are required:
+
+1. Dual-sided steel book racks with powder-coated finish
+2. Ergonomic wooden reading tables and high-density study chairs
+3. Digital barcode inventory scanner and thermal receipt printer
+
+Kindly grant necessary approval to convene the procurement committee and issue call for quotations.
+
+Thanking you.
+Yours obediently,
+Librarian / Office Superintendent`
+        },
+        {
+            name: 'Sports Goods & Physical Training Equipment',
+            description: 'Badminton, basketball, football, volleyball & fitness gear',
+            content: `To: The Principal,
+Senior Secondary Residential School for Meritorious Students, Ludhiana.
+
+Subject: Requisition for Procurement of Sports Goods and Physical Training Equipment
+
+Respected Sir/Madam,
+It is respectfully submitted that for the upcoming inter-school sports tournaments and daily physical education periods for residential students, the following sports goods and tournament kits are required:
+
+1. Standard tournament-grade footballs, volleyballs, and basketballs
+2. Badminton racquets, tournament shuttlecocks, and court nets
+3. Table tennis tables, paddles, and post sets
+4. First-aid emergency kits and physical fitness testing apparatus
+
+Sanction may kindly be accorded to initiate procurement through the committee.
+
+Thanking you.
+Yours obediently,
+Physical Education Department`
+        },
+        {
+            name: 'Campus Repair & Electrical Infrastructure',
+            description: 'LED fixtures, UPS batteries, circuit breakers & electrical wiring',
+            content: `To: The Principal,
+Senior Secondary Residential School for Meritorious Students, Ludhiana.
+
+Subject: Requisition for Procurement of Electrical Maintenance & Campus Repair Materials
+
+Respected Sir/Madam,
+It is respectfully submitted that preventive maintenance and electrical repairs are urgently required across classroom blocks and residential hostels:
+
+1. Energy-efficient commercial LED tube fittings and floodlights
+2. Industrial MCBs, copper conduit wiring, and switchboards
+3. Replacement deep-cycle inverter batteries for emergency lighting
+
+Administrative and financial sanction is requested for procurement as per committee guidelines.
+
+Thanking you.
+Yours obediently,
+Campus Maintenance Incharge`
+        }
+    ];
+
+    const step1Variables = [
+        { label: 'Current Date', value: formatDate(proceedingsDate || new Date()), hint: 'Date' },
+        { label: 'Letter No.', value: memoVideNo || requestDetail?.request?.memoVideNo || 'MSLDH/2026/PROC/104', hint: 'Letter No.' },
+        { label: 'School Name', value: requestDetail?.request?.school?.name || 'Senior Secondary Residential School for Meritorious Students, Ludhiana', hint: 'Institute' },
+        { label: 'Department', value: requestDetail?.request?.department || 'Computer Science & IT', hint: 'Requisition Dept' },
+        { label: 'Recipient (Principal)', value: 'To: The Principal,\nSenior Secondary Residential School for Meritorious Students, Ludhiana.', hint: 'Recipient' },
+        { label: 'Signatures Block', value: '\n\nThanking you.\nYours obediently,\nLaboratory / IT Incharge\n\nApproved & Sanctioned:\nPrincipal', hint: 'Sign-off' }
+    ];
+
+    const step4DefaultTemplates = [
+        {
+            name: 'Standard Institutional Commercial Terms',
+            description: 'Per-unit rates, inclusive of GST/freight, 30-day validity, PFMS payment',
+            content: `1. Rates must be quoted strictly per unit, all-inclusive of GST, freight, packing, and on-site delivery.
+2. The rates quoted shall remain firm and valid for a minimum period of 30 days from the submission deadline.
+3. Delivery of all ordered goods must be completed within 10 days of the issuance of the Purchase Order.
+4. Comprehensive on-site warranty of minimum 1 year is mandatory with replacement within 48 hours for any manufacturing defects.
+5. 100% payment will be disbursed via PFMS / direct bank transfer upon successful physical inspection and stock verification.`
+        },
+        {
+            name: 'Technical Hardware OEM & Warranty Clause',
+            description: 'OEM partner authorization, barcode tagging, unboxing inspection, 0.5% delay penalty',
+            content: `1. The bidder must provide OEM authorization and genuine manufacturer warranty certificate for all supplied hardware.
+2. Each hardware unit must have distinct, legible serial numbers and manufacturer barcodes matching the packing list.
+3. Liquidated Damages: A delay in delivery will incur a penalty of 0.5% per week, up to a maximum of 5% of order value.
+4. On-site installation, driver setup, and operational demonstration must be provided by the vendor at no extra charge.
+5. In case of dead-on-arrival (DOA) units, brand-new replacement must be provided within 3 working days.`
+        },
+        {
+            name: 'Consumables & Laboratory Reagents Clauses',
+            description: 'Analytical purity grade, minimum 80% shelf life, zero breakage transit liability',
+            content: `1. All chemical reagents must be of Analytical Reagent (AR) or Guaranteed Reagent (GR) purity grade.
+2. Glassware must be Class-A borosilicate with standard calibration markings and thermal shock resistance.
+3. Transit Risk & Breakage: Any breakage, leakage, or spillage during transit shall be replaced immediately by the vendor at zero institutional cost.
+4. Chemical consumables must carry a minimum remaining shelf life of 80% from date of dispatch.`
+        },
+        {
+            name: 'Annual Maintenance & Support Service Terms',
+            description: '24h response time, quarterly preventive servicing, critical spare parts',
+            content: `1. Comprehensive Annual Maintenance Support for 12 months with a guaranteed response time of under 24 hours.
+2. Mandatory quarterly preventive maintenance visits and cleaning by certified technicians.
+3. Genuine original spare parts must be provided during all maintenance servicing.`
+        }
+    ];
+
+    const step4Variables = [
+        { label: 'CFQ Letter No.', value: cfqLetterNo || `MSLDH/2026/CFQ/${selectedRequest?.id?.slice(0, 4).toUpperCase() || '001'}`, hint: 'Quotation Ref' },
+        { label: 'Submission Due Date', value: formatDate(lastDateToSubmit || new Date()), hint: 'Deadline' },
+        { label: 'Delivery Period', value: '10 working days from date of purchase order', hint: 'Timeline' },
+        { label: 'Warranty Clause', value: 'Minimum 1-year comprehensive on-site manufacturer warranty', hint: 'Warranty' },
+        { label: 'Payment Terms', value: '100% payment after physical verification and successful commissioning', hint: 'Payment' }
+    ];
 
     if (!_hasHydrated || !isAuthenticated) return null;
 
@@ -5374,34 +5582,35 @@ export default function ProcurementPage() {
                                     {/* MODE 3: Inline Editor & Live Letterhead Preview */}
                                     {letterSourceMode === 'editor' && (
                                         <div className="space-y-4">
-                                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
-                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1.5 flex items-center justify-between">
-                                                    <span>Requirement Letter Body (Will format onto school letterhead)</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setLetterContent(
-`To: The Principal,
-Senior Secondary Residential School for Meritorious Students, Ludhiana.
+                                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <label className="text-xs font-bold text-slate-800 dark:text-slate-200 block">
+                                                            Requirement Letter Body (Letterhead Formatted)
+                                                        </label>
+                                                        <span className="text-[11px] text-slate-400">
+                                                            Draft in-line using text tools, load institutional templates, or insert dynamic variables.
+                                                        </span>
+                                                    </div>
+                                                    {letterContent && (
+                                                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                                                            <Check className="w-3.5 h-3.5" /> Letter Drafted
+                                                        </span>
+                                                    )}
+                                                </div>
 
-Subject: Requisition for Procurement of Smart Classroom & Laboratory Hardware
+                                                <EditorFormatBar
+                                                    textareaRef={letterTextareaRef}
+                                                    value={letterContent}
+                                                    onChange={setLetterContent}
+                                                    storageKey="requirement_letter"
+                                                    defaultTemplates={step1DefaultTemplates}
+                                                    variables={step1Variables}
+                                                />
 
-Respected Sir/Madam,
-It is respectfully submitted that for the smooth conduct of smart classes and laboratory instructional sessions, the following hardware equipment is urgently required. The procurement may kindly be sanctioned and administrative approval be accorded.
-
-1. High-definition interactive webcams and digital microphones
-2. Required cabling, mounting fixtures, and allied accessories
-
-Thanking you.
-Yours obediently,
-Laboratory / IT Incharge`
-                                                        )}
-                                                        className="text-[11px] text-indigo-600 hover:underline"
-                                                    >
-                                                        Insert Standard Template
-                                                    </button>
-                                                </label>
                                                 <textarea
-                                                    className="input text-xs min-h-[140px] w-full font-sans leading-relaxed"
+                                                    ref={letterTextareaRef}
+                                                    className="input text-xs min-h-[160px] w-full font-sans leading-relaxed p-3 border-slate-300 dark:border-slate-700"
                                                     placeholder="Enter the formal requirement / requisition letter text..."
                                                     value={letterContent}
                                                     onChange={e => setLetterContent(e.target.value)}
@@ -5478,47 +5687,291 @@ Laboratory / IT Incharge`
 
                             {/* Step 2: Committee Formation */}
                             {workflowStep === 2 && (
-                                <div className="mb-6 p-4 bg-amber-50 rounded-lg border border-amber-200">
-                                    <h3 className="font-semibold mb-3 flex items-center gap-2 text-amber-800">
-                                        <Users className="w-5 h-5" /> Step 2: Procurement Committee ({requestDetail.request.committee?.length || 0}/5)
-                                    </h3>
-                                    <p className="text-slate-600 text-sm mb-4">Add 3-5 committee members. Admin is automatically set as Chairperson.</p>
-
-                                    <div className="space-y-2 mb-3">
-                                        {requestDetail.request.committee?.length > 0 ? (
-                                            requestDetail.request.committee.map(member => (
-                                                <div key={member.id} className="flex items-center justify-between bg-white p-3 rounded border">
-                                                    <div>
-                                                        <span className="font-medium">{member.user?.firstName} {member.user?.lastName}</span>
-                                                        <span className={`ml-2 px-2 py-0.5 text-xs rounded ${member.role === 'chairperson' ? 'bg-amber-200 text-amber-800' : 'bg-slate-200 text-slate-600'}`}>
-                                                            {member.role}
-                                                        </span>
-                                                    </div>
-                                                    <button onClick={() => handleRemoveCommitteeMember(member.id)} className="text-red-500 hover:text-red-700">
-                                                        <X className="w-4 h-4" />
-                                                    </button>
+                                <div className="mb-6 p-5 bg-gradient-to-br from-amber-50/70 to-orange-50/40 dark:from-amber-950/20 dark:to-slate-900 rounded-2xl border border-amber-200 dark:border-amber-900/60 shadow-xs">
+                                    {/* Header & Quorum Badge */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 pb-4 border-b border-amber-200/80 dark:border-amber-800/80">
+                                        <div>
+                                            <h3 className="font-bold text-base flex items-center gap-2 text-amber-950 dark:text-amber-200">
+                                                <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                                                <span>Step 2: Procurement Committee ({currentCommittee.length}/5)</span>
+                                            </h3>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                                Appoint 3 to 5 verified staff members to supervise quotation comparison and physical hardware verification.
+                                            </p>
+                                        </div>
+                                        <div className="shrink-0">
+                                            {currentCommittee.length < 3 ? (
+                                                <div className="px-3 py-1.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700 flex items-center gap-1.5 shadow-2xs">
+                                                    <AlertCircle className="w-4 h-4 text-amber-600" />
+                                                    <span>Quorum Pending: Need {3 - currentCommittee.length} more member{3 - currentCommittee.length === 1 ? '' : 's'}</span>
                                                 </div>
-                                            ))
+                                            ) : (
+                                                <div className="px-3 py-1.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5 shadow-2xs">
+                                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                                    <span>Quorum Met ({currentCommittee.length} Members Appointed)</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Active Committee Roster */}
+                                    <div className="mb-6">
+                                        <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider mb-2.5 flex items-center gap-2">
+                                            <span>Active Committee Roster</span>
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-200 dark:bg-amber-800/80 text-amber-900 dark:text-amber-100 font-bold text-[11px]">
+                                                {currentCommittee.length} / 5
+                                            </span>
+                                        </div>
+
+                                        {currentCommittee.length > 0 ? (
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                                {currentCommittee.map(member => (
+                                                    <div
+                                                        key={member.id}
+                                                        className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-800/60 shadow-xs flex items-center justify-between gap-2 transition hover:shadow-sm"
+                                                    >
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                                                member.role === 'chairperson'
+                                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 border border-amber-300'
+                                                                    : member.role === 'secretary'
+                                                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border border-purple-300'
+                                                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-300'
+                                                            }`}>
+                                                                {member.user?.firstName?.[0] || 'U'}{member.user?.lastName?.[0] || ''}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                                                                    {member.user?.firstName} {member.user?.lastName}
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 mt-0.5">
+                                                                    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded-md shadow-2xs ${
+                                                                        member.role === 'chairperson'
+                                                                            ? 'bg-amber-500 text-white'
+                                                                            : member.role === 'secretary'
+                                                                            ? 'bg-purple-600 text-white'
+                                                                            : 'bg-slate-700 text-white'
+                                                                    }`}>
+                                                                        {member.role}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-slate-400 capitalize truncate">
+                                                                        {member.user?.role?.replace('_', ' ')}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveCommitteeMember(member.id)}
+                                                            title="Remove from Committee"
+                                                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition shrink-0"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         ) : (
-                                            <div className="text-slate-500 text-sm italic bg-white p-3 rounded">No committee members added yet.</div>
+                                            <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-dashed border-amber-300 dark:border-amber-800/80 text-center text-slate-500 text-xs">
+                                                No committee members appointed yet. Select and appoint candidates from the pool below.
+                                            </div>
                                         )}
                                     </div>
 
+                                    {/* Candidates Pool Section */}
+                                    <div className="p-4 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs mb-4">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                            <div>
+                                                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                                                    <span>Eligible Staff Candidates Pool</span>
+                                                    <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold text-[11px]">
+                                                        {staffList.length} Total Staff
+                                                    </span>
+                                                </div>
+                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    All non-student staff members (Principal, Instructors, Lab Assistants, Accountants, Admins) eligible for appointment.
+                                                </p>
+                                            </div>
+
+                                            {/* Search Filter */}
+                                            <div className="relative w-full sm:w-64">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Filter candidate by name or role..."
+                                                    value={candidateSearch}
+                                                    onChange={e => setCandidateSearch(e.target.value)}
+                                                    className="input text-xs w-full pl-8 py-1.5"
+                                                />
+                                                <Users className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                                {candidateSearch && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setCandidateSearch('')}
+                                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                                    >
+                                                        <X className="w-3.5 h-3.5" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Filter Chips */}
+                                        <div className="flex flex-wrap items-center gap-1.5 mb-4">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Role:</span>
+                                            {['all', 'admin', 'principal', 'instructor', 'lab_assistant', 'accountant'].map(roleKey => {
+                                                const count = roleKey === 'all'
+                                                    ? staffList.length
+                                                    : staffList.filter(s => s.role === roleKey).length;
+                                                if (roleKey !== 'all' && count === 0) return null;
+                                                const isActive = candidateRoleFilter === roleKey;
+                                                return (
+                                                    <button
+                                                        key={roleKey}
+                                                        type="button"
+                                                        onClick={() => setCandidateRoleFilter(roleKey)}
+                                                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
+                                                            isActive
+                                                                ? 'bg-blue-600 text-white shadow-2xs'
+                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                                        }`}
+                                                    >
+                                                        {roleKey === 'all' ? 'All Roles' : roleKey.replace('_', ' ')} ({count})
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Candidates Grid */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                            {filteredCandidates.map(candidate => {
+                                                const inCommittee = currentCommittee.find(c => c.userId === candidate.id);
+                                                const selectedRole = candidateRoles[candidate.id] || (candidate.role === 'admin' ? 'chairperson' : 'member');
+                                                const isMaxReached = currentCommittee.length >= 5 && !inCommittee;
+
+                                                return (
+                                                    <div
+                                                        key={candidate.id}
+                                                        className={`p-3 rounded-xl border transition flex flex-col justify-between ${
+                                                            inCommittee
+                                                                ? 'border-emerald-300 bg-emerald-50/40 dark:border-emerald-800 dark:bg-emerald-950/20 shadow-xs'
+                                                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-300 dark:hover:border-blue-700 shadow-2xs'
+                                                        }`}
+                                                    >
+                                                        <div>
+                                                            <div className="flex items-start justify-between gap-2 mb-2">
+                                                                <div className="flex items-center gap-2.5 min-w-0">
+                                                                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+                                                                        candidate.role === 'principal'
+                                                                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200'
+                                                                            : candidate.role === 'admin'
+                                                                            ? 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-200'
+                                                                            : candidate.role === 'instructor'
+                                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200'
+                                                                            : candidate.role === 'lab_assistant'
+                                                                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200'
+                                                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200'
+                                                                    }`}>
+                                                                        {candidate.firstName?.[0] || 'U'}{candidate.lastName?.[0] || ''}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <div className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">
+                                                                            {candidate.firstName} {candidate.lastName}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-slate-400 capitalize truncate">
+                                                                            {candidate.role?.replace('_', ' ')}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 ${
+                                                                    candidate.role === 'principal'
+                                                                        ? 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                                                                        : candidate.role === 'admin'
+                                                                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                                                                        : candidate.role === 'instructor'
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                                                        : candidate.role === 'lab_assistant'
+                                                                        ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                                                                        : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
+                                                                }`}>
+                                                                    {candidate.role?.replace('_', ' ')}
+                                                                </span>
+                                                            </div>
+
+                                                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mb-3">
+                                                                {candidate.email || 'No email registered'}
+                                                                {candidate.phone ? ` • ${candidate.phone}` : ''}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Action Footer */}
+                                                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                                                            {inCommittee ? (
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                                                                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                                        <span>In Committee as <strong className="uppercase">{inCommittee.role}</strong></span>
+                                                                    </span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveCommitteeMember(inCommittee.id)}
+                                                                        className="text-xs text-red-600 hover:text-red-800 dark:text-red-400 font-semibold hover:underline"
+                                                                    >
+                                                                        Remove
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex items-center gap-2">
+                                                                    <select
+                                                                        value={selectedRole}
+                                                                        onChange={e => setCandidateRoles(prev => ({ ...prev, [candidate.id]: e.target.value }))}
+                                                                        className="input text-xs py-1 px-2 flex-1 h-8"
+                                                                        disabled={isMaxReached}
+                                                                    >
+                                                                        <option value="member">Member</option>
+                                                                        <option value="chairperson">Chairperson</option>
+                                                                        <option value="secretary">Secretary</option>
+                                                                    </select>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleAddCandidate(candidate.id, selectedRole)}
+                                                                        disabled={isMaxReached}
+                                                                        className="btn bg-blue-600 hover:bg-blue-700 text-white text-xs py-1 px-2.5 h-8 flex items-center gap-1 shrink-0 disabled:opacity-40"
+                                                                    >
+                                                                        <UserPlus className="w-3.5 h-3.5" />
+                                                                        <span>Add</span>
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {filteredCandidates.length === 0 && (
+                                            <div className="p-6 text-center text-slate-400 text-xs italic">
+                                                No staff candidate matches &quot;{candidateSearch}&quot;
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Quick Dropdown Fallback */}
                                     {(!requestDetail.request.committee || requestDetail.request.committee.length < 5) && (
-                                        <div className="flex gap-2 mb-4">
-                                            <select value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="input flex-1">
+                                        <div className="p-3 bg-white/70 dark:bg-slate-900/60 rounded-xl border border-dashed border-amber-200 dark:border-amber-800 flex flex-wrap items-center gap-2 mb-4">
+                                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Quick Select:</span>
+                                            <select value={selectedStaffId} onChange={e => setSelectedStaffId(e.target.value)} className="input text-xs flex-1 min-w-[200px]">
                                                 <option value="">Select staff member...</option>
                                                 {staffList.filter(s => !requestDetail.request.committee?.find(c => c.userId === s.id)).map(s => (
                                                     <option key={s.id} value={s.id}>{s.firstName} {s.lastName} ({s.role})</option>
                                                 ))}
                                             </select>
-                                            <select value={committeeRole} onChange={e => setCommitteeRole(e.target.value)} className="input w-36">
+                                            <select value={committeeRole} onChange={e => setCommitteeRole(e.target.value)} className="input text-xs w-36">
                                                 <option value="member">Member</option>
                                                 <option value="chairperson">Chairperson</option>
                                                 <option value="secretary">Secretary</option>
                                             </select>
-                                            <button onClick={handleAddCommitteeMember} disabled={!selectedStaffId} className="btn btn-primary">
-                                                <UserPlus className="w-4 h-4" /> Add
+                                            <button onClick={handleAddCommitteeMember} disabled={!selectedStaffId} className="btn btn-primary text-xs py-1.5 px-3 flex items-center gap-1">
+                                                <UserPlus className="w-3.5 h-3.5" /> Add Member
                                             </button>
                                         </div>
                                     )}
@@ -5899,15 +6352,31 @@ Laboratory / IT Incharge`
                                         </div>
 
                                         {cfqAgreementMode === 'editor' && (
-                                            <div>
-                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                                                    Inline Special Terms & Conditions:
-                                                </label>
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                                                        Inline Special Terms & Conditions:
+                                                    </label>
+                                                    <span className="text-[11px] text-slate-400">
+                                                        Formatted directly onto Call for Quotation letters
+                                                    </span>
+                                                </div>
+
+                                                <EditorFormatBar
+                                                    textareaRef={cfqTextareaRef}
+                                                    value={cfqAgreementText}
+                                                    onChange={setCfqAgreementText}
+                                                    storageKey="cfq_terms"
+                                                    defaultTemplates={step4DefaultTemplates}
+                                                    variables={step4Variables}
+                                                />
+
                                                 <textarea
+                                                    ref={cfqTextareaRef}
                                                     value={cfqAgreementText}
                                                     onChange={e => setCfqAgreementText(e.target.value)}
                                                     placeholder="e.g. 1. Delivery within 10 days of order. 2. On-site 1-year replacement warranty. 3. 100% payment after testing and physical verification."
-                                                    className="input text-xs min-h-[70px] w-full"
+                                                    className="input text-xs min-h-[90px] w-full font-mono leading-relaxed p-3"
                                                 />
                                             </div>
                                         )}
