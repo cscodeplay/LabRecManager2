@@ -69,7 +69,10 @@ router.post('/procurement/:requestId/:field', authenticate, upload.single('file'
         }
 
         const { requestId, field } = req.params;
-        const result = await uploadToCloudinary(req.file.path);
+        const isVideo = field === 'receivingVideo' || req.file.mimetype?.startsWith('video/');
+        const result = isVideo
+            ? await uploadVideoToCloudinary(req.file.path)
+            : await uploadToCloudinary(req.file.path);
         const fileUrl = result.secure_url;
         const fileName = req.file.originalname;
 
@@ -79,7 +82,8 @@ router.post('/procurement/:requestId/:field', authenticate, upload.single('file'
             'po': { urlField: 'poUrl', nameField: null },
             'bill': { urlField: 'billUrl', nameField: null },
             'cheque': { urlField: 'chequeUrl', nameField: null },
-            'receivingVideo': { urlField: 'receivingVideoUrl', nameField: null }
+            'receivingVideo': { urlField: 'receivingVideoUrl', nameField: null },
+            'installationPhoto': { urlField: null, nameField: null }
         };
 
         const mapping = fieldMap[field];
@@ -87,17 +91,34 @@ router.post('/procurement/:requestId/:field', authenticate, upload.single('file'
             return res.status(400).json({ success: false, message: 'Invalid field type' });
         }
 
-        // Build update data
-        const updateData = { [mapping.urlField]: fileUrl };
-        if (mapping.nameField) {
-            updateData[mapping.nameField] = fileName;
+        let request = null;
+        if (mapping.urlField) {
+            const updateData = { [mapping.urlField]: fileUrl };
+            if (mapping.nameField) {
+                updateData[mapping.nameField] = fileName;
+            }
+            request = await prisma.procurementRequest.update({
+                where: { id: requestId },
+                data: updateData
+            });
+        } else if (field === 'installationPhoto') {
+            const currentReq = await prisma.procurementRequest.findUnique({
+                where: { id: requestId },
+                select: { receivingNotes: true }
+            });
+            let parsedNotes = {};
+            try {
+                parsedNotes = currentReq?.receivingNotes ? JSON.parse(currentReq.receivingNotes) : {};
+            } catch (e) {
+                parsedNotes = { text: currentReq?.receivingNotes || '' };
+            }
+            parsedNotes.installationPhotoUrl = fileUrl;
+            parsedNotes.installationPhotoName = fileName;
+            request = await prisma.procurementRequest.update({
+                where: { id: requestId },
+                data: { receivingNotes: JSON.stringify(parsedNotes) }
+            });
         }
-
-        // Update the procurement request
-        const request = await prisma.procurementRequest.update({
-            where: { id: requestId },
-            data: updateData
-        });
 
         res.json({
             success: true,

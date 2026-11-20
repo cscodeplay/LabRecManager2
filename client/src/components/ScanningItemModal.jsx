@@ -10,6 +10,7 @@ export default function ScanningItemModal({
     expectedQty = 1,
     initialSerials = [],
     initialRemarks = '',
+    initialCondition = 'New / Intact (Working)',
     onClose,
     onSave
 }) {
@@ -45,6 +46,7 @@ export default function ScanningItemModal({
                 activeItemIdRef.current = item.id;
                 setSerials(Array.isArray(initialSerials) ? [...initialSerials] : []);
                 setRemarks(initialRemarks || '');
+                setCondition(initialCondition || 'New / Intact (Working)');
                 setCurrentInput('');
                 setTimeout(() => {
                     inputRef.current?.focus();
@@ -62,6 +64,11 @@ export default function ScanningItemModal({
         const cleaned = (val || currentInput).trim();
         if (!cleaned) return;
 
+        if (serials.length >= expectedQty) {
+            toast.error(`Maximum expected quantity of ${expectedQty} ${item.unit || 'units'} reached. Cannot add more items.`);
+            return;
+        }
+
         if (serials.includes(cleaned)) {
             toast.error(`Serial "${cleaned}" already added`);
             return;
@@ -70,7 +77,7 @@ export default function ScanningItemModal({
         const updated = [...serials, cleaned];
         setSerials(updated);
         setCurrentInput('');
-        toast.success(`Recorded serial #${updated.length}: ${cleaned}`);
+        toast.success(`Recorded serial #${updated.length} of ${expectedQty}: ${cleaned}`);
         inputRef.current?.focus();
     };
 
@@ -86,6 +93,10 @@ export default function ScanningItemModal({
     };
 
     const startCameraScanner = async () => {
+        if (serials.length >= expectedQty) {
+            toast.error(`Maximum expected quantity of ${expectedQty} ${item.unit || 'units'} already reached.`);
+            return;
+        }
         setShowCamera(true);
         try {
             const { Html5Qrcode } = await import('html5-qrcode');
@@ -102,7 +113,21 @@ export default function ScanningItemModal({
                         { fps: 12, qrbox: { width: 260, height: 130 } },
                         (decodedText) => {
                             if (decodedText) {
-                                handleAddSerial(decodedText);
+                                const trimmed = decodedText.trim();
+                                if (!trimmed) return;
+                                setSerials(prev => {
+                                    if (prev.length >= expectedQty) {
+                                        toast.error(`Maximum expected quantity of ${expectedQty} ${item.unit || 'units'} reached.`);
+                                        stopCameraScanner();
+                                        return prev;
+                                    }
+                                    if (prev.includes(trimmed)) {
+                                        toast.error(`Serial "${trimmed}" already added`);
+                                        return prev;
+                                    }
+                                    toast.success(`Scanned serial #${prev.length + 1} of ${expectedQty}: ${trimmed}`);
+                                    return [...prev, trimmed];
+                                });
                             }
                         },
                         () => {} // ignore interim frames
@@ -130,7 +155,7 @@ export default function ScanningItemModal({
     const handleSave = () => {
         let finalSerials = [...serials];
         const trimmed = currentInput.trim();
-        if (trimmed && !finalSerials.includes(trimmed)) {
+        if (trimmed && !finalSerials.includes(trimmed) && finalSerials.length < expectedQty) {
             finalSerials.push(trimmed);
         }
         stopCameraScanner();
@@ -219,8 +244,9 @@ export default function ScanningItemModal({
                             <input
                                 ref={inputRef}
                                 type="text"
-                                className="input text-xs flex-1 font-mono tracking-wider"
-                                placeholder="Scan barcode or type serial number..."
+                                disabled={serials.length >= expectedQty}
+                                className="input text-xs flex-1 font-mono tracking-wider disabled:opacity-60 disabled:bg-slate-100 dark:disabled:bg-slate-800"
+                                placeholder={serials.length >= expectedQty ? `All ${expectedQty} ${item.unit || 'units'} verified (Limit reached)` : "Scan barcode or type serial number..."}
                                 value={currentInput}
                                 onChange={e => setCurrentInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
@@ -228,7 +254,7 @@ export default function ScanningItemModal({
                             <button
                                 type="button"
                                 onClick={() => handleAddSerial()}
-                                disabled={!currentInput.trim()}
+                                disabled={!currentInput.trim() || serials.length >= expectedQty}
                                 className="btn btn-primary text-xs py-1.5 px-3 flex items-center gap-1 disabled:opacity-40 shadow-xs"
                             >
                                 <Plus className="w-3.5 h-3.5" /> Add
@@ -236,8 +262,9 @@ export default function ScanningItemModal({
                             <button
                                 type="button"
                                 onClick={toggleCameraScanner}
+                                disabled={serials.length >= expectedQty}
                                 title={showCamera ? 'Close camera' : 'Open camera barcode scanner'}
-                                className={`btn text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs transition ${
+                                className={`btn text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs transition disabled:opacity-40 ${
                                     showCamera
                                         ? 'bg-rose-600 hover:bg-rose-700 text-white'
                                         : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
@@ -246,6 +273,16 @@ export default function ScanningItemModal({
                                 <Camera className="w-3.5 h-3.5" /> {showCamera ? 'Stop Camera' : 'Camera'}
                             </button>
                         </div>
+
+                        {serials.length >= expectedQty && (
+                            <div className="mt-2.5 p-2 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                    Expected quantity fulfilled ({expectedQty} of {expectedQty} units verified). Additional units blocked.
+                                </span>
+                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider">Capped</span>
+                            </div>
+                        )}
 
                         {/* Interactive Camera Viewport */}
                         {showCamera && (

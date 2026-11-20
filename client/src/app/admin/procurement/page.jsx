@@ -11,7 +11,8 @@ import {
     Calendar, Lock, Save, ChevronLeft, ChevronRight, Download,
     CloudUpload, Mail, Pencil, LayoutGrid, List, TrendingUp,
     Building2, Upload, Cloud, RefreshCw, FileCheck, Layers,
-    EyeOff, CheckCircle, ExternalLink, Sparkles, AlertCircle, Clock
+    EyeOff, CheckCircle, ExternalLink, Sparkles, AlertCircle, Clock,
+    Wrench, Camera, Image as ImageIcon
 } from 'lucide-react';
 import { useAuthStore } from '@/lib/store';
 import { procurementAPI, uploadAPI, labsAPI, default as api } from '@/lib/api';
@@ -172,14 +173,32 @@ export default function ProcurementPage() {
     const [showPoCloudPicker, setShowPoCloudPicker] = useState(false);
     const [poUploadFile, setPoUploadFile] = useState(null);
 
-    // Step 10: Item verification scanning modal
+    // Step 11: Unboxing Media State (Video up to 10s & up to 50MB, or Photos)
+    const [unboxingMediaFile, setUnboxingMediaFile] = useState(null);
+    const [unboxingMediaUrl, setUnboxingMediaUrl] = useState('');
+    const [unboxingMediaType, setUnboxingMediaType] = useState('video'); // 'video' | 'image'
+    const [isUploadingUnboxingMedia, setIsUploadingUnboxingMedia] = useState(false);
+
+    // Step 12: Installation & Storage Verification State
+    const [installationLocationType, setInstallationLocationType] = useState('Computer Lab');
+    const [installationLocationName, setInstallationLocationName] = useState('');
+    const [installationRoomNumber, setInstallationRoomNumber] = useState('');
+    const [installationRackShelf, setInstallationRackShelf] = useState('');
+    const [installationTechnicianName, setInstallationTechnicianName] = useState('');
+    const [installationDate, setInstallationDate] = useState(new Date().toISOString().split('T')[0]);
+    const [installationPhotoUrl, setInstallationPhotoUrl] = useState('');
+    const [installationPhotoFile, setInstallationPhotoFile] = useState(null);
+    const [installationNotes, setInstallationNotes] = useState('');
+    const [isUploadingInstallationPhoto, setIsUploadingInstallationPhoto] = useState(false);
+
+    // Step 11: Item verification scanning modal
     const [scanningItemModal, setScanningItemModal] = useState({
         isOpen: false,
         item: null,
         expectedQty: 1
     });
 
-    // Step 11: Classroom & Lab Hardware Issuance (Unit-by-Unit)
+    // Step 13: Classroom & Lab Hardware Issuance (Unit-by-Unit)
     const [classroomMappings, setClassroomMappings] = useState([]);
     const [selectedClassroomId, setSelectedClassroomId] = useState('');
     const [selectedClassroomData, setSelectedClassroomData] = useState(null);
@@ -191,7 +210,7 @@ export default function ProcurementPage() {
     const [hardwareItemRemarks, setHardwareItemRemarks] = useState({});
     const [issuedLoanVouchers, setIssuedLoanVouchers] = useState([]);
 
-    // Step 12: Saving to cloud state
+    // Step 14: Saving to cloud state
     const [isSavingToCloud, setIsSavingToCloud] = useState(false);
 
     // Live date-time running clock for Step 11
@@ -205,7 +224,7 @@ export default function ProcurementPage() {
         return () => clearInterval(timer);
     }, []);
 
-    // Synchronize unit-by-unit hardware entries from Step 10 into Step 11 strictly for verified serials
+    // Synchronize unit-by-unit hardware entries into Step 13 strictly for verified serials without clearing persisted data
     useEffect(() => {
         if (!requestDetail?.request?.items || requestDetail.request.items.length === 0) return;
 
@@ -217,9 +236,11 @@ export default function ProcurementPage() {
 
             const list = [];
             requestDetail.request.items.forEach(item => {
-                const scannedSerials = receivedItems[item.id]?.serialNumbers || [];
+                const itemSerials = (receivedItems[item.id]?.serialNumbers && receivedItems[item.id]?.serialNumbers.length > 0)
+                    ? receivedItems[item.id].serialNumbers
+                    : (Array.isArray(item.serialNumbers) ? item.serialNumbers : []);
 
-                scannedSerials.forEach((sn, idx) => {
+                itemSerials.forEach((sn, idx) => {
                     const unitKey = `${item.id}_${idx}`;
                     const existing = existingMap.get(unitKey);
 
@@ -228,7 +249,7 @@ export default function ProcurementPage() {
                         itemId: item.id,
                         itemName: item.itemName,
                         unitIndex: idx + 1,
-                        totalUnits: scannedSerials.length,
+                        totalUnits: itemSerials.length,
                         serialNumber: existing?.serialNumber || sn,
                         classroomId: existing?.classroomId || '',
                         roomNumber: existing?.roomNumber || '',
@@ -239,7 +260,13 @@ export default function ProcurementPage() {
                     });
                 });
             });
-            return list;
+
+            // Prevent wiping persisted unitIssuances if list couldn't be built from current in-memory serials
+            if (list.length === 0 && (prev && prev.length > 0)) {
+                return prev;
+            }
+
+            return list.length > 0 ? list : prev;
         });
     }, [requestDetail?.request?.items, editableQuantities, receivedItems]);
 
@@ -352,17 +379,45 @@ export default function ProcurementPage() {
                 // Step 9: Purchase Order
                 return true;
             case 10:
-                // Step 10: Bill & Payment Receipt
+                // Step 10: Bill & Payment Remittance
                 if (!billUpload && !requestDetail?.request?.billUrl && !billNumber.trim() && !requestDetail?.request?.billNumber) {
                     toast.error('Please enter bill number or upload bill document');
                     return false;
                 }
                 return true;
             case 11:
-                // Step 11: Classroom Hardware Issuance
-                return true;
+                // Step 11: Received Items Verification & Unboxing Inspection (Gatekeeper)
+                {
+                    const items = requestDetail?.request?.items || [];
+                    if (items.length === 0) {
+                        toast.error('No procurement items found');
+                        return false;
+                    }
+                    for (const item of items) {
+                        const expected = editableQuantities[item.id] || item.quantity || 1;
+                        const rec = receivedItems[item.id];
+                        const verifiedQty = (rec?.serialNumbers && rec.serialNumbers.length > 0)
+                            ? rec.serialNumbers.length
+                            : (rec?.received || 0);
+                        if (verifiedQty < expected) {
+                            toast.error(`Item "${item.itemName}" requires all ${expected} units to be received and verified with serial numbers before proceeding (currently ${verifiedQty}/${expected}).`);
+                            return false;
+                        }
+                    }
+                    return true;
+                }
             case 12:
-                // Step 12: Process Docket
+                // Step 12: Installation & Storage Verification
+                if (!installationLocationName.trim() && !installationRoomNumber.trim() && !installationPhotoUrl) {
+                    toast.error('Please specify the installation or storage location/room');
+                    return false;
+                }
+                return true;
+            case 13:
+                // Step 13: Classroom Hardware Issuance
+                return true;
+            case 14:
+                // Step 14: Process Docket
                 return true;
             default:
                 return true;
@@ -634,20 +689,98 @@ export default function ProcurementPage() {
                             console.error('Payment error:', err);
                         }
                     }
-                    if (Object.keys(receivedItems).length > 0) {
-                        try {
-                            await procurementAPI.markReceived(selectedRequest.id, {
-                                receivedItems: receivedItems,
-                                status: 'received'
-                            });
-                        } catch (err) {
-                            console.error('Mark received error:', err);
-                        }
-                    }
                     setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
                     await openRequestDetail(selectedRequest, true); // Keep step!
                     break;
                 case 11:
+                    setSaveProgress({ active: true, percent: 30, statusText: 'Saving item verifications & unboxing media...' });
+                    let uploadedUnboxingUrl = unboxingMediaUrl;
+                    if (unboxingMediaFile && unboxingMediaFile instanceof File) {
+                        try {
+                            setIsUploadingUnboxingMedia(true);
+                            const uploadRes = await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'receivingVideo', unboxingMediaFile);
+                            if (uploadRes.data?.data?.url) {
+                                uploadedUnboxingUrl = uploadRes.data.data.url;
+                                setUnboxingMediaUrl(uploadedUnboxingUrl);
+                            }
+                        } catch (mediaErr) {
+                            console.error('Unboxing media upload error:', mediaErr);
+                            toast.error('Failed to upload unboxing media');
+                        } finally {
+                            setIsUploadingUnboxingMedia(false);
+                        }
+                    }
+
+                    // Prepare item inspections map
+                    const itemInspections = {};
+                    Object.entries(receivedItems).forEach(([itemId, it]) => {
+                        itemInspections[itemId] = {
+                            condition: it.condition || 'good',
+                            remarks: it.remarks || '',
+                            verifiedCount: (it.serialNumbers || []).length
+                        };
+                    });
+
+                    try {
+                        await procurementAPI.markReceived(selectedRequest.id, {
+                            receivedItems: receivedItems,
+                            status: 'received',
+                            receivingVideoUrl: uploadedUnboxingUrl || undefined,
+                            receivingNotes: {
+                                itemInspections,
+                                unboxingMedia: uploadedUnboxingUrl ? {
+                                    url: uploadedUnboxingUrl,
+                                    type: unboxingMediaType
+                                } : undefined
+                            }
+                        });
+                    } catch (err) {
+                        console.error('Mark received error:', err);
+                    }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
+                    await openRequestDetail(selectedRequest, true);
+                    break;
+                case 12:
+                    setSaveProgress({ active: true, percent: 35, statusText: 'Saving installation & storage verification...' });
+                    let uploadedInstallPhotoUrl = installationPhotoUrl;
+                    if (installationPhotoFile && installationPhotoFile instanceof File) {
+                        try {
+                            setIsUploadingInstallationPhoto(true);
+                            const photoRes = await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'installationPhoto', installationPhotoFile);
+                            if (photoRes.data?.data?.url) {
+                                uploadedInstallPhotoUrl = photoRes.data.data.url;
+                                setInstallationPhotoUrl(uploadedInstallPhotoUrl);
+                            }
+                        } catch (pErr) {
+                            console.error('Installation photo upload error:', pErr);
+                            toast.error('Failed to upload installation photo');
+                        } finally {
+                            setIsUploadingInstallationPhoto(false);
+                        }
+                    }
+
+                    try {
+                        await procurementAPI.updateRequest(selectedRequest.id, {
+                            receivingNotes: {
+                                installation: {
+                                    locationType: installationLocationType,
+                                    locationName: installationLocationName,
+                                    roomNumber: installationRoomNumber,
+                                    rackShelf: installationRackShelf,
+                                    technicianName: installationTechnicianName,
+                                    installationDate: installationDate,
+                                    photoUrl: uploadedInstallPhotoUrl || undefined,
+                                    notes: installationNotes
+                                }
+                            }
+                        });
+                    } catch (instErr) {
+                        console.error('Installation details save error:', instErr);
+                    }
+                    setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing...' });
+                    await openRequestDetail(selectedRequest, true);
+                    break;
+                case 13:
                     setSaveProgress({ active: true, percent: 30, statusText: 'Issuing hardware to classrooms & generating loan vouchers...' });
                     try {
                         const unitsToIssue = unitIssuances && unitIssuances.length > 0 ? unitIssuances : [];
@@ -673,7 +806,10 @@ export default function ProcurementPage() {
 
                         const issuancesPayload = Object.values(grouped);
                         if (issuancesPayload.length > 0) {
-                            const res = await procurementAPI.issueClassroomHardware(selectedRequest.id, { issuances: issuancesPayload });
+                            const res = await procurementAPI.issueClassroomHardware(selectedRequest.id, {
+                                issuances: issuancesPayload,
+                                classroomAssignments: unitsToIssue
+                            });
                             if (res.data?.success && Array.isArray(res.data.data?.vouchers)) {
                                 setIssuedLoanVouchers(res.data.data.vouchers);
                                 toast.success(`Generated ${res.data.data.vouchers.length} Classroom Loan Voucher(s)`);
@@ -685,7 +821,7 @@ export default function ProcurementPage() {
                     setSaveProgress({ active: true, percent: 85, statusText: 'Refreshing data...' });
                     await openRequestDetail(selectedRequest, true);
                     break;
-                case 12:
+                case 14:
                     setSaveProgress({ active: true, percent: 50, statusText: 'Finalizing procurement...' });
                     await procurementAPI.updateRequest(selectedRequest.id, { status: 'completed' });
                     await openRequestDetail(selectedRequest, true);
@@ -750,8 +886,23 @@ export default function ProcurementPage() {
             case 10:
                 return !!(billUpload || billNumber.trim() || requestDetail?.request?.billNumber || requestDetail?.request?.billUrl);
             case 11:
-                return (classroomIssuances.length > 0 || issuedLoanVouchers.length > 0 || unitIssuances.length > 0 || requestDetail?.request?.status === 'completed');
+                {
+                    const items = requestDetail?.request?.items || [];
+                    if (items.length === 0) return false;
+                    return items.every(item => {
+                        const expected = editableQuantities[item.id] || item.quantity || 1;
+                        const rec = receivedItems[item.id];
+                        const verifiedQty = (rec?.serialNumbers && rec.serialNumbers.length > 0)
+                            ? rec.serialNumbers.length
+                            : (rec?.received || 0);
+                        return verifiedQty >= expected;
+                    });
+                }
             case 12:
+                return !!(installationLocationName.trim() || installationRoomNumber.trim() || installationPhotoUrl);
+            case 13:
+                return (classroomIssuances.length > 0 || issuedLoanVouchers.length > 0 || unitIssuances.length > 0 || requestDetail?.request?.status === 'completed');
+            case 14:
                 return requestDetail?.request?.status === 'completed';
             default:
                 return false;
@@ -760,10 +911,10 @@ export default function ProcurementPage() {
 
     // Get highest completed step (for tab navigation)
     const getHighestAccessibleStep = () => {
-        for (let i = 1; i <= 12; i++) {
+        for (let i = 1; i <= 14; i++) {
             if (!isStepComplete(i)) return i;
         }
-        return 12;
+        return 14;
     };
 
     // Number to words helper
@@ -1725,6 +1876,76 @@ export default function ProcurementPage() {
                 </div>
             ` : ''}
 
+            <!-- PAGE: HARDWARE INSTALLATION & COMMISSIONING CERTIFICATE -->
+            ${(() => {
+                let inst = null;
+                if (request.receivingNotes) {
+                    try {
+                        const parsed = typeof request.receivingNotes === 'string' ? JSON.parse(request.receivingNotes) : request.receivingNotes;
+                        inst = parsed?.installation;
+                    } catch (e) {}
+                }
+                if (!inst && !installationLocationName && !installationPhotoUrl) return '';
+                const locType = inst?.locationType || installationLocationType || 'Computer Lab';
+                const locName = inst?.locationName || installationLocationName || 'Central Lab';
+                const roomNum = inst?.roomNumber || installationRoomNumber || '-';
+                const rack = inst?.rackShelf || installationRackShelf || '-';
+                const tech = inst?.technicianName || installationTechnicianName || 'Lab Technician';
+                const instDate = inst?.installationDate || installationDate || today;
+                const photo = inst?.photoUrl || installationPhotoUrl;
+                const notes = inst?.notes || installationNotes;
+
+                return `
+                    <div class="page">
+                        ${renderLetterhead('Hardware Installation & Commissioning Certificate')}
+                        <div class="meta-info">
+                            <p><strong>Procurement Reference:</strong> ${request.title}</p>
+                            <p><strong>Commissioning Date:</strong> ${instDate}</p>
+                            <p><strong>Installation Facility:</strong> ${locType} - ${locName}</p>
+                            <p><strong>Room / Hall:</strong> ${roomNum} | <strong>Rack/Shelf:</strong> ${rack}</p>
+                        </div>
+
+                        <div style="margin: 12px 0; padding: 10px; border: 1.5px solid #0f172a; border-radius: 6px; background-color: #f8fafc; font-size: 13px;">
+                            <p style="margin: 0 0 6px 0;"><strong>Verified Hardware Units Installed:</strong></p>
+                            <ul style="margin: 0; padding-left: 20px;">
+                                ${request.items.map(it => `<li><strong>${it.itemName}</strong> - ${it.quantity} ${it.unit || 'units'} (Serials: ${it.serialNumbers?.join(', ') || 'Recorded in inventory'})</li>`).join('')}
+                            </ul>
+                            ${notes ? `<p style="margin: 8px 0 0 0; color: #475569;"><strong>Commissioning Notes:</strong> ${notes}</p>` : ''}
+                        </div>
+
+                        ${photo ? `
+                            <div style="margin: 15px 0; text-align: center;">
+                                <div style="font-size: 12px; font-weight: bold; color: #475569; margin-bottom: 6px; text-transform: uppercase;">Installation & Commissioning Site Photo</div>
+                                <div style="width: 100%; max-height: 280px; border: 1.5px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #f1f5f9;">
+                                    <img src="${photo}" alt="Installation Site Photo" style="width: 100%; max-height: 275px; object-fit: contain;" />
+                                </div>
+                            </div>
+                        ` : ''}
+
+                        <div style="margin-top: 30px; display: flex; justify-content: space-between;">
+                            <div style="text-align: center; width: 180px;">
+                                <div style="border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 12px; font-weight: bold;">
+                                    ${tech}
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">Installation Technician / Custodian</div>
+                            </div>
+                            <div style="text-align: center; width: 180px;">
+                                <div style="border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 12px; font-weight: bold;">
+                                    Lab In-Charge / IT Head
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">Verified & Commissioned</div>
+                            </div>
+                            <div style="text-align: center; width: 180px;">
+                                <div style="border-top: 1.5px solid #0f172a; padding-top: 5px; font-size: 12px; font-weight: bold;">
+                                    Principal / Director
+                                </div>
+                                <div style="font-size: 11px; color: #64748b;">Meritorious School</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            })()}
+
             <!-- PAGE: STOCK REGISTER / NEW INVENTORY ENTRY (if completed) -->
             ${isComplete ? `
                 <div class="page">
@@ -1884,9 +2105,9 @@ export default function ProcurementPage() {
         }
     };
 
-    // Load combined docket when Step 12 is opened
+    // Load combined docket when Step 14 is opened
     useEffect(() => {
-        if (workflowStep === 12 && selectedRequest?.id) {
+        if (workflowStep === 14 && selectedRequest?.id) {
             procurementAPI.getPreviewData(selectedRequest.id)
                 .then(res => {
                     if (res.data?.data) {
@@ -3700,17 +3921,75 @@ export default function ProcurementPage() {
                 setEditableQuantities(qtys);
             }
 
-            // Restore received items strictly from recorded serial numbers
-            if (data.request?.items?.some(item => (item.serialNumbers?.length || 0) > 0)) {
-                const received = {};
+            // Restore received items strictly from recorded serial numbers & inspections
+            const initialReceived = {};
+            if (data.request?.items?.length > 0) {
                 data.request.items.forEach(item => {
                     const sns = item.serialNumbers || [];
-                    received[item.id] = { received: sns.length, serialNumbers: sns };
+                    initialReceived[item.id] = {
+                        received: sns.length || item.receivedQuantity || 0,
+                        serialNumbers: sns,
+                        condition: 'good',
+                        remarks: ''
+                    };
                 });
-                setReceivedItems(received);
-            } else {
-                setReceivedItems({});
             }
+
+            // Restore structured receiving notes, unboxing media, installation, & classroom assignments
+            if (data.request?.receivingNotes) {
+                try {
+                    const parsedNotes = typeof data.request.receivingNotes === 'string'
+                        ? JSON.parse(data.request.receivingNotes)
+                        : data.request.receivingNotes;
+
+                    // Restore item condition & remarks
+                    if (parsedNotes?.itemInspections) {
+                        Object.entries(parsedNotes.itemInspections).forEach(([itemId, insp]) => {
+                            if (initialReceived[itemId]) {
+                                initialReceived[itemId].condition = insp.condition || 'good';
+                                initialReceived[itemId].remarks = insp.remarks || '';
+                            }
+                        });
+                    }
+
+                    // Restore unboxing media
+                    if (parsedNotes?.unboxingMedia?.url) {
+                        setUnboxingMediaUrl(parsedNotes.unboxingMedia.url);
+                        setUnboxingMediaType(parsedNotes.unboxingMedia.type || 'video');
+                    } else if (data.request?.receivingVideoUrl) {
+                        setUnboxingMediaUrl(data.request.receivingVideoUrl);
+                        setUnboxingMediaType('video');
+                    }
+
+                    // Restore installation details
+                    if (parsedNotes?.installation) {
+                        const inst = parsedNotes.installation;
+                        if (inst.locationType) setInstallationLocationType(inst.locationType);
+                        if (inst.locationName) setInstallationLocationName(inst.locationName);
+                        if (inst.roomNumber) setInstallationRoomNumber(inst.roomNumber);
+                        if (inst.rackShelf) setInstallationRackShelf(inst.rackShelf);
+                        if (inst.technicianName) setInstallationTechnicianName(inst.technicianName);
+                        if (inst.installationDate) setInstallationDate(inst.installationDate);
+                        if (inst.photoUrl) setInstallationPhotoUrl(inst.photoUrl);
+                        if (inst.notes) setInstallationNotes(inst.notes);
+                    }
+
+                    // Restore classroom assignments & vouchers (prevents disappearing on reload)
+                    if (Array.isArray(parsedNotes?.classroomAssignments) && parsedNotes.classroomAssignments.length > 0) {
+                        setUnitIssuances(parsedNotes.classroomAssignments);
+                    }
+                    if (Array.isArray(parsedNotes?.issuedVouchers) && parsedNotes.issuedVouchers.length > 0) {
+                        setIssuedLoanVouchers(parsedNotes.issuedVouchers);
+                    }
+                } catch (notesErr) {
+                    console.error('Error parsing receivingNotes:', notesErr);
+                }
+            } else if (data.request?.receivingVideoUrl) {
+                setUnboxingMediaUrl(data.request.receivingVideoUrl);
+                setUnboxingMediaType('video');
+            }
+
+            setReceivedItems(initialReceived);
 
             // Restore bill/cheque info
             if (data.request?.billUrl) {
@@ -3795,9 +4074,9 @@ export default function ProcurementPage() {
                     setWorkflowStep(data.request.currentStep);
                 } else {
                     const calcHighestStep = (r, vIds) => {
-                        if (r.status === 'completed') return 12;
-                        if (r.status === 'received' || r.status === 'paid') return 11;
-                        if (r.billNumber || r.billUrl) return 10;
+                        if (r.status === 'completed') return 14;
+                        if (r.status === 'received' || r.status === 'paid') return 13;
+                        if (r.billNumber || r.billUrl) return 11;
                         if (r.poNumber || r.poUrl) return 9;
                         if (r.proceedingsDate) return 8;
                         if (r.items?.[0]?.approvedVendorId && r.items?.[0]?.approvedUnitPrice) return 7;
@@ -4782,9 +5061,11 @@ export default function ProcurementPage() {
                                         { step: 7, label: 'Net Amount', icon: TrendingUp },
                                         { step: 8, label: 'Proceedings', icon: FileText },
                                         { step: 9, label: 'PO', icon: ClipboardList },
-                                        { step: 10, label: 'Bill & Receipt', icon: CreditCard },
-                                        { step: 11, label: 'Classroom Issuance', icon: Building2 },
-                                        { step: 12, label: 'Process Docket', icon: Eye }
+                                        { step: 10, label: 'Bill & Payment', icon: CreditCard },
+                                        { step: 11, label: 'Item Verification', icon: CheckCircle2 },
+                                        { step: 12, label: 'Installation & Storage', icon: Wrench },
+                                        { step: 13, label: 'Classroom Issuance', icon: Building2 },
+                                        { step: 14, label: 'Process Docket', icon: Eye }
                                     ].filter(t => !t.showOnlyNew || isCreatingNew).map(({ step, label, icon: Icon }) => {
                                         const maxAccessible = isCreatingNew ? 0 : getHighestAccessibleStep();
                                         const isAccessible = isCreatingNew ? step === 0 : step <= maxAccessible;
@@ -7042,7 +7323,7 @@ Laboratory / IT Incharge`
                                 </div>
                             )}
 
-                            {/* Step 10: Bill, Payment & Receipt Verification */}
+                            {/* Step 10: Bill & Payment Remittance */}
                             {workflowStep === 10 && (
                                 <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
                                     <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -7051,8 +7332,8 @@ Laboratory / IT Incharge`
                                                 <CreditCard className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 10: Bill, Payment & Receipt Verification</h3>
-                                                <p className="text-xs text-slate-500">Record vendor invoice, payment remittance details, and verify received item quantities and serial numbers.</p>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 10: Bill & Payment Remittance</h3>
+                                                <p className="text-xs text-slate-500">Record vendor invoice and payment remittance details (Cheque / UTR / Proofs).</p>
                                             </div>
                                         </div>
                                     </div>
@@ -7221,86 +7502,6 @@ Laboratory / IT Incharge`
                                             </div>
                                         </div>
 
-                                        {/* Part 3: Physical Item Verification & Barcodes */}
-                                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                                                    <Package className="w-4 h-4 text-emerald-600" /> 3. Received Items Verification & Inventory
-                                                </h4>
-                                                <span className="text-[11px] text-slate-500 font-medium">
-                                                    Serial scanning required for inventory & classroom issuance
-                                                </span>
-                                            </div>
-
-                                            <div className="space-y-3">
-                                                {requestDetail?.request?.items?.map((item, idx) => {
-                                                    const expected = editableQuantities[item.id] ?? item.quantity;
-                                                    const serials = receivedItems[item.id]?.serialNumbers || [];
-                                                    const verifiedQty = serials.length;
-                                                    const isVerified = expected > 0 && verifiedQty >= expected;
-                                                    const progressPercent = expected > 0 ? Math.min(100, Math.round((verifiedQty / expected) * 100)) : 0;
-
-                                                    return (
-                                                        <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs">
-                                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2.5">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-500 flex items-center justify-center shrink-0">{idx + 1}</span>
-                                                                    <div>
-                                                                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{item.itemName}</span>
-                                                                        <span className="text-[11px] text-slate-500 ml-1.5">(Expected: {expected} {item.unit || 'pcs'})</span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                                                                        isVerified
-                                                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                                                            : verifiedQty > 0
-                                                                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                                                                                : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                                                                    }`}>
-                                                                        {verifiedQty} / {expected} Scanned {isVerified ? '(Complete)' : verifiedQty > 0 ? '(Partial)' : '(Pending)'}
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => setScanningItemModal({
-                                                                            isOpen: true,
-                                                                            item,
-                                                                            expectedQty: expected
-                                                                        })}
-                                                                        className="btn btn-primary text-xs py-1 px-3 flex items-center gap-1.5 shadow-xs"
-                                                                    >
-                                                                        <ScanLine className="w-3.5 h-3.5" /> Scan / Verify Serials
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-
-                                                            {/* Verification Progress Bar */}
-                                                            <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden mb-2">
-                                                                <div
-                                                                    className={`h-full transition-all duration-300 ${isVerified ? 'bg-emerald-500' : 'bg-indigo-600'}`}
-                                                                    style={{ width: `${progressPercent}%` }}
-                                                                />
-                                                            </div>
-
-                                                            {serials.length > 0 ? (
-                                                                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                                                                    <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Recorded Serials:</span>
-                                                                    {serials.map((sn, i) => (
-                                                                        <span key={i} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] rounded-md border border-indigo-200 dark:border-indigo-800">
-                                                                            #{i + 1} {sn}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-[11px] text-slate-400 italic pt-1">
-                                                                    No serial numbers scanned yet. Click "Scan / Verify Serials" to open barcode scanning modal.
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
                                     </div>
 
                                     {/* Bottom Action Controls */}
@@ -7317,7 +7518,7 @@ Laboratory / IT Incharge`
                                             type="button"
                                             onClick={() => saveStepData(10)}
                                             disabled={!isStepComplete(10)}
-                                            title="Save Bill & Receipt Data"
+                                            title="Save Bill & Payment Data"
                                             className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
                                         >
                                             <Save className="w-5 h-5" />
@@ -7326,6 +7527,525 @@ Laboratory / IT Incharge`
                                             type="button"
                                             onClick={() => saveAndNext(10)}
                                             disabled={!isStepComplete(10)}
+                                            title="Save & Proceed to Received Items Verification"
+                                            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Step 11: Received Items Verification & Unboxing Inspection */}
+                            {workflowStep === 11 && (() => {
+                                const items = requestDetail?.request?.items || [];
+                                const totalExpected = items.reduce((acc, it) => acc + (editableQuantities[it.id] ?? it.quantity ?? 1), 0);
+                                const totalVerified = items.reduce((acc, it) => acc + (receivedItems[it.id]?.serialNumbers?.length || 0), 0);
+                                const allVerified = totalExpected > 0 && totalVerified >= totalExpected;
+
+                                return (
+                                    <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                            <div className="flex items-center gap-2.5">
+                                                <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                                                    <CheckCircle2 className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 11: Received Items Verification & Unboxing Inspection</h3>
+                                                    <p className="text-xs text-slate-500">Record physical condition, remarks, verify serial numbers, and attach unboxing inspection media.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Progression Gatekeeper Banner */}
+                                        <div className={`p-3.5 mb-4 rounded-xl border flex items-center justify-between gap-3 text-xs ${
+                                            allVerified
+                                                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-300'
+                                                : 'bg-amber-50/80 border-amber-200 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
+                                        }`}>
+                                            <div className="flex items-center gap-2">
+                                                {allVerified ? (
+                                                    <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                                                ) : (
+                                                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                                )}
+                                                <div>
+                                                    <span className="font-bold">
+                                                        {allVerified ? 'All Expected Items Verified' : 'Progression Gatekeeper Active'}
+                                                    </span>
+                                                    <p className="text-[11px] opacity-90 mt-0.5">
+                                                        {allVerified
+                                                            ? `All ${totalExpected} units across ${items.length} items have been received and verified with unique serial numbers. Ready for installation.`
+                                                            : `All expected units must be received and scanned before proceeding to Step 12 (Currently verified: ${totalVerified} of ${totalExpected} units).`}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="font-bold font-mono px-2.5 py-1 rounded-lg bg-white/80 dark:bg-slate-900/80 shrink-0 shadow-2xs">
+                                                {totalVerified} / {totalExpected} Units
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {/* Section 1: Item Inspection & Serial Verification */}
+                                            <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
+                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                    <Package className="w-4 h-4 text-indigo-600" /> Physical Item Condition & Serial Number Verification
+                                                </h4>
+
+                                                <div className="space-y-3">
+                                                    {items.map((item, idx) => {
+                                                        const expected = editableQuantities[item.id] ?? item.quantity;
+                                                        const serials = receivedItems[item.id]?.serialNumbers || [];
+                                                        const verifiedQty = serials.length;
+                                                        const isVerified = expected > 0 && verifiedQty >= expected;
+                                                        const progressPercent = expected > 0 ? Math.min(100, Math.round((verifiedQty / expected) * 100)) : 0;
+                                                        const currentCondition = receivedItems[item.id]?.condition || 'good';
+                                                        const currentRemarks = receivedItems[item.id]?.remarks || '';
+
+                                                        return (
+                                                            <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
+                                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-500 flex items-center justify-center shrink-0">{idx + 1}</span>
+                                                                        <div>
+                                                                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{item.itemName}</span>
+                                                                            <span className="text-[11px] text-slate-500 ml-1.5">(Expected: {expected} {item.unit || 'pcs'})</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                                                            isVerified
+                                                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                                                : verifiedQty > 0
+                                                                                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                                                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                                                                        }`}>
+                                                                            {verifiedQty} / {expected} Scanned {isVerified ? '(Complete)' : verifiedQty > 0 ? '(Partial)' : '(Pending)'}
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setScanningItemModal({
+                                                                                isOpen: true,
+                                                                                item,
+                                                                                expectedQty: expected
+                                                                            })}
+                                                                            className="btn btn-primary text-xs py-1 px-3 flex items-center gap-1.5 shadow-xs"
+                                                                        >
+                                                                            <ScanLine className="w-3.5 h-3.5" /> Scan / Verify Serials
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Progress Bar */}
+                                                                <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                                                                    <div
+                                                                        className={`h-full transition-all duration-300 ${isVerified ? 'bg-emerald-500' : 'bg-indigo-600'}`}
+                                                                        style={{ width: `${progressPercent}%` }}
+                                                                    />
+                                                                </div>
+
+                                                                {/* Item Condition & Remarks Row */}
+                                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                                                    <div>
+                                                                        <label className="text-[11px] font-semibold text-slate-500 block mb-1">Physical Condition *</label>
+                                                                        <select
+                                                                            className="input text-xs w-full py-1"
+                                                                            value={currentCondition}
+                                                                            onChange={e => {
+                                                                                const cond = e.target.value;
+                                                                                setReceivedItems(prev => ({
+                                                                                    ...prev,
+                                                                                    [item.id]: {
+                                                                                        ...(prev[item.id] || {}),
+                                                                                        condition: cond
+                                                                                    }
+                                                                                }));
+                                                                            }}
+                                                                        >
+                                                                            <option value="good">Brand New / Mint Condition</option>
+                                                                            <option value="functional">Good / Fully Functional</option>
+                                                                            <option value="minor_damage">Minor Cosmetic Scratches</option>
+                                                                            <option value="damaged">Damaged / Non-Functional (Action Req.)</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-[11px] font-semibold text-slate-500 block mb-1">Inspection Remarks</label>
+                                                                        <input
+                                                                            type="text"
+                                                                            className="input text-xs w-full py-1"
+                                                                            placeholder="e.g. Unboxed, inspected, tested working"
+                                                                            value={currentRemarks}
+                                                                            onChange={e => {
+                                                                                const rem = e.target.value;
+                                                                                setReceivedItems(prev => ({
+                                                                                    ...prev,
+                                                                                    [item.id]: {
+                                                                                        ...(prev[item.id] || {}),
+                                                                                        remarks: rem
+                                                                                    }
+                                                                                }));
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Serials Tag List */}
+                                                                {serials.length > 0 ? (
+                                                                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                                                                        <span className="text-[10px] uppercase font-bold text-slate-400 mr-1">Recorded Serials:</span>
+                                                                        {serials.map((sn, i) => (
+                                                                            <span key={i} className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-mono text-[10px] rounded-md border border-indigo-200 dark:border-indigo-800">
+                                                                                #{i + 1} {sn}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-[11px] text-slate-400 italic pt-0.5">
+                                                                        No serial numbers recorded yet. Click "Scan / Verify Serials" to record hardware barcodes.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Section 2: Unboxing Inspection Video / Photo (Optional) */}
+                                            <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                        <Video className="w-4 h-4 text-purple-600" /> Unboxing Video / Photo Proof (Optional)
+                                                    </h4>
+                                                    <span className="text-[11px] text-slate-500 font-medium">
+                                                        Max 10 seconds duration (video) &bull; Max 50MB
+                                                    </span>
+                                                </div>
+
+                                                <div className="space-y-3">
+                                                    <div>
+                                                        <input
+                                                            type="file"
+                                                            className="input text-xs w-full"
+                                                            accept="video/*,image/*"
+                                                            onChange={async (e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (!file) return;
+
+                                                                if (file.size > 50 * 1024 * 1024) {
+                                                                    toast.error('File size exceeds the 50MB limit');
+                                                                    e.target.value = '';
+                                                                    return;
+                                                                }
+
+                                                                const isVideo = file.type.startsWith('video/');
+
+                                                                if (isVideo) {
+                                                                    const videoEl = document.createElement('video');
+                                                                    videoEl.preload = 'metadata';
+                                                                    videoEl.onloadedmetadata = async () => {
+                                                                        window.URL.revokeObjectURL(videoEl.src);
+                                                                        if (videoEl.duration > 10.5) {
+                                                                            toast.error(`Video is ${Math.round(videoEl.duration)}s. Maximum allowed duration is 10 seconds.`);
+                                                                            e.target.value = '';
+                                                                            return;
+                                                                        }
+                                                                        setUnboxingMediaFile(file);
+                                                                        setUnboxingMediaType('video');
+                                                                        if (selectedRequest?.id) {
+                                                                            try {
+                                                                                setIsUploadingUnboxingMedia(true);
+                                                                                const upRes = await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'receivingVideo', file);
+                                                                                if (upRes.data?.data?.url) {
+                                                                                    setUnboxingMediaUrl(upRes.data.data.url);
+                                                                                    toast.success('Unboxing video attached successfully');
+                                                                                    await openRequestDetail(selectedRequest, true);
+                                                                                }
+                                                                            } catch (upErr) {
+                                                                                toast.error('Unboxing video upload failed');
+                                                                            } finally {
+                                                                                setIsUploadingUnboxingMedia(false);
+                                                                            }
+                                                                        }
+                                                                    };
+                                                                    videoEl.src = URL.createObjectURL(file);
+                                                                } else {
+                                                                    setUnboxingMediaFile(file);
+                                                                    setUnboxingMediaType('image');
+                                                                    if (selectedRequest?.id) {
+                                                                        try {
+                                                                            setIsUploadingUnboxingMedia(true);
+                                                                            const upRes = await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'receivingVideo', file);
+                                                                            if (upRes.data?.data?.url) {
+                                                                                setUnboxingMediaUrl(upRes.data.data.url);
+                                                                                toast.success('Unboxing photo attached successfully');
+                                                                                await openRequestDetail(selectedRequest, true);
+                                                                            }
+                                                                        } catch (upErr) {
+                                                                            toast.error('Unboxing photo upload failed');
+                                                                        } finally {
+                                                                            setIsUploadingUnboxingMedia(false);
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                    </div>
+
+                                                    {/* Uploading progress spinner */}
+                                                    {isUploadingUnboxingMedia && (
+                                                        <div className="flex items-center gap-2 text-xs text-indigo-600 py-1">
+                                                            <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                                            <span>Uploading unboxing inspection media to cloud...</span>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Media preview */}
+                                                    {(unboxingMediaUrl || unboxingMediaFile) && !isUploadingUnboxingMedia && (
+                                                        <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+                                                            <div className="flex items-center justify-between text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                                                <span>✓ Unboxing Proof Attached ({unboxingMediaType === 'video' ? 'Video ≤10s' : 'Photo'})</span>
+                                                                {unboxingMediaUrl && (
+                                                                    <a href={unboxingMediaUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                                        <ExternalLink className="w-3 h-3" /> View Original
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            <div className="w-full max-h-72 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-950 flex items-center justify-center">
+                                                                {unboxingMediaType === 'video' || (unboxingMediaUrl && (unboxingMediaUrl.endsWith('.mp4') || unboxingMediaUrl.endsWith('.webm') || unboxingMediaUrl.endsWith('.mov'))) ? (
+                                                                    <video
+                                                                        src={unboxingMediaUrl || (unboxingMediaFile ? URL.createObjectURL(unboxingMediaFile) : '')}
+                                                                        controls
+                                                                        className="w-full max-h-64 object-contain"
+                                                                    />
+                                                                ) : (
+                                                                    <img
+                                                                        src={unboxingMediaUrl || (unboxingMediaFile ? URL.createObjectURL(unboxingMediaFile) : '')}
+                                                                        alt="Unboxing Proof"
+                                                                        className="w-full max-h-64 object-contain"
+                                                                    />
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Bottom Action Controls */}
+                                        <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+                                            <button
+                                                type="button"
+                                                onClick={() => setWorkflowStep(10)}
+                                                title="Back to Bill & Payment"
+                                                className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
+                                            >
+                                                <ChevronLeft className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => saveStepData(11)}
+                                                disabled={!isStepComplete(11)}
+                                                title="Save Item Verification Data"
+                                                className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                            >
+                                                <Save className="w-5 h-5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => saveAndNext(11)}
+                                                disabled={!isStepComplete(11)}
+                                                title="Save & Proceed to Installation & Storage"
+                                                className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                            >
+                                                <ChevronRight className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Step 12: Installation & Storage Verification */}
+                            {workflowStep === 12 && (
+                                <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
+                                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400">
+                                                <Wrench className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 12: Installation & Storage Verification</h3>
+                                                <p className="text-xs text-slate-500">Document the physical location, lab room, rack allocation, technician sign-off, and site photo before classroom issuance.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
+                                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                <Building className="w-4 h-4 text-amber-600" /> Physical Location & Installation Particulars
+                                            </h4>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Location Type *</label>
+                                                    <select
+                                                        className="input text-xs w-full"
+                                                        value={installationLocationType}
+                                                        onChange={e => setInstallationLocationType(e.target.value)}
+                                                    >
+                                                        <option value="Computer Lab">Computer Lab</option>
+                                                        <option value="Physics / Chemistry Lab">Physics / Chemistry Lab</option>
+                                                        <option value="Server Room">Central Server Room</option>
+                                                        <option value="Hardware Vault / Storage">Hardware Vault / Storage</option>
+                                                        <option value="Classroom">Classroom</option>
+                                                        <option value="Library / Office">Library / Administrative Office</option>
+                                                    </select>
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Location / Lab Name *</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. Senior Computer Lab 1"
+                                                        value={installationLocationName}
+                                                        onChange={e => setInstallationLocationName(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Room / Hall Number</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. Lab 102 / Room 204"
+                                                        value={installationRoomNumber}
+                                                        onChange={e => setInstallationRoomNumber(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Rack / Shelf / Cabinet Allocation</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. Server Rack 2, Shelf B"
+                                                        value={installationRackShelf}
+                                                        onChange={e => setInstallationRackShelf(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Technician / Custodian Name</label>
+                                                    <input
+                                                        type="text"
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. Charanpreet Singh (Lab Asst.)"
+                                                        value={installationTechnicianName}
+                                                        onChange={e => setInstallationTechnicianName(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Installation Date</label>
+                                                    <input
+                                                        type="date"
+                                                        className="input text-xs w-full"
+                                                        value={installationDate}
+                                                        onChange={e => setInstallationDate(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div className="md:col-span-3">
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Installation / Commissioning Remarks</label>
+                                                    <textarea
+                                                        rows={2}
+                                                        className="input text-xs w-full"
+                                                        placeholder="e.g. Systems mounted, network jacks connected, power on test completed successfully."
+                                                        value={installationNotes}
+                                                        onChange={e => setInstallationNotes(e.target.value)}
+                                                    />
+                                                </div>
+
+                                                <div className="md:col-span-3">
+                                                    <label className="text-xs font-semibold text-slate-600 dark:text-slate-400 block mb-1">Upload Installation / Storage Site Photo</label>
+                                                    <input
+                                                        type="file"
+                                                        className="input text-xs w-full"
+                                                        accept="image/*"
+                                                        onChange={async (e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file && selectedRequest?.id) {
+                                                                setInstallationPhotoFile(file);
+                                                                try {
+                                                                    setIsUploadingInstallationPhoto(true);
+                                                                    const res = await uploadAPI.uploadProcurementDoc(selectedRequest.id, 'installationPhoto', file);
+                                                                    if (res.data?.data?.url) {
+                                                                        setInstallationPhotoUrl(res.data.data.url);
+                                                                        toast.success('Installation site photo uploaded successfully');
+                                                                        await openRequestDetail(selectedRequest, true);
+                                                                    }
+                                                                } catch (err) {
+                                                                    toast.error('Installation photo upload failed');
+                                                                } finally {
+                                                                    setIsUploadingInstallationPhoto(false);
+                                                                }
+                                                            }
+                                                        }}
+                                                    />
+                                                    {isUploadingInstallationPhoto && (
+                                                        <div className="flex items-center gap-2 text-xs text-indigo-600 mt-2">
+                                                            <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                                            <span>Uploading installation photo...</span>
+                                                        </div>
+                                                    )}
+                                                    {(installationPhotoUrl || installationPhotoFile) && !isUploadingInstallationPhoto && (
+                                                        <div className="space-y-1.5 mt-2">
+                                                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center justify-between">
+                                                                <span>✓ Installation Site Photo Attached</span>
+                                                                {installationPhotoUrl && (
+                                                                    <a href={installationPhotoUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline flex items-center gap-1">
+                                                                        <ExternalLink className="w-3 h-3" /> Full View
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                            <div className="w-full h-64 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 flex items-center justify-center">
+                                                                <img
+                                                                    src={installationPhotoUrl || (installationPhotoFile ? URL.createObjectURL(installationPhotoFile) : '')}
+                                                                    alt="Installation Proof"
+                                                                    className="w-full h-full object-contain"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Bottom Action Controls */}
+                                    <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setWorkflowStep(11)}
+                                            title="Back to Item Verification"
+                                            className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
+                                        >
+                                            <ChevronLeft className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveStepData(12)}
+                                            disabled={!isStepComplete(12)}
+                                            title="Save Installation Verification Data"
+                                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
+                                        >
+                                            <Save className="w-5 h-5" />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => saveAndNext(12)}
+                                            disabled={!isStepComplete(12)}
                                             title="Save & Proceed to Classroom Issuance"
                                             className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
                                         >
@@ -7335,8 +8055,8 @@ Laboratory / IT Incharge`
                                 </div>
                             )}
 
-                            {/* Step 11: Classroom & Lab Hardware Issuance */}
-                            {workflowStep === 11 && (
+                            {/* Step 13: Classroom & Lab Hardware Issuance */}
+                            {workflowStep === 13 && (
                                 <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-2.5">
@@ -7344,7 +8064,7 @@ Laboratory / IT Incharge`
                                                 <Building2 className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 11: Classroom & Lab Hardware Issuance</h3>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 13: Classroom & Lab Hardware Issuance</h3>
                                                 <p className="text-xs text-slate-500">Assign hardware to classrooms/labs, auto-populate assigned Incharge, record serial numbers, and generate Classroom Loan Vouchers.</p>
                                             </div>
                                         </div>
@@ -7404,15 +8124,15 @@ Laboratory / IT Incharge`
                                                     <div className="max-w-md mx-auto">
                                                         <h5 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-1">No Hardware Units Verified Yet</h5>
                                                         <p className="text-xs text-slate-500">
-                                                            Classroom and lab assignment requires physical hardware units with verified serial numbers. Please scan or record serial numbers in Step 10 (Item Verification & Inventory) to enable classroom assignment.
+                                                            Classroom and lab assignment requires physical hardware units with verified serial numbers. Please scan or record serial numbers in Step 11 (Item Verification & Inventory) to enable classroom assignment.
                                                         </p>
                                                     </div>
                                                     <button
                                                         type="button"
-                                                        onClick={() => setWorkflowStep(10)}
+                                                        onClick={() => setWorkflowStep(11)}
                                                         className="btn btn-primary text-xs py-2 px-4 inline-flex items-center gap-1.5 shadow-xs"
                                                     >
-                                                        <ScanLine className="w-4 h-4" /> Go to Step 10 (Scan Serials)
+                                                        <ScanLine className="w-4 h-4" /> Go to Step 11 (Scan Serials)
                                                     </button>
                                                 </div>
                                             ) : (
@@ -7523,16 +8243,16 @@ Laboratory / IT Incharge`
                                     <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                                         <button
                                             type="button"
-                                            onClick={() => setWorkflowStep(10)}
-                                            title="Back to Bill & Receipt"
+                                            onClick={() => setWorkflowStep(12)}
+                                            title="Back to Installation & Storage"
                                             className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
                                         >
                                             <ChevronLeft className="w-5 h-5" />
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => saveStepData(11)}
-                                            disabled={!isStepComplete(11)}
+                                            onClick={() => saveStepData(13)}
+                                            disabled={!isStepComplete(13)}
                                             title="Save Classroom Issuance Data"
                                             className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
                                         >
@@ -7540,8 +8260,8 @@ Laboratory / IT Incharge`
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => saveAndNext(11)}
-                                            disabled={!isStepComplete(11)}
+                                            onClick={() => saveAndNext(13)}
+                                            disabled={!isStepComplete(13)}
                                             title="Save & Proceed to Process Docket"
                                             className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition shadow-xs"
                                         >
@@ -7551,8 +8271,8 @@ Laboratory / IT Incharge`
                                 </div>
                             )}
 
-                            {/* Step 12: Process Docket & Full PDF Preview */}
-                            {workflowStep === 12 && (
+                            {/* Step 14: Process Docket & Full PDF Preview */}
+                            {workflowStep === 14 && (
                                 <div className="mb-6 p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center gap-2.5">
@@ -7560,7 +8280,7 @@ Laboratory / IT Incharge`
                                                 <Eye className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 12: Process Docket & Full PDF Preview</h3>
+                                                <h3 className="font-bold text-slate-900 dark:text-slate-100">Step 14: Process Docket & Full PDF Preview</h3>
                                                 <p className="text-xs text-slate-500">Unified A4 document combining all stages: Requirement Letter, Committee, Call Quotations, Comparative, Net Amount, Proceedings, Purchase Order, and Loan Voucher.</p>
                                             </div>
                                         </div>
@@ -7614,7 +8334,7 @@ Laboratory / IT Incharge`
                                     <div className="flex justify-end gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                                         <button
                                             type="button"
-                                            onClick={() => setWorkflowStep(11)}
+                                            onClick={() => setWorkflowStep(13)}
                                             title="Back to Classroom Issuance"
                                             className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition shadow-xs"
                                         >
@@ -7622,7 +8342,7 @@ Laboratory / IT Incharge`
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => saveStepData(12)}
+                                            onClick={() => saveStepData(14)}
                                             title="Save Docket State"
                                             className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 transition shadow-xs"
                                         >
@@ -7631,7 +8351,7 @@ Laboratory / IT Incharge`
                                         <button
                                             type="button"
                                             onClick={async () => {
-                                                await saveStepData(12);
+                                                await saveStepData(14);
                                                 toast.success('Procurement workflow finalized and completed!');
                                                 setSelectedRequest(null);
                                                 loadData();
@@ -7852,7 +8572,7 @@ Laboratory / IT Incharge`
                 }}
             />
 
-            {/* Scanning Item Modal for Received Hardware Verification (Step 10) */}
+            {/* Scanning Item Modal for Received Hardware Verification (Step 11) */}
             <ScanningItemModal
                 key={scanningItemModal.item?.id || 'scanning-item-modal'}
                 isOpen={scanningItemModal.isOpen}
@@ -7860,6 +8580,7 @@ Laboratory / IT Incharge`
                 expectedQty={scanningItemModal.expectedQty}
                 initialSerials={scanningItemModal.item ? (receivedItems[scanningItemModal.item.id]?.serialNumbers || []) : []}
                 initialRemarks={scanningItemModal.item ? (receivedItems[scanningItemModal.item.id]?.remarks || '') : ''}
+                initialCondition={scanningItemModal.item ? (receivedItems[scanningItemModal.item.id]?.condition || 'good') : 'good'}
                 onClose={() => setScanningItemModal({ isOpen: false, item: null, expectedQty: 1 })}
                 onSave={({ serialNumbers, receivedCount, remarks, condition }) => {
                     if (scanningItemModal.item) {

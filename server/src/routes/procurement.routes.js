@@ -344,7 +344,7 @@ router.post('/requests', authenticate, authorize('admin', 'principal', 'lab_assi
  * @desc    Update procurement request
  */
 router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
-    const { title, description, purpose, department, budgetCode, memoVideNo, proceedingsDate, status } = req.body;
+    const { title, description, purpose, department, budgetCode, memoVideNo, proceedingsDate, status, receivingNotes, receivingVideoUrl, currentStep } = req.body;
 
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -355,6 +355,32 @@ router.put('/requests/:id', authenticate, asyncHandler(async (req, res) => {
     if (memoVideNo !== undefined) updateData.memoVideNo = memoVideNo;
     if (proceedingsDate !== undefined) updateData.proceedingsDate = new Date(proceedingsDate);
     if (status !== undefined) updateData.status = status;
+    if (receivingVideoUrl !== undefined) updateData.receivingVideoUrl = receivingVideoUrl;
+    if (currentStep !== undefined) updateData.currentStep = parseInt(currentStep) || 1;
+
+    if (receivingNotes !== undefined) {
+        const currentReq = await prisma.procurementRequest.findUnique({
+            where: { id: req.params.id },
+            select: { receivingNotes: true }
+        });
+        let existingObj = {};
+        try {
+            existingObj = currentReq?.receivingNotes ? JSON.parse(currentReq.receivingNotes) : {};
+        } catch (e) {
+            existingObj = { text: currentReq?.receivingNotes || '' };
+        }
+        let incomingObj = {};
+        if (typeof receivingNotes === 'object') {
+            incomingObj = receivingNotes;
+        } else {
+            try {
+                incomingObj = JSON.parse(receivingNotes);
+            } catch (e) {
+                incomingObj = { text: receivingNotes };
+            }
+        }
+        updateData.receivingNotes = JSON.stringify({ ...existingObj, ...incomingObj });
+    }
 
 
     const request = await prisma.procurementRequest.update({
@@ -1060,15 +1086,43 @@ router.put('/requests/:id/receive', authenticate, asyncHandler(async (req, res) 
         }
     }
 
+    // Merge receivingNotes safely
+    let finalReceivingNotes = receivingNotes;
+    if (receivingNotes !== undefined) {
+        const currentReq = await prisma.procurementRequest.findUnique({
+            where: { id: req.params.id },
+            select: { receivingNotes: true }
+        });
+        let existingObj = {};
+        try {
+            existingObj = currentReq?.receivingNotes ? JSON.parse(currentReq.receivingNotes) : {};
+        } catch (e) {
+            existingObj = { text: currentReq?.receivingNotes || '' };
+        }
+        let incomingObj = {};
+        if (typeof receivingNotes === 'object') {
+            incomingObj = receivingNotes;
+        } else {
+            try {
+                incomingObj = JSON.parse(receivingNotes);
+            } catch (e) {
+                incomingObj = { text: receivingNotes };
+            }
+        }
+        finalReceivingNotes = JSON.stringify({ ...existingObj, ...incomingObj });
+    }
+
+    const updateData = {
+        status: 'received',
+        receivedAt: new Date(),
+        receivedById: req.user.id
+    };
+    if (receivingVideoUrl !== undefined) updateData.receivingVideoUrl = receivingVideoUrl;
+    if (finalReceivingNotes !== undefined) updateData.receivingNotes = finalReceivingNotes;
+
     const request = await prisma.procurementRequest.update({
         where: { id: req.params.id },
-        data: {
-            status: 'received',
-            receivedAt: new Date(),
-            receivedById: req.user.id,
-            receivingVideoUrl,
-            receivingNotes
-        }
+        data: updateData
     });
 
     res.json({ success: true, data: request, message: 'Marked as received' });
@@ -1353,12 +1407,27 @@ router.post('/requests/:id/classroom-issuance', authenticate, authorize('admin',
         }
     }
 
+    // Persist classroom issuances and vouchers on the procurement request
+    const currentReq = await prisma.procurementRequest.findUnique({
+        where: { id: requestId },
+        select: { receivingNotes: true }
+    });
+    let existingNotes = {};
+    try {
+        existingNotes = currentReq?.receivingNotes ? JSON.parse(currentReq.receivingNotes) : {};
+    } catch (e) {
+        existingNotes = { text: currentReq?.receivingNotes || '' };
+    }
+    existingNotes.classroomAssignments = issuances;
+    existingNotes.issuedVouchers = createdVouchers;
+
     // Mark request as completed
     await prisma.procurementRequest.update({
         where: { id: requestId },
         data: {
             status: 'completed',
-            currentStep: 12
+            currentStep: 14,
+            receivingNotes: JSON.stringify(existingNotes)
         }
     });
 

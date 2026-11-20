@@ -58,6 +58,16 @@ router.get('/', authenticate, asyncHandler(async (req, res) => {
             classTeacher: {
                 select: { id: true, firstName: true, lastName: true }
             },
+            incharges: {
+                include: {
+                    staff: {
+                        select: { id: true, firstName: true, lastName: true, email: true, phone: true }
+                    }
+                }
+            },
+            classrooms: {
+                select: { id: true, roomNumber: true, roomName: true, capacity: true }
+            },
             academicYear: {
                 select: { yearLabel: true, isCurrent: true }
             },
@@ -84,6 +94,16 @@ router.get('/:id', authenticate, asyncHandler(async (req, res) => {
         include: {
             classTeacher: {
                 select: { id: true, firstName: true, lastName: true, email: true }
+            },
+            incharges: {
+                include: {
+                    staff: {
+                        select: { id: true, firstName: true, lastName: true, email: true, phone: true }
+                    }
+                }
+            },
+            classrooms: {
+                select: { id: true, roomNumber: true, roomName: true, capacity: true }
             },
             academicYear: true,
             classSubjects: {

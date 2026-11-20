@@ -468,6 +468,29 @@ export default function ClassDetailPage() {
                                         </span>
                                     )}
                                 </div>
+                                {classData.incharges && classData.incharges.length > 0 && (
+                                    <div className="mt-3 p-3 bg-indigo-50/80 rounded-xl border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-1.5 rounded-lg bg-indigo-100 text-indigo-700">
+                                                <GraduationCap className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-900">
+                                                    Class Incharge: {classData.incharges[0].staff ? `${classData.incharges[0].staff.firstName} ${classData.incharges[0].staff.lastName}` : 'Assigned Incharge'}
+                                                    <span className="text-slate-500 font-normal ml-1.5">({classData.incharges[0].designation || 'Class Incharge / PGT'})</span>
+                                                </p>
+                                                {classData.incharges[0].staff?.email && (
+                                                    <p className="text-[11px] text-slate-500">{classData.incharges[0].staff.email}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {(classData.incharges[0].roomNumber || classData.classrooms?.[0]?.roomNumber) && (
+                                            <span className="px-2.5 py-1 bg-white font-mono font-bold text-indigo-700 text-xs rounded-lg border border-indigo-200 shadow-2xs self-start sm:self-auto">
+                                                Room {classData.incharges[0].roomNumber || classData.classrooms?.[0]?.roomNumber}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

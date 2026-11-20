@@ -324,8 +324,13 @@ export default function ClassesPage() {
                                                 {cls.section && <span className="text-xs ml-0.5">{cls.section}</span>}
                                             </div>
                                             <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                                {(cls.classrooms?.[0]?.roomNumber || cls.incharges?.[0]?.roomNumber) && (
+                                                    <span className="text-[11px] font-bold text-indigo-700 dark:text-indigo-300 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg border border-indigo-200 dark:border-indigo-800 font-mono">
+                                                        Room {cls.classrooms?.[0]?.roomNumber || cls.incharges?.[0]?.roomNumber}
+                                                    </span>
+                                                )}
                                                 {cls.academicYear?.yearLabel && (
-                                                    <span className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg border border-indigo-200 dark:border-indigo-800 font-mono">
+                                                    <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg border border-emerald-200 dark:border-emerald-800 font-mono">
                                                         {cls.academicYear.yearLabel}
                                                     </span>
                                                 )}
@@ -352,10 +357,38 @@ export default function ClassesPage() {
                                             )}
                                         </div>
 
-                                        {cls.classTeacher && (
-                                            <p className="text-xs text-slate-600 dark:text-slate-300">
-                                                <span className="font-bold text-slate-700 dark:text-slate-200">{t('classes.teacher')}:</span> {cls.classTeacher.firstName} {cls.classTeacher.lastName}
-                                            </p>
+                                        {cls.incharges && cls.incharges.length > 0 ? (
+                                            <div className="mt-2.5 p-2.5 bg-indigo-50/70 dark:bg-indigo-950/30 rounded-xl border border-indigo-100 dark:border-indigo-900/60">
+                                                <div className="flex items-center justify-between gap-1 mb-1">
+                                                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 flex items-center gap-1">
+                                                        <GraduationCap className="w-3.5 h-3.5 text-indigo-600" /> Class Incharge
+                                                    </span>
+                                                    {(cls.incharges[0].roomNumber || cls.classrooms?.[0]?.roomNumber) && (
+                                                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                            Room {cls.incharges[0].roomNumber || cls.classrooms?.[0]?.roomNumber}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                    {cls.incharges[0].staff ? `${cls.incharges[0].staff.firstName} ${cls.incharges[0].staff.lastName}` : 'Assigned Incharge'}
+                                                </p>
+                                                <p className="text-[10px] text-slate-500">
+                                                    {cls.incharges[0].designation || 'Class Incharge / PGT'}
+                                                </p>
+                                            </div>
+                                        ) : cls.classTeacher ? (
+                                            <div className="mt-2.5 p-2 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between">
+                                                <span className="flex items-center gap-1.5 font-medium">
+                                                    <Users className="w-3.5 h-3.5 text-slate-400" />
+                                                    <span className="font-bold text-slate-700 dark:text-slate-200">{t('classes.teacher')}:</span>
+                                                    <span>{cls.classTeacher.firstName} {cls.classTeacher.lastName}</span>
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2.5 p-2 bg-slate-50/70 dark:bg-slate-800/40 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-[11px] text-slate-400 flex items-center gap-1.5 italic">
+                                                <AlertCircle className="w-3 h-3 text-slate-400 shrink-0" />
+                                                <span>No Incharge assigned</span>
+                                            </div>
                                         )}
                                     </div>
 
