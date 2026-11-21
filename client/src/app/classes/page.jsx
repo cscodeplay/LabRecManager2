@@ -42,6 +42,8 @@ export default function ClassesPage() {
         section: '',
         stream: 'General',
         classTeacherId: '',
+        designation: 'Class Incharge / PGT',
+        roomNumber: '',
         maxStudents: 60
     });
     const [saving, setSaving] = useState(false);
@@ -70,7 +72,7 @@ export default function ClassesPage() {
 
     const loadInstructors = async () => {
         try {
-            const res = await api.get('/users', { params: { role: 'instructor', limit: 200 } });
+            const res = await api.get('/users', { params: { role: 'staff', limit: 200 } });
             setInstructors(res.data?.data?.users || []);
         } catch {
             // quiet
@@ -80,13 +82,16 @@ export default function ClassesPage() {
     const handleOpenEditModal = (cls, e) => {
         e?.stopPropagation?.();
         setEditingClass(cls);
+        const primaryIncharge = cls.incharges?.[0];
         setEditForm({
             name: cls.name || '',
             nameHindi: cls.nameHindi || '',
             gradeLevel: cls.gradeLevel || 1,
             section: cls.section || '',
             stream: cls.stream || 'General',
-            classTeacherId: cls.classTeacher?.id || cls.classTeacherId || '',
+            classTeacherId: cls.classTeacher?.id || primaryIncharge?.staffId || cls.classTeacherId || '',
+            designation: primaryIncharge?.designation || 'Class Incharge / PGT',
+            roomNumber: primaryIncharge?.roomNumber || cls.classrooms?.[0]?.roomNumber || '',
             maxStudents: cls.maxStudents || 60
         });
         setShowEditModal(true);
@@ -109,6 +114,9 @@ export default function ClassesPage() {
                 section: editForm.section?.trim() || null,
                 stream: editForm.stream || 'General',
                 classTeacherId: editForm.classTeacherId || null,
+                inchargeStaffId: editForm.classTeacherId || null,
+                designation: editForm.designation?.trim() || 'Class Incharge / PGT',
+                roomNumber: editForm.roomNumber?.trim() || null,
                 maxStudents: parseInt(editForm.maxStudents, 10) || 60
             });
             toast.success('Class updated successfully', { icon: '✓' });
@@ -565,20 +573,47 @@ export default function ClassesPage() {
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
-                                    Class Teacher
+                                    Class Incharge / Teacher
                                 </label>
                                 <select
-                                    className="select text-sm"
+                                    className="select text-sm w-full"
                                     value={editForm.classTeacherId}
                                     onChange={(e) => setEditForm({ ...editForm, classTeacherId: e.target.value })}
                                 >
-                                    <option value="">No class teacher assigned</option>
+                                    <option value="">No class incharge / teacher assigned</option>
                                     {instructors.map(ins => (
                                         <option key={ins.id} value={ins.id}>
-                                            {ins.firstName} {ins.lastName} ({ins.email})
+                                            {ins.firstName} {ins.lastName} ({ins.role?.replace('_', ' ').toUpperCase()} • {ins.email})
                                         </option>
                                     ))}
                                 </select>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                                        Designation
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="input text-sm"
+                                        value={editForm.designation}
+                                        onChange={(e) => setEditForm({ ...editForm, designation: e.target.value })}
+                                        placeholder="e.g. Class Incharge / PGT"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                                        Room Number
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="input text-sm"
+                                        value={editForm.roomNumber}
+                                        onChange={(e) => setEditForm({ ...editForm, roomNumber: e.target.value })}
+                                        placeholder="e.g. 5, 10, 11"
+                                    />
+                                </div>
                             </div>
 
                             <div>

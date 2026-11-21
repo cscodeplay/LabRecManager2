@@ -57,7 +57,7 @@ export default function CreateClassPage() {
         try {
             const [yearsRes, usersRes] = await Promise.all([
                 api.get('/academic-years'),
-                api.get('/users?role=instructor&limit=100')
+                api.get('/users?role=staff&limit=100')
             ]);
 
             const years = yearsRes.data.data.academicYears || [];
@@ -293,7 +293,7 @@ export default function CreateClassPage() {
                                     <option value="">{t('classes.selectTeacher')}</option>
                                     {instructors.map(instructor => (
                                         <option key={instructor.id} value={instructor.id}>
-                                            {instructor.firstName} {instructor.lastName}
+                                            {instructor.firstName} {instructor.lastName} ({instructor.role?.replace('_', ' ').toUpperCase()})
                                         </option>
                                     ))}
                                 </select>

@@ -240,7 +240,8 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
     const { id } = req.params;
     const {
         name, nameHindi, gradeLevel, section, stream,
-        academicYearId, classTeacherId, maxStudents
+        academicYearId, classTeacherId, maxStudents,
+        inchargeStaffId, designation, roomNumber
     } = req.body;
 
     const existingClass = await prisma.class.findFirst({
@@ -257,6 +258,9 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
         });
     }
 
+    // Determine target teacher/incharge staff ID
+    const effectiveStaffId = inchargeStaffId !== undefined ? (inchargeStaffId || null) : (classTeacherId !== undefined ? (classTeacherId || null) : undefined);
+
     const updatedClass = await prisma.class.update({
         where: { id },
         data: {
@@ -266,12 +270,96 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
             ...(section !== undefined && { section }),
             ...(stream !== undefined && { stream }),
             ...(academicYearId !== undefined && { academicYearId }),
-            ...(classTeacherId !== undefined && { classTeacherId: classTeacherId || null }),
+            ...(effectiveStaffId !== undefined ? { classTeacherId: effectiveStaffId } : (classTeacherId !== undefined && { classTeacherId: classTeacherId || null })),
             ...(maxStudents !== undefined && { maxStudents: parseInt(maxStudents, 10) || 60 })
         },
         include: {
             classTeacher: {
                 select: { id: true, firstName: true, lastName: true, email: true }
+            },
+            incharges: {
+                include: {
+                    staff: {
+                        select: { id: true, firstName: true, lastName: true, email: true, phone: true }
+                    }
+                }
+            },
+            classrooms: {
+                select: { id: true, roomNumber: true, roomName: true, capacity: true }
+            },
+            academicYear: {
+                select: { id: true, yearLabel: true, isCurrent: true }
+            },
+            _count: {
+                select: { enrollments: true, groups: true }
+            }
+        }
+    });
+
+    // Synchronize class_incharges table
+    if (effectiveStaffId !== undefined) {
+        if (effectiveStaffId) {
+            const existingIncharge = await prisma.classIncharge.findFirst({
+                where: { classId: id, isPrimary: true }
+            });
+            if (existingIncharge) {
+                await prisma.classIncharge.update({
+                    where: { id: existingIncharge.id },
+                    data: {
+                        staffId: effectiveStaffId,
+                        ...(designation !== undefined && { designation: designation?.trim() || 'Class Incharge / PGT' }),
+                        ...(roomNumber !== undefined && { roomNumber: String(roomNumber).trim() })
+                    }
+                });
+            } else {
+                await prisma.classIncharge.create({
+                    data: {
+                        schoolId: existingClass.schoolId,
+                        academicYearId: existingClass.academicYearId,
+                        classId: id,
+                        staffId: effectiveStaffId,
+                        designation: designation?.trim() || 'Class Incharge / PGT',
+                        roomNumber: roomNumber ? String(roomNumber).trim() : null,
+                        isPrimary: true
+                    }
+                });
+            }
+        } else {
+            await prisma.classIncharge.deleteMany({
+                where: { classId: id, isPrimary: true }
+            });
+        }
+    } else if (designation !== undefined || roomNumber !== undefined) {
+        const existingIncharge = await prisma.classIncharge.findFirst({
+            where: { classId: id, isPrimary: true }
+        });
+        if (existingIncharge) {
+            await prisma.classIncharge.update({
+                where: { id: existingIncharge.id },
+                data: {
+                    ...(designation !== undefined && { designation: designation?.trim() || 'Class Incharge / PGT' }),
+                    ...(roomNumber !== undefined && { roomNumber: String(roomNumber).trim() })
+                }
+            });
+        }
+    }
+
+    // Refresh updated class with latest incharges
+    const finalClass = await prisma.class.findUnique({
+        where: { id },
+        include: {
+            classTeacher: {
+                select: { id: true, firstName: true, lastName: true, email: true }
+            },
+            incharges: {
+                include: {
+                    staff: {
+                        select: { id: true, firstName: true, lastName: true, email: true, phone: true }
+                    }
+                }
+            },
+            classrooms: {
+                select: { id: true, roomNumber: true, roomName: true, capacity: true }
             },
             academicYear: {
                 select: { id: true, yearLabel: true, isCurrent: true }
@@ -286,7 +374,7 @@ router.put('/:id', authenticate, authorize('admin', 'principal'), asyncHandler(a
         success: true,
         message: 'Class updated successfully',
         messageHindi: 'कक्षा सफलतापूर्वक अपडेट की गई',
-        data: { class: updatedClass }
+        data: { class: finalClass }
     });
 }));
 

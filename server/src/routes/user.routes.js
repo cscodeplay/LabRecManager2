@@ -22,7 +22,15 @@ router.get('/', authenticate, authorize('admin', 'principal', 'instructor'), asy
 
     let where = { ...(req.user.schoolId && { schoolId: req.user.schoolId }) };
 
-    if (role) where.role = role;
+    if (role) {
+        if (role === 'staff') {
+            where.role = { not: 'student' };
+        } else if (role.includes(',')) {
+            where.role = { in: role.split(',').map(r => r.trim()) };
+        } else {
+            where.role = role;
+        }
+    }
     if (isActive !== undefined) where.isActive = isActive === 'true';
 
     // Access & Password status filtering
