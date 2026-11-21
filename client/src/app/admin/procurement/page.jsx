@@ -21,6 +21,9 @@ import ScanningItemModal from '@/components/ScanningItemModal';
 import VoiceInputButton from '@/components/VoiceInputButton';
 import LabInfrastructureTabs from '@/components/LabInfrastructureTabs';
 import EditorFormatBar from '@/components/EditorFormatBar';
+import InlineRichWordEditor from '@/components/InlineRichWordEditor';
+import GemGoldenParametersEditor, { ITEM_TYPE_CONFIG } from '@/components/GemGoldenParametersEditor';
+import LabInventoryPickerModal from '@/components/LabInventoryPickerModal';
 import toast from 'react-hot-toast';
 import { formatDate } from '@/lib/dateUtils';
 
@@ -114,10 +117,12 @@ export default function ProcurementPage() {
     // Step 7: Editable quantities
     const [editableQuantities, setEditableQuantities] = useState({}); // { itemId: quantity }
 
-    // Step 3: New item form & edit state
-    const [newItemForm, setNewItemForm] = useState({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+    // Step 3: New item form & edit state with GeM Golden Parameters and Lab Inventory Linking
+    const [newItemForm, setNewItemForm] = useState({ itemName: '', itemType: 'pc', specifications: '', warranty: '1', quantity: 1, unit: 'pcs', estimatedUnitPrice: '', goldenParameters: {}, inventoryItemId: null });
     const [editingItemId, setEditingItemId] = useState(null);
-    const [editingItemForm, setEditingItemForm] = useState({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+    const [editingItemForm, setEditingItemForm] = useState({ itemName: '', itemType: 'pc', specifications: '', warranty: '1', quantity: 1, unit: 'pcs', estimatedUnitPrice: '', goldenParameters: {}, inventoryItemId: null });
+    const [showInventoryPicker, setShowInventoryPicker] = useState(false);
+    const [inventoryPickerTarget, setInventoryPickerTarget] = useState('new'); // 'new' | 'edit'
 
     // Step 4: Submission deadline & email dispatch state
     const [lastDateToSubmit, setLastDateToSubmit] = useState(new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0]);
@@ -1099,6 +1104,45 @@ export default function ProcurementPage() {
         }
     };
 
+    const handleSelectInventoryDevice = (device) => {
+        if (!device) return;
+        const brandModel = `${device.brand || ''} ${device.modelNo || ''}`.trim();
+        const generatedName = brandModel ? `${brandModel} (${device.itemNumber})` : device.itemNumber;
+        
+        let initialSpecs = '';
+        if (device.specs && typeof device.specs === 'object') {
+            initialSpecs = Object.entries(device.specs)
+                .map(([k, v]) => `• ${k.toUpperCase()}: ${v}`)
+                .join('\n');
+        }
+
+        const deviceGoldenParams = (device.goldenParameters && typeof device.goldenParameters === 'object')
+            ? device.goldenParameters
+            : {};
+
+        if (inventoryPickerTarget === 'edit') {
+            setEditingItemForm(prev => ({
+                ...prev,
+                itemName: prev.itemName || generatedName,
+                itemType: device.itemType || prev.itemType || 'pc',
+                specifications: prev.specifications ? `${prev.specifications}\n${initialSpecs}`.trim() : initialSpecs,
+                goldenParameters: { ...deviceGoldenParams, ...prev.goldenParameters },
+                inventoryItemId: device.id
+            }));
+        } else {
+            setNewItemForm(prev => ({
+                ...prev,
+                itemName: generatedName,
+                itemType: device.itemType || 'pc',
+                specifications: initialSpecs,
+                goldenParameters: deviceGoldenParams,
+                inventoryItemId: device.id
+            }));
+        }
+
+        toast.success(`Selected "${device.itemNumber}" from Lab Inventory`);
+    };
+
     const handleAddNewItem = async () => {
         if (!newItemForm.itemName.trim()) {
             toast.error('Item name is required');
@@ -1107,14 +1151,17 @@ export default function ProcurementPage() {
         try {
             await procurementAPI.addItem(selectedRequest.id, {
                 itemName: newItemForm.itemName.trim(),
+                itemType: newItemForm.itemType || 'pc',
                 specifications: newItemForm.specifications?.trim() || null,
+                goldenParameters: Object.keys(newItemForm.goldenParameters || {}).length > 0 ? newItemForm.goldenParameters : null,
+                inventoryItemId: newItemForm.inventoryItemId || null,
                 warranty: newItemForm.warranty?.trim() || null,
                 quantity: 1, // Quantity is per-unit; final total quantities are decided at Step 7 Net Amount
                 unit: newItemForm.unit,
                 estimatedUnitPrice: parseFloat(newItemForm.estimatedUnitPrice) || null
             });
             toast.success('Item added');
-            setNewItemForm({ itemName: '', specifications: '', warranty: '', quantity: 1, unit: 'pcs', estimatedUnitPrice: '' });
+            setNewItemForm({ itemName: '', itemType: 'pc', specifications: '', warranty: '1', quantity: 1, unit: 'pcs', estimatedUnitPrice: '', goldenParameters: {}, inventoryItemId: null });
             await openRequestDetail(selectedRequest, true);
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to add item');
@@ -1125,11 +1172,14 @@ export default function ProcurementPage() {
         setEditingItemId(item.id);
         setEditingItemForm({
             itemName: item.itemName,
+            itemType: item.itemType || 'pc',
             specifications: item.specifications || '',
-            warranty: item.warranty || '',
+            warranty: item.warranty || '1',
             quantity: item.quantity || 1,
             unit: item.unit || 'pcs',
-            estimatedUnitPrice: item.estimatedUnitPrice || ''
+            estimatedUnitPrice: item.estimatedUnitPrice || '',
+            goldenParameters: item.goldenParameters && typeof item.goldenParameters === 'object' ? item.goldenParameters : {},
+            inventoryItemId: item.inventoryItemId || null
         });
     };
 
@@ -1141,7 +1191,10 @@ export default function ProcurementPage() {
         try {
             await procurementAPI.updateItem(selectedRequest.id, itemId, {
                 itemName: editingItemForm.itemName.trim(),
+                itemType: editingItemForm.itemType || 'pc',
                 specifications: editingItemForm.specifications?.trim() || null,
+                goldenParameters: Object.keys(editingItemForm.goldenParameters || {}).length > 0 ? editingItemForm.goldenParameters : null,
+                inventoryItemId: editingItemForm.inventoryItemId || null,
                 warranty: editingItemForm.warranty?.trim() || null,
                 quantity: parseInt(editingItemForm.quantity) || 1,
                 unit: editingItemForm.unit,
@@ -2200,6 +2253,8 @@ export default function ProcurementPage() {
         const defaultContent = `To,\nThe Principal,\n${school?.name || 'Senior Secondary Residential School for Meritorious Students'},\n${school?.district || 'Ludhiana'}.\n\nSubject: Requisition for ${request.title || 'Institutional Hardware/Supplies'}\n\nRespected Sir/Madam,\n\nIt is respectfully submitted that the following items are urgently required for the laboratory / institutional operations:\n\n${items.map((it, idx) => `${idx + 1}. ${it.itemName} - Qty: ${it.quantity} ${it.unit || 'pcs'}${it.specifications ? ` (${it.specifications})` : ''}`).join('\n')}\n\nKindly accord administrative and financial sanction to initiate the quotation procurement process for the above.\n\nThanking you,\nYours faithfully,\nRequisition Authority / Lab Incharge`;
 
         const contentToPrint = letterContent || request.letterContent || defaultContent;
+        const isHtml = /<(p|div|h[1-6]|table|ul|ol|br|strong|b)[^>]*>/i.test(contentToPrint);
+        const renderedBody = isHtml ? contentToPrint : `<div style="white-space: pre-line;">${contentToPrint}</div>`;
 
         const html = `
             <!DOCTYPE html>
@@ -2265,10 +2320,38 @@ export default function ProcurementPage() {
                         padding-bottom: 10px;
                     }
                     .content {
-                        white-space: pre-line;
                         font-size: 13.5px;
                         line-height: 1.7;
                         margin-bottom: 40px;
+                    }
+                    .content table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 14px 0;
+                    }
+                    .content th, .content td {
+                        border: 1px solid #cbd5e1;
+                        padding: 8px 12px;
+                        font-size: 13px;
+                    }
+                    .content th {
+                        background-color: #f8fafc;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+                    .content ul, .content ol {
+                        margin: 10px 0 10px 24px;
+                        padding: 0;
+                    }
+                    .content li {
+                        margin-bottom: 4px;
+                    }
+                    .content h1, .content h2, .content h3 {
+                        margin: 16px 0 8px 0;
+                        color: #0f172a;
+                    }
+                    .content p {
+                        margin: 0 0 10px 0;
                     }
                     .signatures {
                         margin-top: 50px;
@@ -2315,7 +2398,7 @@ export default function ProcurementPage() {
                         <div>Letter No: <strong>${letterNo}</strong></div>
                         <div>Date: <strong>${dateFormatted}</strong></div>
                     </div>
-                    <div class="content">${contentToPrint}</div>
+                    <div class="content">${renderedBody}</div>
                     <div class="signatures" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 50px;">
                         <div class="sig-box">
                             <div class="sig-line">Requisition Authority<br/><span style="font-size: 11px; font-weight: normal;">Lab / IT Incharge</span></div>
@@ -5599,21 +5682,15 @@ Campus Maintenance Incharge`
                                                     )}
                                                 </div>
 
-                                                <EditorFormatBar
-                                                    textareaRef={letterTextareaRef}
+                                                <InlineRichWordEditor
                                                     value={letterContent}
                                                     onChange={setLetterContent}
                                                     storageKey="requirement_letter"
                                                     defaultTemplates={step1DefaultTemplates}
                                                     variables={step1Variables}
-                                                />
-
-                                                <textarea
-                                                    ref={letterTextareaRef}
-                                                    className="input text-xs min-h-[160px] w-full font-sans leading-relaxed p-3 border-slate-300 dark:border-slate-700"
-                                                    placeholder="Enter the formal requirement / requisition letter text..."
-                                                    value={letterContent}
-                                                    onChange={e => setLetterContent(e.target.value)}
+                                                    documentTitle={`Requisition Letter - ${memoVideNo || 'Official Letter'}`}
+                                                    placeholder="Enter formal requisition letter body (supports full alignments, headings, bullet points, tables, and colors)..."
+                                                    minHeight="220px"
                                                 />
                                             </div>
 
@@ -5636,9 +5713,17 @@ Campus Maintenance Incharge`
                                                         <div>Date: <span>{formatDate(proceedingsDate || new Date())}</span></div>
                                                     </div>
 
-                                                    {/* Letter Content Preview */}
-                                                    <div className="whitespace-pre-line text-xs leading-relaxed text-slate-800 min-h-[120px]">
-                                                        {letterContent || (
+                                                    {/* Letter Content Preview (WYSIWYG HTML) */}
+                                                    <div className="text-xs leading-relaxed text-slate-800 min-h-[120px]
+                                                        [&_table]:w-full [&_table]:border-collapse [&_table]:my-2 [&_table]:border [&_table]:border-slate-300
+                                                        [&_th]:border [&_th]:border-slate-300 [&_th]:p-1.5 [&_th]:bg-slate-50 [&_th]:font-bold [&_th]:text-left
+                                                        [&_td]:border [&_td]:border-slate-300 [&_td]:p-1.5
+                                                        [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-2
+                                                        [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-2
+                                                        [&_p]:my-1.5">
+                                                        {letterContent ? (
+                                                            <div dangerouslySetInnerHTML={{ __html: letterContent }} />
+                                                        ) : (
                                                             <span className="text-slate-400 italic">
                                                                 Type letter content above to preview it formatted live onto the school letterhead.
                                                             </span>
@@ -6021,8 +6106,51 @@ Campus Maintenance Incharge`
                                             <div key={item.id} className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs">
                                                 {editingItemId === item.id ? (
                                                     <div className="space-y-3">
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                            <div>
+                                                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+                                                            <div className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                                Editing Item #{idx + 1}
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setInventoryPickerTarget('edit');
+                                                                    setShowInventoryPicker(true);
+                                                                }}
+                                                                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 flex items-center gap-1.5 transition"
+                                                            >
+                                                                <Package className="w-3.5 h-3.5" /> Link from Lab Inventory
+                                                            </button>
+                                                        </div>
+
+                                                        {editingItemForm.inventoryItemId && (
+                                                            <div className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-200 font-medium">
+                                                                <span className="flex items-center gap-1.5">
+                                                                    🔗 Linked to Lab Inventory Device
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setEditingItemForm(prev => ({ ...prev, inventoryItemId: null }))}
+                                                                    className="text-slate-400 hover:text-rose-600 text-[11px] underline"
+                                                                >
+                                                                    Unlink
+                                                                </button>
+                                                            </div>
+                                                        )}
+
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                            <div className="md:col-span-1">
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Type *</label>
+                                                                <select
+                                                                    className="input text-xs py-1.5 mt-1"
+                                                                    value={editingItemForm.itemType || 'pc'}
+                                                                    onChange={e => setEditingItemForm({ ...editingItemForm, itemType: e.target.value })}
+                                                                >
+                                                                    {Object.entries(ITEM_TYPE_CONFIG).map(([key, cfg]) => (
+                                                                        <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                            <div className="md:col-span-1">
                                                                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Name *</label>
                                                                 <input
                                                                     type="text"
@@ -6031,7 +6159,7 @@ Campus Maintenance Incharge`
                                                                     onChange={e => setEditingItemForm({ ...editingItemForm, itemName: e.target.value })}
                                                                 />
                                                             </div>
-                                                            <div>
+                                                            <div className="md:col-span-1">
                                                                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Warranty Required (Years)</label>
                                                                 <div className="relative mt-1">
                                                                     <input
@@ -6048,15 +6176,29 @@ Campus Maintenance Incharge`
                                                                     </span>
                                                                 </div>
                                                             </div>
-                                                            <div className="md:col-span-2">
-                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
+
+                                                            {/* GeM Golden Parameters Editor */}
+                                                            <div className="md:col-span-3">
+                                                                <GemGoldenParametersEditor
+                                                                    itemType={editingItemForm.itemType || 'pc'}
+                                                                    value={editingItemForm.goldenParameters || {}}
+                                                                    onChange={params => setEditingItemForm({ ...editingItemForm, goldenParameters: params })}
+                                                                    onSyncToSpecs={specsText => setEditingItemForm(prev => ({
+                                                                        ...prev,
+                                                                        specifications: prev.specifications ? `${prev.specifications}\n${specsText}`.trim() : specsText
+                                                                    }))}
+                                                                />
+                                                            </div>
+
+                                                            <div className="md:col-span-3">
+                                                                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Narrative Specifications</label>
                                                                 <textarea
                                                                     className="input text-xs min-h-[60px] mt-1"
                                                                     value={editingItemForm.specifications}
                                                                     onChange={e => setEditingItemForm({ ...editingItemForm, specifications: e.target.value })}
                                                                 />
                                                             </div>
-                                                            <div className="grid grid-cols-2 gap-2 md:col-span-2">
+                                                            <div className="grid grid-cols-2 gap-2 md:col-span-3">
                                                                 <div>
                                                                     <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Unit</label>
                                                                     <select
@@ -6105,12 +6247,38 @@ Campus Maintenance Incharge`
                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                 <span className="w-5 h-5 flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded text-xs font-bold">{idx + 1}</span>
                                                                 <span className="font-semibold text-slate-900 dark:text-slate-100 text-sm">{item.itemName}</span>
+                                                                <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-[11px] rounded-md font-semibold flex items-center gap-1">
+                                                                    <span>{ITEM_TYPE_CONFIG[item.itemType]?.icon || '📦'}</span>
+                                                                    <span>{ITEM_TYPE_CONFIG[item.itemType]?.label || item.itemType || 'Equipment'}</span>
+                                                                </span>
                                                                 <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 text-[11px] rounded-full font-medium">
                                                                     Warranty: {item.warranty ? `${item.warranty} Year${parseInt(item.warranty) === 1 ? '' : 's'}` : '1 Year'}
                                                                 </span>
+                                                                {(item.inventoryItemId || item.inventoryItem) && (
+                                                                    <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] rounded-md font-mono flex items-center gap-1">
+                                                                        🔗 {item.inventoryItem?.itemNumber || 'Lab Device Linked'}
+                                                                    </span>
+                                                                )}
                                                             </div>
+
+                                                            {/* GeM Golden Parameters Chips */}
+                                                            {item.goldenParameters && typeof item.goldenParameters === 'object' && Object.keys(item.goldenParameters).length > 0 && (
+                                                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                                                    {Object.entries(item.goldenParameters).filter(([_, v]) => v).slice(0, 5).map(([k, v]) => (
+                                                                        <span key={k} className="px-2 py-0.5 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 border border-amber-200/70 dark:border-amber-800/50 rounded text-[10px] font-medium">
+                                                                            <span className="opacity-70">{k}:</span> {v}
+                                                                        </span>
+                                                                    ))}
+                                                                    {Object.entries(item.goldenParameters).filter(([_, v]) => v).length > 5 && (
+                                                                        <span className="px-1.5 py-0.5 text-[10px] text-amber-600 font-semibold">
+                                                                            +{Object.entries(item.goldenParameters).filter(([_, v]) => v).length - 5} more
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
                                                             {item.specifications && (
-                                                                <p className="text-slate-500 dark:text-slate-400 text-xs mt-1">Specs: {item.specifications}</p>
+                                                                <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 whitespace-pre-line">Specs: {item.specifications}</p>
                                                             )}
                                                         </div>
                                                         <div className="flex items-center gap-3 self-end sm:self-center">
@@ -6161,14 +6329,58 @@ Campus Maintenance Incharge`
                                             </span>
                                         </button>
                                         {!isItemFormCollapsed && (
-                                            <div className="p-4 border-t border-slate-100 dark:border-slate-800">
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div className="p-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                                                {/* Inventory device picker trigger */}
+                                                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                                                    <div className="text-xs text-slate-600 dark:text-slate-300">
+                                                        Select an existing device from the school lab inventory or configure a new product:
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setInventoryPickerTarget('new');
+                                                            setShowInventoryPicker(true);
+                                                        }}
+                                                        className="btn bg-indigo-600 hover:bg-indigo-700 text-white text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-2xs"
+                                                    >
+                                                        <Package className="w-3.5 h-3.5" /> Pick from Lab Inventory
+                                                    </button>
+                                                </div>
+
+                                                {newItemForm.inventoryItemId && (
+                                                    <div className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-200 font-medium">
+                                                        <span className="flex items-center gap-1.5">
+                                                            🔗 Linked to Lab Inventory Device: <span className="font-mono font-bold">{newItemForm.itemName}</span>
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setNewItemForm(prev => ({ ...prev, inventoryItemId: null }))}
+                                                            className="text-slate-400 hover:text-rose-600 text-[11px] underline"
+                                                        >
+                                                            Unlink
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <div>
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Type *</label>
+                                                        <select
+                                                            className="input text-xs py-1.5 mt-1"
+                                                            value={newItemForm.itemType || 'pc'}
+                                                            onChange={e => setNewItemForm({ ...newItemForm, itemType: e.target.value })}
+                                                        >
+                                                            {Object.entries(ITEM_TYPE_CONFIG).map(([key, cfg]) => (
+                                                                <option key={key} value={key}>{cfg.icon} {cfg.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                     <div>
                                                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Item Name *</label>
                                                         <input
                                                             type="text"
                                                             className="input text-xs py-1.5 mt-1"
-                                                            placeholder="e.g., Digital Storage Oscilloscope"
+                                                            placeholder="e.g., Desktop Computer i5 13th Gen"
                                                             value={newItemForm.itemName}
                                                             onChange={e => setNewItemForm({ ...newItemForm, itemName: e.target.value })}
                                                         />
@@ -6190,11 +6402,25 @@ Campus Maintenance Incharge`
                                                             </span>
                                                         </div>
                                                     </div>
-                                                    <div className="md:col-span-2">
-                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Specifications</label>
+
+                                                    {/* GeM Golden Parameters Editor */}
+                                                    <div className="md:col-span-3">
+                                                        <GemGoldenParametersEditor
+                                                            itemType={newItemForm.itemType || 'pc'}
+                                                            value={newItemForm.goldenParameters || {}}
+                                                            onChange={params => setNewItemForm({ ...newItemForm, goldenParameters: params })}
+                                                            onSyncToSpecs={specsText => setNewItemForm(prev => ({
+                                                                ...prev,
+                                                                specifications: prev.specifications ? `${prev.specifications}\n${specsText}`.trim() : specsText
+                                                            }))}
+                                                        />
+                                                    </div>
+
+                                                    <div className="md:col-span-3">
+                                                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">Narrative Specifications</label>
                                                         <textarea
                                                             className="input text-xs min-h-[60px] mt-1"
-                                                            placeholder="e.g., 2-channel 100MHz, 1GSa/s sampling rate with probe accessories"
+                                                            placeholder="e.g., Processor: Intel Core i5 13th Gen, 16GB DDR5 RAM, 512GB NVMe SSD, Windows 11 Pro, 23.8 inch IPS Monitor, 3-Year Onsite OEM Warranty"
                                                             value={newItemForm.specifications}
                                                             onChange={e => setNewItemForm({ ...newItemForm, specifications: e.target.value })}
                                                         />
@@ -6362,21 +6588,15 @@ Campus Maintenance Incharge`
                                                     </span>
                                                 </div>
 
-                                                <EditorFormatBar
-                                                    textareaRef={cfqTextareaRef}
+                                                <InlineRichWordEditor
                                                     value={cfqAgreementText}
                                                     onChange={setCfqAgreementText}
                                                     storageKey="cfq_terms"
                                                     defaultTemplates={step4DefaultTemplates}
                                                     variables={step4Variables}
-                                                />
-
-                                                <textarea
-                                                    ref={cfqTextareaRef}
-                                                    value={cfqAgreementText}
-                                                    onChange={e => setCfqAgreementText(e.target.value)}
-                                                    placeholder="e.g. 1. Delivery within 10 days of order. 2. On-site 1-year replacement warranty. 3. 100% payment after testing and physical verification."
-                                                    className="input text-xs min-h-[90px] w-full font-mono leading-relaxed p-3"
+                                                    documentTitle={`Call for Quotation Terms - ${cfqLetterNo || 'CFQ'}`}
+                                                    placeholder="e.g., 1. Delivery within 10 days of order. 2. On-site 1-year replacement warranty. 3. 100% payment after testing and physical verification."
+                                                    minHeight="140px"
                                                 />
                                             </div>
                                         )}
@@ -9067,6 +9287,13 @@ Campus Maintenance Incharge`
                         toast.success(`Verified ${serialNumbers.length} serials for ${scanningItemModal.item.itemName}`);
                     }
                 }}
+            />
+
+            {/* Lab Inventory Picker Modal for Step 3 Device Catalog Linking */}
+            <LabInventoryPickerModal
+                isOpen={showInventoryPicker}
+                onClose={() => setShowInventoryPicker(false)}
+                onSelectDevice={handleSelectInventoryDevice}
             />
         </div >
     );

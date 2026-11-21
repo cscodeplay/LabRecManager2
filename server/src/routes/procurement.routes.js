@@ -225,6 +225,7 @@ router.get('/requests/:id', authenticate, asyncHandler(async (req, res) => {
             items: {
                 include: {
                     approvedVendor: { select: { name: true } },
+                    inventoryItem: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, specs: true, goldenParameters: true } },
                     quotationItems: {
                         include: {
                             quotation: {
@@ -485,7 +486,7 @@ router.get('/requests/:id/vendor-requirements', authenticate, asyncHandler(async
  * @desc    Add item to procurement request
  */
 router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) => {
-    const { itemName, description, specifications, warranty, quantity, unit, estimatedUnitPrice } = req.body;
+    const { itemName, description, specifications, itemType, goldenParameters, inventoryItemId, warranty, quantity, unit, estimatedUnitPrice } = req.body;
 
     const item = await prisma.procurementItem.create({
         data: {
@@ -493,10 +494,16 @@ router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) =
             itemName,
             description,
             specifications,
+            itemType: itemType || null,
+            goldenParameters: goldenParameters || null,
+            inventoryItemId: inventoryItemId || null,
             warranty: warranty || null,
             quantity: quantity ? parseInt(quantity) : 1,
             unit: unit || 'pcs',
             estimatedUnitPrice: estimatedUnitPrice ? parseFloat(estimatedUnitPrice) : null
+        },
+        include: {
+            inventoryItem: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, specs: true, goldenParameters: true } }
         }
     });
 
@@ -508,18 +515,27 @@ router.post('/requests/:id/items', authenticate, asyncHandler(async (req, res) =
  * @desc    Update item in procurement request
  */
 router.put('/requests/:id/items/:itemId', authenticate, asyncHandler(async (req, res) => {
-    const { itemName, description, specifications, warranty, quantity, unit, estimatedUnitPrice } = req.body;
+    const { itemName, description, specifications, itemType, goldenParameters, inventoryItemId, warranty, quantity, unit, estimatedUnitPrice } = req.body;
+
+    const updateData = {
+        itemName,
+        description,
+        specifications,
+        warranty: warranty || null,
+        quantity: quantity ? parseInt(quantity) : 1,
+        unit: unit || 'pcs',
+        estimatedUnitPrice: estimatedUnitPrice ? parseFloat(estimatedUnitPrice) : null
+    };
+
+    if (itemType !== undefined) updateData.itemType = itemType || null;
+    if (goldenParameters !== undefined) updateData.goldenParameters = goldenParameters;
+    if (inventoryItemId !== undefined) updateData.inventoryItemId = inventoryItemId || null;
 
     const item = await prisma.procurementItem.update({
         where: { id: req.params.itemId },
-        data: {
-            itemName,
-            description,
-            specifications,
-            warranty: warranty || null,
-            quantity: quantity ? parseInt(quantity) : 1,
-            unit: unit || 'pcs',
-            estimatedUnitPrice: estimatedUnitPrice ? parseFloat(estimatedUnitPrice) : null
+        data: updateData,
+        include: {
+            inventoryItem: { select: { id: true, itemNumber: true, itemType: true, brand: true, modelNo: true, specs: true, goldenParameters: true } }
         }
     });
 

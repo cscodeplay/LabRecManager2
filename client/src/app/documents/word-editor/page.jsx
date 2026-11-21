@@ -459,10 +459,22 @@ export default function WordEditorPage() {
                     setIsInitialLoading(false);
                 }
             } else {
-                // Initialize new document
+                // Initialize new document (or load imported draft if opened from procurement/inline editor)
+                let importedDraft = null;
                 try {
+                    const draftRaw = sessionStorage.getItem('office_import_draft');
+                    if (draftRaw) {
+                        importedDraft = JSON.parse(draftRaw);
+                        sessionStorage.removeItem('office_import_draft');
+                    }
+                } catch (e) {
+                    console.error('Failed to parse imported draft:', e);
+                }
+
+                try {
+                    const targetTitle = importedDraft?.title || searchParams.get('title') || 'Official Document';
                     const res = await api.post('/office/documents', {
-                        title: 'Physics Lab Report',
+                        title: targetTitle,
                         docType: 'word'
                     });
                     if (res.data?.success && res.data.data) {
@@ -475,7 +487,7 @@ export default function WordEditorPage() {
                             window.history.replaceState(null, '', url.toString());
                         }
                         if (editorRef.current) {
-                            editorRef.current.innerHTML = d.current_content?.html || '<h1>Untitled Document</h1><p>Start writing...</p>';
+                            editorRef.current.innerHTML = importedDraft?.html || d.current_content?.html || `<h1>${targetTitle}</h1><p>Start writing...</p>`;
                             updateCounts();
                             updateOutline();
                         }

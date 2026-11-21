@@ -458,11 +458,13 @@ export const labsAPI = {
     getMaintenanceHistory: (id) => api.get(`/labs/${id}/maintenance-history`),
     getEventHistory: (id, eventType, limit) => api.get(`/labs/${id}/event-history`, { params: { eventType, limit } }),
     delete: (id) => api.delete(`/labs/${id}`),
-    // Item types
+    // Item types & GeM parameters
     getItemTypes: () => api.get('/labs/item-types'),
+    getGemGoldenParameters: () => api.get('/labs/gem-golden-parameters'),
     // Items (inventory)
     getItems: (labId, type) => api.get(`/labs/${labId}/items`, { params: type ? { type } : {} }),
     getAllPCs: () => api.get('/labs/items/pcs'),
+    getAllItems: () => api.get('/labs/items/all'),
     createItem: (labId, data) => api.post(`/labs/${labId}/items`, data),
     updateItem: (labId, itemId, data) => api.put(`/labs/${labId}/items/${itemId}`, data),
     deleteItem: (labId, itemId) => api.delete(`/labs/${labId}/items/${itemId}`),

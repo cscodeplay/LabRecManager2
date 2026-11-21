@@ -571,6 +571,7 @@ model LabItem {
   modelNo            String?                  @map("model_no") @db.VarChar(100)
   serialNo           String?                  @map("serial_no") @db.VarChar(100)
   specs              Json?
+  goldenParameters   Json?                    @map("golden_parameters")
   status             String?                  @default("active") @db.VarChar(20)
   notes              String?
   purchaseDate       DateTime?                @map("purchase_date") @db.Timestamp(6)
@@ -1631,6 +1632,8 @@ model ProcurementItem {
   itemName           String             @map("item_name") @db.VarChar(200)
   description        String?
   specifications     String?
+  itemType           String?            @map("item_type") @db.VarChar(50)
+  goldenParameters   Json?              @map("golden_parameters")
   warranty           String?            @db.VarChar(100)
   quantity           Int                @default(1)
   unit               String?            @default("pcs") @db.VarChar(50)

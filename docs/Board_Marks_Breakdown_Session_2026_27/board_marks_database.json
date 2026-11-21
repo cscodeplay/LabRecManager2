@@ -1,0 +1,170 @@
+{
+  "academicSession": "2026-27",
+  "referenceSessions": ["2024-25", "2025-26", "2026-27"],
+  "lastVerified": "2026-11-18",
+  "documentReference": "DOC-LRM-EXAM-2026-V1",
+  "boards": {
+    "CBSE": {
+      "fullName": "Central Board of Secondary Education",
+      "officialPortal": "https://cbseacademic.nic.in",
+      "class10": {
+        "Science_086": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "totalQuestions": 39,
+          "sections": ["A", "B", "C", "D", "E"],
+          "cognitiveDistribution": {
+            "remembering_understanding_L1_L2": 50.0,
+            "applying_L3": 30.0,
+            "analysing_evaluating_creating_L4_L5_L6": 20.0
+          },
+          "l5_l6_exceptionPolicy": "Restricted to Ch 5 (Life Processes), Ch 9 (Light), and Ch 11 (Electricity) in Section E Case Studies. Locked to 0 in all remaining 10 chapters.",
+          "units": [
+            { "unitNo": 1, "name": "Chemical Substances - Nature & Behaviour", "marks": 25, "chapters": [1, 2, 3, 4] },
+            { "unitNo": 2, "name": "World of Living", "marks": 25, "chapters": [5, 6, 7, 8] },
+            { "unitNo": 3, "name": "Natural Phenomena", "marks": 12, "chapters": [9, 10] },
+            { "unitNo": 4, "name": "Effects of Current", "marks": 13, "chapters": [11, 12] },
+            { "unitNo": 5, "name": "Natural Resources", "marks": 5, "chapters": [13] }
+          ]
+        },
+        "Mathematics_Standard_041": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "units": [
+            { "unitNo": 1, "name": "Number Systems", "marks": 6 },
+            { "unitNo": 2, "name": "Algebra", "marks": 20 },
+            { "unitNo": 3, "name": "Coordinate Geometry", "marks": 6 },
+            { "unitNo": 4, "name": "Geometry", "marks": 15 },
+            { "unitNo": 5, "name": "Trigonometry", "marks": 12 },
+            { "unitNo": 6, "name": "Mensuration", "marks": 10 },
+            { "unitNo": 7, "name": "Statistics & Probability", "marks": 11 }
+          ]
+        },
+        "SocialScience_087": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "units": [
+            { "unitNo": 1, "name": "History (India & Contemporary World II)", "marks": 20, "theory": 18, "map": 2 },
+            { "unitNo": 2, "name": "Geography (Contemporary India II)", "marks": 20, "theory": 17, "map": 3 },
+            { "unitNo": 3, "name": "Political Science (Democratic Politics II)", "marks": 20, "theory": 20, "map": 0 },
+            { "unitNo": 4, "name": "Economics (Understanding Economic Development)", "marks": 20, "theory": 20, "map": 0 }
+          ]
+        },
+        "English_184": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "sections": [
+            { "section": "A", "name": "Reading Skills", "marks": 20 },
+            { "section": "B", "name": "Writing Skills and Grammar", "marks": 20 },
+            { "section": "C", "name": "Language through Literature", "marks": 40 }
+          ]
+        },
+        "InformationTechnology_402": {
+          "theoryMarks": 50,
+          "practicalMarks": 50,
+          "durationMinutes": 120,
+          "parts": [
+            { "part": "A", "name": "Employability Skills", "marks": 10 },
+            { "part": "B", "name": "Subject Specific Skills", "marks": 40 }
+          ]
+        }
+      },
+      "class12": {
+        "Physics_042": {
+          "theoryMarks": 70,
+          "practicalMarks": 30,
+          "durationMinutes": 180,
+          "units": [
+            { "unitNo": "I-II", "name": "Electrostatics & Current Electricity", "marks": 16 },
+            { "unitNo": "III-IV", "name": "Magnetic Effects of Current & EMI/AC", "marks": 17 },
+            { "unitNo": "V-VI", "name": "EM Waves & Optics", "marks": 18 },
+            { "unitNo": "VII-VIII", "name": "Dual Nature of Matter & Atoms/Nuclei", "marks": 12 },
+            { "unitNo": "IX", "name": "Electronic Devices (Semiconductors)", "marks": 7 }
+          ]
+        },
+        "Chemistry_043": {
+          "theoryMarks": 70,
+          "practicalMarks": 30,
+          "durationMinutes": 180,
+          "branches": {
+            "physicalChemistry": 23,
+            "inorganicChemistry": 14,
+            "organicChemistry": 33
+          }
+        },
+        "ComputerScience_083": {
+          "theoryMarks": 70,
+          "practicalMarks": 30,
+          "durationMinutes": 180,
+          "units": [
+            { "unitNo": 1, "name": "Computational Thinking and Programming - 2 (Python)", "marks": 40 },
+            { "unitNo": 2, "name": "Computer Networks", "marks": 10 },
+            { "unitNo": 3, "name": "Database Management (SQL)", "marks": 20 }
+          ]
+        }
+      }
+    },
+    "ICSE": {
+      "fullName": "Council for the Indian School Certificate Examinations",
+      "officialPortal": "https://cisce.org",
+      "class10": {
+        "Science_Papers": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 120,
+          "papers": ["Physics", "Chemistry", "Biology"],
+          "structure": {
+            "sectionA": { "marks": 40, "rule": "Compulsory short answer and objective" },
+            "sectionB": { "marks": 40, "rule": "Answer 4 out of 6 questions (10M each)" }
+          }
+        },
+        "ComputerApplications": {
+          "theoryMarks": 100,
+          "practicalMarks": 100,
+          "durationMinutes": 120,
+          "structure": {
+            "sectionA": { "marks": 40, "rule": "Compulsory short theory & syntax" },
+            "sectionB": { "marks": 60, "rule": "4 of 6 programming questions (15M each)" }
+          }
+        }
+      }
+    },
+    "PSEB": {
+      "fullName": "Punjab School Education Board",
+      "officialPortal": "https://www.pseb.ac.in",
+      "class10": {
+        "Science": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "totalChapters": 13,
+          "units": [
+            { "name": "ਰਸਾਇਣ ਵਿਗਿਆਨ (Chemistry)", "marks": 26 },
+            { "name": "ਜੀਵ ਵਿਗਿਆਨ (Biology)", "marks": 28 },
+            { "name": "ਭੌਤਿਕ ਵਿਗਿਆਨ (Physics)", "marks": 28 }
+          ]
+        },
+        "Mathematics": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180
+        },
+        "SocialScience": {
+          "theoryMarks": 80,
+          "internalAssessment": 20,
+          "durationMinutes": 180,
+          "units": [
+            { "name": "History", "marks": 25 },
+            { "name": "Geography", "marks": 21 },
+            { "name": "Civics", "marks": 21 },
+            { "name": "Economics", "marks": 13 }
+          ]
+        }
+      }
+    }
+  }
+}
